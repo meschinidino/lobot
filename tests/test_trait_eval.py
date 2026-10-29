@@ -16,6 +16,9 @@ sys.path.insert(0, str(ROOT))
 import evaluation as E  # noqa: E402
 import prompt_bank  # noqa: E402
 import trait_eval as T  # noqa: E402
+from unittest import mock  # noqa: E402
+
+import torch  # noqa: E402
 
 
 class BankTest(unittest.TestCase):
@@ -97,6 +100,52 @@ class EligibilityTest(unittest.TestCase):
         v = T.eligible_verbs(False, {})
         self.assertFalse(v["update_up"])
         self.assertFalse(v["knob"])
+
+
+class JudgeTemplateTest(unittest.TestCase):
+    def test_judge_wraps_prompt_in_template(self):
+        seen = {}
+
+        class Tok:
+            def encode(self, w, add_special_tokens=False):
+                return [5] if w == "Yes" else [7]
+
+            def apply_chat_template(self, msgs, **kw):
+                seen["text"] = msgs[0]["content"]
+                return "WRAPPED"
+
+            def __call__(self, text, return_tensors="pt"):
+                seen["wrapped"] = text
+                ids = torch.tensor([[1, 2]])
+                return {"input_ids": ids}
+
+        class Model:
+            def __call__(self, ids):
+                from types import SimpleNamespace
+                logits = torch.zeros(1, 3, 10)
+                logits[0, -1, 5] = 2.0
+                return SimpleNamespace(logits=logits)
+
+        with mock.patch.object(T.steer, "DEVICE", "cpu"):
+            score = T.judge_score(Model(), Tok(), None, "q?", "r.",
+                                  "blunt")
+        self.assertIn("Is this reply blunt?", seen["text"])
+        self.assertEqual(seen["wrapped"], "WRAPPED")
+        want = float(torch.softmax(torch.tensor([2.0, 0.0]), -1)[0])
+        self.assertAlmostEqual(score, want, places=5)
+
+    def test_refusal_short_circuits_to_zero(self):
+        calls = []
+
+        class Tok:
+            def __call__(self, *a, **k):
+                calls.append(1)
+                raise AssertionError("must not run")
+
+        self.assertEqual(T.judge_score(None, Tok(), None, "q?",
+                                       "Sorry, I can't help.", "blunt"),
+                         0.0)
+        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":
