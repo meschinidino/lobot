@@ -317,7 +317,16 @@ def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[i
 # -- runner ---------------------------------------------------------------------
 
 def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed: int):
-    """One greedy generation under whatever hooks are currently registered."""
+    """One greedy generation under whatever hooks are registered (T7 measured).
+
+    Runs never exceed MAX_NEW_TOKENS_CAP (D6 budget). Returns the T1 keys
+    (text, new_tokens, token_ids, seconds) plus the T7 split: prefill_s (a
+    timed forward pass over the wrapped prompt under the same hook state),
+    decode_s (generate total minus prefill, clamped), tok_per_s, and peak
+    memory sampled via the torch.mps allocation API (max of post-prefill
+    and post-decode current_allocated_memory; MPS exposes no peak counter).
+    """
+    max_new_tokens = min(max_new_tokens, MAX_NEW_TOKENS_CAP)
     torch.manual_seed(seed)
     try:
         if torch.backends.mps.is_available():
@@ -325,17 +334,36 @@ def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed
     except Exception:
         pass
     wrapped = wrap_prompt_notk(tokenizer, user_text)
-    input_ids = tokenizer(wrapped, return_tensors="pt")["input_ids"].to(DEVICE)
+    device = str(next(model.parameters()).device)
+    input_ids = tokenizer(wrapped, return_tensors="pt")["input_ids"].to(device)
+    mem_samples: list[float] = []
+    with torch.no_grad():
+        _sync_device()
+        t0 = time.perf_counter()
+        model(input_ids)
+        _sync_device()
+        prefill_s = time.perf_counter() - t0
+    mem_samples.append(mps_current_mib() or 0.0)
+    _sync_device()
     t0 = time.perf_counter()
     with torch.no_grad():
         out = model.generate(input_ids, max_new_tokens=max_new_tokens, do_sample=False)
-    dt = time.perf_counter() - t0
+    _sync_device()
+    total_s = time.perf_counter() - t0
+    mem_samples.append(mps_current_mib() or 0.0)
+    decode_s = max(0.0, total_s - prefill_s)
     new_ids = out[0][input_ids.shape[1]:]
+    n_new = len(new_ids)
     return {
         "text": tokenizer.decode(new_ids, skip_special_tokens=True),
-        "new_tokens": len(new_ids),
+        "new_tokens": n_new,
         "token_ids": new_ids.tolist(),
-        "seconds": round(dt, 1),
+        "seconds": round(total_s, 1),
+        "prefill_s": round(prefill_s, 2),
+        "decode_s": round(decode_s, 2),
+        "tok_per_s": round(n_new / total_s, 1) if total_s > 0 else 0.0,
+        "peak_mib": round(max(mem_samples), 1),
+        "driver_mib": mps_driver_mib(),
     }
 
 
@@ -477,3 +505,170 @@ def load_with_ladder(*, revision: str | None = None) -> tuple:
             return model, tok, rung.n, attempts
     lines = "; ".join(f"rung {a['rung']}: {a['detail']}" for a in attempts)
     raise RuntimeError(f"ALL rungs failed ({lines}). Recovery: {RECOVERY_PROCEDURE}")
+
+
+# ---------------------------------------------------------------------------
+# T7 (runner budget + measurements + artifact template). Doc: D6 (max-tokens
+# cap + per-run latency/memory), D9 (prefill-vs-decode latency per side,
+# peak memory via the torch.mps allocation API, X artifact template fields,
+# recipe-string fields). V1 writes the recipe string; v1.5 parses it (T10
+# owns the grammar document; the field set below is the conformance target).
+# ---------------------------------------------------------------------------
+
+# D6 budget: no v1 run generates more than this, whatever the caller asks.
+MAX_NEW_TOKENS_CAP = 256
+
+ARTIFACT_VERSION = "v1"
+
+
+def _sync_device() -> None:
+    """Block until queued device work finishes, so timings are honest."""
+    try:
+        if torch.backends.mps.is_available():
+            torch.mps.synchronize()
+    except Exception:
+        pass
+
+
+def mps_current_mib() -> float | None:
+    """Current MPS allocated memory in MiB (None off-MPS)."""
+    try:
+        if torch.backends.mps.is_available():
+            return round(torch.mps.current_allocated_memory() / 1024**2, 1)
+    except Exception:
+        pass
+    return None
+
+
+def mps_driver_mib() -> float | None:
+    """Driver-side MPS allocation in MiB (None off-MPS)."""
+    try:
+        if torch.backends.mps.is_available():
+            return round(torch.mps.driver_allocated_memory() / 1024**2, 1)
+    except Exception:
+        pass
+    return None
+
+
+def recipe_string(rows: list[RecipeRow], calib_id: str, *, max_new_tokens: int,
+                  seed: int, calib_prompts: list[str],
+                  model_id: str = MODEL_ID) -> str:
+    """One-line recipe string (v1 writes, v1.5 parses).
+
+    Fields (doc binding): model, rows, calibration id, template,
+    max-tokens, decode settings, dtype/device, calibration prompts.
+    """
+    body = ";".join(f"L{r.layer}N{r.neuron}@{r.dose:g}" for r in rows)
+    calib_hashes = ",".join(
+        hashlib.sha256(p.encode()).hexdigest()[:8] for p in calib_prompts)
+    return (
+        f"model-lobotomy/{ARTIFACT_VERSION} model={model_id} rows=[{body}] "
+        f"calib={calib_id} template=chat+no-think "
+        f"max_tokens={max_new_tokens} decode=greedy,seed={seed} "
+        f"dtype={DTYPE} device={DEVICE} calib_prompts=[{calib_hashes}]"
+    )
+
+
+def build_x_artifact(*, prompt: str, rows: list[RecipeRow], calib_id: str,
+                     base: dict, steered: dict, rung_n: int,
+                     max_new_tokens: int, seed: int,
+                     calib_prompts: list[str]) -> str:
+    """Paste-ready X artifact (v1 template): model, recipe, calibration id,
+    per-side latency (prefill vs decode) + peak memory, prompt, both
+    outputs, and the one-line recipe string."""
+    row_lines = "\n".join(f"  L{r.layer} N{r.neuron} dose {r.dose:g}" for r in rows)
+
+    def _side(d: dict) -> str:
+        mem = f"{d.get('peak_mib', '?')} MiB peak (MPS current)" \
+            if d.get("peak_mib") else "n/a"
+        return (f"{d['seconds']}s total = {d.get('prefill_s', '?')}s prefill + "
+                f"{d.get('decode_s', '?')}s decode "
+                f"({d['new_tokens']} tok, {d.get('tok_per_s', '?')} tok/s; {mem})")
+
+    return (
+        f"model-lobotomy before/after\n"
+        f"model: {MODEL_ID} (rung {rung_n})\n"
+        f"recipe:\n{row_lines}\n"
+        f"calibration: {calib_id}\n"
+        f"latency baseline: {_side(base)}\n"
+        f"latency steered: {_side(steered)}\n"
+        f"prompt: {prompt}\n"
+        f"--- baseline ---\n{base['text']}\n"
+        f"--- steered ---\n{steered['text']}\n"
+        f"recipe: {recipe_string(rows, calib_id, max_new_tokens=max_new_tokens, seed=seed, calib_prompts=calib_prompts)}"
+    )
+
+
+def build_post_text(*, rows: list[RecipeRow], base: dict, steered: dict,
+                    calib_id: str, max_new_tokens: int, seed: int,
+                    calib_prompts: list[str]) -> str:
+    """Suggested X post text (<=280 chars). The human posts; code never posts.
+
+    Shape: hook line + compact recipe line + before/after quotes. The full
+    one-line recipe string lives in artifact.txt (it alone is ~220 chars,
+    so it cannot fit here); the compact line is a human-readable subset,
+    not a second grammar. Quotes shrink to fit; the recipe line never cuts.
+    """
+    short_model = model_short_name()
+    doses = " ".join(f"L{r.layer}N{r.neuron}@{r.dose:+g}" for r in rows)
+    recipe_line = (f"{doses} on {short_model} "
+                   f"(calib {calib_id[:8]}, greedy s{seed}, <={max_new_tokens}tok)")
+
+    def _quote(text: str, n: int) -> str:
+        one_line = " ".join(text.split())
+        return one_line if len(one_line) <= n else one_line[: max(0, n - 1)] + "…"
+
+    head = f"steered {short_model} with {len(rows)} neurons:\n{recipe_line}\n"
+    room = 280 - len(head) - len("before: '' after: ''")
+    per = max(10, room // 2)
+    post = (f"{head}before: '{_quote(base['text'], per)}' "
+            f"after: '{_quote(steered['text'], per)}'")
+    assert len(post) <= 280, f"post text {len(post)} chars exceeds 280"
+    return post
+
+
+def model_short_name(model_id: str = MODEL_ID) -> str:
+    """Short model name for the post hook (org prefix + dots stripped)."""
+    return model_id.split("/")[-1].replace(".", "").lower()
+
+
+def save_artifact_dir(root: str | Path, *, prompt: str, rows: list[RecipeRow],
+                      calib_id: str, base: dict, steered: dict, rung_n: int,
+                      max_new_tokens: int, seed: int, calib_prompts: list[str],
+                      divergence: int | None) -> Path:
+    """Write a versioned artifact dir: artifact.txt + post.txt + run.json.
+
+    Dir name: <root>/<ARTIFACT_VERSION>-<UTC timestamp>. Returns the dir.
+    """
+    import datetime as _dt
+
+    stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+    outdir = Path(root) / f"{ARTIFACT_VERSION}-{stamp}"
+    outdir.mkdir(parents=True, exist_ok=False)
+    (outdir / "artifact.txt").write_text(build_x_artifact(
+        prompt=prompt, rows=rows, calib_id=calib_id, base=base,
+        steered=steered, rung_n=rung_n, max_new_tokens=max_new_tokens,
+        seed=seed, calib_prompts=calib_prompts))
+    (outdir / "post.txt").write_text(build_post_text(
+        rows=rows, base=base, steered=steered, calib_id=calib_id,
+        max_new_tokens=max_new_tokens, seed=seed,
+        calib_prompts=calib_prompts))
+    (outdir / "run.json").write_text(json.dumps({
+        "version": ARTIFACT_VERSION,
+        "model_id": MODEL_ID,
+        "rung": rung_n,
+        "recipe": [{"layer": r.layer, "neuron": r.neuron, "dose": r.dose}
+                   for r in rows],
+        "calibration_id": calib_id,
+        "prompt": prompt,
+        "max_new_tokens": min(max_new_tokens, MAX_NEW_TOKENS_CAP),
+        "seed": seed,
+        "divergence_token": divergence,
+        "baseline": {k: base[k] for k in (
+            "new_tokens", "seconds", "prefill_s", "decode_s", "tok_per_s",
+            "peak_mib", "driver_mib")},
+        "steered": {k: steered[k] for k in (
+            "new_tokens", "seconds", "prefill_s", "decode_s", "tok_per_s",
+            "peak_mib", "driver_mib")},
+    }, indent=2))
+    return outdir

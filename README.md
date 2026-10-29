@@ -84,8 +84,13 @@ gate, timeboxed half a day.
 
 ## Layout
 
-- `steer.py` — engine (load T3, hooks/runner T1, ladder T2, calib T4, path T5).
+- `steer.py` — engine (load T3, hooks/runner T1, ladder T2, calib T4,
+  path T5, cap + measurements + artifact template T7).
 - `app.py` — Gradio UI (T6). Run: `uv run python app.py` → http://127.0.0.1:7860.
+- `scripts/run_artifact.py` — headless T7 runner: one before/after pair →
+  `artifacts/v1-<UTC stamp>/` (`artifact.txt` + `post.txt` + `run.json`).
+  Human posts; nothing posts. Cap 256 tokens; per-side prefill/decode +
+  MPS peak per run.
 - `scripts/check_env.py` — env gate (T3).
 - `scripts/verify_load.py` — load proof (T3).
 - `scripts/check_engine_t2t4t5.py` — engine smoke (T2/T4/T5; `--with-model`).
