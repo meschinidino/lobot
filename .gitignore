@@ -9,5 +9,14 @@ wheels/
 # Virtual environments
 .venv
 
-# T3: local run receipts (regenerate via scripts/verify_load.py)
+# Local run receipts (regenerate via scripts/verify_load.py)
 logs/
+
+# Local run outputs (regenerate via scripts/run_artifact.py)
+artifacts/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
