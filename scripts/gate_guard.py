@@ -40,7 +40,7 @@ SEED = 0
 def _edits():
     E = engine_mod
     row = lambda L, n, d: E.EditSet(neuron=(E.NeuronEdit(L, n, d),))
-    return [
+    edits = [
         ("empty", E.EMPTY_EDITS),
         ("refusal@0.0", row(11, 1343, 0.0)),
         ("refusal@0.5", row(11, 1343, 0.5)),
@@ -54,6 +54,18 @@ def _edits():
         ("combo-two-layer", E.EditSet(neuron=(
             E.NeuronEdit(11, 1343, 1.0), E.NeuronEdit(12, 1343, 1.0)))),
     ]
+    knob = ROOT / "logs" / "e2e_pirate" / "knob.lobot"
+    if knob.exists():
+        import patch as patch_mod
+        loaded = patch_mod.load_patch(knob)
+        meta = loaded["meta"]
+        edits.append(
+            (f"pirate-knob@{meta['dose']}",
+             E.EditSet(vector=(E.VectorEdit(
+                 int(meta["layer"]),
+                 tuple(loaded["direction"].tolist()),
+                 float(meta["scale"]), float(meta["dose"])),))))
+    return edits
 
 
 def main() -> int:

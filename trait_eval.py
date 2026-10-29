@@ -407,7 +407,17 @@ def baseline_top1(eng, spec, cfg, label, tuning, final,
         done += 1
         if progress is not None:
             progress("baseline", done, total)
-    return {"instructions": scored, "top": top, "final_gains": gains}
+    neutral = []
+    for q in final:
+        _check(cancel)
+        base = _gen(eng, q, engine_mod.EMPTY_EDITS, cancel=cancel)
+        st = _gen(eng, f"Answer the question directly.\n\n{q}",
+                  engine_mod.EMPTY_EDITS, cancel=cancel)
+        jb = judge_score(eng.model, eng.tokenizer, spec, q, base, label)
+        js = judge_score(eng.model, eng.tokenizer, spec, q, st, label)
+        neutral.append(js - jb)
+    return {"instructions": scored, "top": top, "final_gains": gains,
+            "neutral_gains": neutral}
 
 
 def run_trait(eng, spec, trait_name, bank, seed, workdir,
@@ -500,10 +510,12 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     }
     base = baseline_top1(eng, spec, cfg, cfg["judge"], tun, fin,
                           cancel=cancel, progress=progress)
-    base_card = E.report_card_pass(base["final_gains"], ctrl_gains)
+    base_card = E.report_card_pass(base["final_gains"],
+                                   base["neutral_gains"])
     out["prompt_baseline"] = {
         "tuning": [{"ins": ins, "gain": g} for g, ins in base["instructions"]],
         "top": base["top"], "final_gains": base["final_gains"],
+        "neutral_gains": base["neutral_gains"],
         "card": _json_card(base_card)}
 
     frozen_edits = engine_mod.EditSet(vector=(_vec_edit(
