@@ -74,7 +74,8 @@ Top first; stop at the first rung that passes. Presets bind to model id:
 a fallback invalidates evil-qwen rows until re-derived.
 
 1. qwen3.5-4B fp16 on MPS eager (test: loads + generates + hooks fire).
-2. Same-family smaller, e.g. `Qwen/Qwen3.5-2B` (verified to exist at T3).
+2. Same-family smaller `Qwen/Qwen3.5-2B` (verified live: sha `15852e8c1636`,
+   public ungated; T2 `scripts/check_engine_t2t4t5.py`).
 3. GGUF-in-transformers if hooks work (hook + layout + norm-scale check first).
 4. CPU run (slow accepted).
 
@@ -83,11 +84,12 @@ gate, timeboxed half a day.
 
 ## Layout
 
-- `steer.py` — engine (T3: load recipe only; hooks T1, ladder T2, calib T4).
+- `steer.py` — engine (load T3, hooks/runner T1, ladder T2, calib T4, path T5).
 - `app.py` — Gradio UI (T6, not built yet).
 - `scripts/check_env.py` — env gate (T3).
 - `scripts/verify_load.py` — load proof (T3).
-- `presets/` — recipe presets (T1, not built yet).
+- `scripts/check_engine_t2t4t5.py` — engine smoke (T2/T4/T5; `--with-model`).
+- `presets/evil-qwen.json` — evil-qwen recipe (T1).
 - `tests/` — unit suite + integration lane (T8/T9, not built yet).
 - `logs/` — local run receipts, not committed.
 
