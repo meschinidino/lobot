@@ -156,6 +156,32 @@ class CreateRunnerTest(unittest.TestCase):
         self.join(r, b)
         self.assertEqual(len(r.list_jobs()), 2)
 
+    def test_warms_cold_engine_before_run(self):
+        seen = {}
+
+        class ColdEngine(FakeEngine):
+            def __init__(self):
+                super().__init__()
+                self.model = None
+                self.model_id = None
+
+            def load(self, model_id, revision):
+                seen["load"] = (model_id, revision)
+                self.model = object()
+                self.model_id = model_id
+
+        def fn(eng, *a, **k):
+            seen["warm"] = eng.model is not None
+            return {"verdict": "knob", "frozen": {}, "eligibility": {},
+                    "guard": {}}
+
+        r = self.runner(engine=ColdEngine(), run_trait_fn=fn)
+        jid = r.start("blunt", seed=0, model_id="m", revision="r")
+        self.join(r, jid)
+        self.assertEqual(seen["load"], ("m", "r"))
+        self.assertTrue(seen["warm"])
+        self.assertEqual(r.status(jid)["status"], "done")
+
 
 class StopThreadingTest(unittest.TestCase):
     def set_cancel(self):

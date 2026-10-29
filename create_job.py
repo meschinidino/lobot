@@ -183,6 +183,9 @@ class CreateRunner:
                     return
                 job.status = "running"
                 self._persist(job)
+                if getattr(eng, "model", "n/a") is None or getattr(
+                        eng, "model_id", job.model_id) != job.model_id:
+                    eng.load(job.model_id, job.revision)
 
                 def progress(stage, done, total):
                     job.stage = stage
