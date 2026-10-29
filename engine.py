@@ -727,13 +727,14 @@ class Engine:
             for layer, u in abl:
                 if layer != _L:
                     continue
-                uu = torch.tensor(u, dtype=torch.float32)
+                uu = torch.tensor(u, dtype=torch.float32, device=dev)
                 x = x - (x @ uu).unsqueeze(-1) * uu
             for (layer, _u), (uu, ss) in vector.items():
                 if layer != _L:
                     continue
-                x = x + torch.tensor(ss, dtype=torch.float32).view(
-                    -1, *([1] * (x.dim() - 1))) * uu
+                x = x + torch.tensor(ss, dtype=torch.float32,
+                                     device=dev).view(
+                    -1, *([1] * (x.dim() - 1))) * uu.to(dev)
             if _L in want_read:
                 reads[_L] = x.detach().cpu()
             return x.to(dt) if isinstance(out, torch.Tensor) else (

@@ -415,7 +415,13 @@ class RowStreamer:
     def put(self, values):
         toks = values.tolist() if hasattr(values, "tolist") else list(values)
         if toks and isinstance(toks[0], list):
-            toks = [row[-1] for row in toks]
+            # generate() first echoes the whole prompt (rows longer
+            # than one token); only single-token rows are new tokens.
+            # Row order is preserved: row r keeps index r.
+            for r, row in enumerate(toks):
+                if len(row) == 1:
+                    self.queue.put((r, int(row[0])))
+            return
         for r, t in enumerate(toks):
             self.queue.put((r, int(t)))
 
