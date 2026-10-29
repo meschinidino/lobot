@@ -1,8 +1,8 @@
 """model-lobotomy engine.
 
-T3 scope (this file, this task): load recipe only.
-Hook/steering code lands in T1, the fallback ladder in T2, calibration in T4,
-the module-path assert in T5. Do not add them here yet.
+Load recipe (T3) + steering hooks and runner (T1) + fallback ladder (T2) +
+calibration (T4) + hardcoded module path (T5). Smoke:
+scripts/check_engine_t2t4t5.py [--with-model].
 
 Load recipe (Eng D2 rung 1 + D3 + D9, verified by scripts/verify_load.py):
   model ......... Qwen/Qwen3.5-4B (public, ungated, safetensors, 2 shards)
@@ -43,9 +43,13 @@ def wrap_prompt(tokenizer, user_text: str) -> str:
     )
 
 
-def load_model(model_id: str = MODEL_ID, revision: str | None = MODEL_REVISION):
-    """Load rung-1 weights: fp16, eager, onto MPS. No hooks here (T1 owns hooks)."""
-    if not torch.backends.mps.is_available():
+def load_model(model_id: str = MODEL_ID, revision: str | None = MODEL_REVISION,
+               device: str = DEVICE):
+    """Load weights: fp16, eager, onto device. No hooks here (T1 owns hooks).
+
+    device defaults to MPS (rung 1); the ladder passes "cpu" for rung 4 (T2).
+    """
+    if device == "mps" and not torch.backends.mps.is_available():
         raise RuntimeError("MPS unavailable; rung 1 needs MPS (see README ladder)")
     model = Qwen3_5ForConditionalGeneration.from_pretrained(
         model_id,
@@ -53,7 +57,7 @@ def load_model(model_id: str = MODEL_ID, revision: str | None = MODEL_REVISION):
         dtype=DTYPE,
         trust_remote_code=TRUST_REMOTE_CODE,
     )
-    model.to(DEVICE)
+    model.to(device)
     model.eval()
     return model
 
@@ -123,8 +127,8 @@ def resolve_down_proj(model, layer: int):
         block = model.model.language_model.layers[layer]
     except (AttributeError, IndexError) as e:
         raise RuntimeError(
-            f"module path mismatch: model.language_model.layers[{layer}] unreachable ({e}); "
-            "hardcoded T1 path invalid for this model"
+            f"module path mismatch: model.model.language_model.layers[{layer}] unreachable ({e}); "
+            "hardcoded path invalid for this model"
         ) from e
     try:
         mod = block.mlp.down_proj
@@ -231,7 +235,8 @@ def _block_hidden(out):
     raise RuntimeError(f"cannot read block output from {type(out)}")
 
 
-def calibration_cache_key(model_id, revision, tokenizer, dtype_str, device):
+def calibration_cache_key(model_id, revision, tokenizer, dtype_str, device, quant=None):
+    """Cache key: model id + revision + template + dtype/quant + device + cal code (D9)."""
     tmpl = tokenizer.chat_template or ""
     return {
         "model_id": model_id,
@@ -239,6 +244,7 @@ def calibration_cache_key(model_id, revision, tokenizer, dtype_str, device):
         "template_sha256": hashlib.sha256(tmpl.encode()).hexdigest()[:16],
         "thinking": False,
         "dtype": dtype_str,
+        "quant": quant,
         "device": device,
         "cal_code": CAL_CODE_VERSION,
     }
@@ -248,12 +254,15 @@ def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[i
                              *, cache_path: str | Path, key: dict):
     """Median residual norm leaving each layer L over wrapped-prefill tokens 1:.
 
-    Tap = decoder block output (D9). Guards: 2-plus tokens per prompt (D4),
-    steering hooks OFF with assert (D9 isolation). Reuses calibration.json on
-    key match, else computes and writes it.
+    Tap = decoder block output (D9). Guards: filter empties + 2-plus wrapped
+    tokens per prompt (D4), steering hooks OFF with assert (D9 isolation).
+    Reuses calibration.json on key match, else computes and writes it.
     """
     if steering_hook_count() != 0:
         raise RuntimeError("steering hooks must be OFF during calibration (D9 isolation)")
+    prompts = [p for p in prompts if p and p.strip()]
+    if not prompts:
+        raise ValueError("calibration needs at least one non-empty prompt (D4 filter empties)")
     cache_path = Path(cache_path)
     prompt_hashes = [hashlib.sha256(p.encode()).hexdigest()[:16] for p in prompts]
     full_key = dict(key)
@@ -328,3 +337,143 @@ def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed
         "token_ids": new_ids.tolist(),
         "seconds": round(dt, 1),
     }
+
+
+# ---------------------------------------------------------------------------
+# T2 (fallback ladder + recovery). Doc: D2 (ladder order + tests + preset
+# binding), D8 (re-derivation procedure + verify-first rung checks). Rung 1
+# passed at T1; the ladder below is the ordered map the doc requires.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class LadderRung:
+    n: int
+    name: str
+    model_id: str | None  # None = unresolved, rung does not count yet (D8)
+    device: str
+    test: str  # pass/fail test for this rung
+
+
+# Rung-2 id verified to exist on the HF Hub at T3 (public, ungated).
+RUNG2_MODEL_ID = "Qwen/Qwen3.5-2B"
+
+LADDER: tuple[LadderRung, ...] = (
+    LadderRung(1, "qwen3.5-4B fp16 on MPS eager", MODEL_ID, "mps",
+               "loads + generates + hooks fire"),
+    LadderRung(2, "same-family smaller", RUNG2_MODEL_ID, "mps",
+               "loads + generates + hooks fire"),
+    LadderRung(3, "GGUF-in-transformers", None, "mps",
+               "hooks fire + flip judged (verify-first: hook path + weight "
+               "layout + norm scale before this rung counts)"),
+    LadderRung(4, "CPU run", MODEL_ID, "cpu",
+               "completes; slow accepted"),
+)
+
+# D8 recovery: any fallback invalidates the old rows (preset binds to model
+# id), so a new model needs re-derived neurons before the gate re-runs.
+RECOVERY_PROCEDURE = (
+    "contrast-prompt activation diff on the new model to re-derive "
+    "(layer, neuron, dose) rows, then re-run the Day-0 spike gate, "
+    "timeboxed half a day"
+)
+
+# D2 quantized-rung rule: any quantized rung needs all three before it counts.
+QUANT_RUNG_RULE = "hook-compat check + recalibration + re-judged flip"
+
+
+def check_preset_binding(preset: dict, model_id: str) -> None:
+    """Presets bind to model id (D2): a fallback invalidates rows until re-derived."""
+    want = preset.get("model_id")
+    if want != model_id:
+        raise RuntimeError(
+            f"preset {preset.get('name', '?')!r} binds to {want!r}, not {model_id!r}; "
+            f"re-derive rows first ({RECOVERY_PROCEDURE})"
+        )
+
+
+def hooks_fire_probe(model, tokenizer) -> int:
+    """One forward pass with a canary pre-hook on L0 down_proj input.
+
+    Returns the call count (>=1 means hooks fire). Uses resolve_down_proj,
+    so a wrong path fails loudly here too (T5). No steering math involved.
+    """
+    if steering_hook_count() != 0:
+        raise RuntimeError("probe needs steering hooks OFF (isolation)")
+    calls = 0
+
+    def _canary(_m, args):
+        nonlocal calls
+        calls += 1
+        return args
+
+    handle = resolve_down_proj(model, 0).register_forward_pre_hook(_canary)
+    try:
+        device = str(next(model.parameters()).device)
+        ids = tokenizer("Hello.", return_tensors="pt")["input_ids"].to(device)
+        with torch.no_grad():
+            model(ids)
+    finally:
+        handle.remove()
+    return calls
+
+
+def attempt_rung(rung: LadderRung, *, revision: str | None = None) -> dict:
+    """Run one rung's pass/fail test. Returns {ok, rung, detail, seconds}."""
+    t0 = time.perf_counter()
+    if rung.model_id is None:
+        return {"ok": False, "rung": rung.n,
+                "detail": f"rung {rung.n} unresolved: no verified checkpoint; {rung.test}",
+                "seconds": 0.0}
+    try:
+        tok = load_tokenizer(rung.model_id)
+        model = load_model(rung.model_id, revision=revision, device=rung.device)
+    except Exception as e:
+        return {"ok": False, "rung": rung.n, "detail": f"load failed: {e}",
+                "seconds": round(time.perf_counter() - t0, 1)}
+    try:
+        if rung.device == "cpu":
+            ids = tok("Hello.", return_tensors="pt")["input_ids"]
+            with torch.no_grad():
+                model(ids)
+            return {"ok": True, "rung": rung.n,
+                    "detail": "CPU forward pass completed (slow accepted)",
+                    "seconds": round(time.perf_counter() - t0, 1)}
+        calls = hooks_fire_probe(model, tok)
+        if calls < 1:
+            return {"ok": False, "rung": rung.n, "detail": "hooks did not fire",
+                    "seconds": round(time.perf_counter() - t0, 1)}
+        with torch.no_grad():
+            ids = tok("Hello.", return_tensors="pt")["input_ids"].to(rung.device)
+            out = model.generate(ids, max_new_tokens=MAX_NEW_TOKENS_PROBE, do_sample=False)
+        new_tok = out.shape[1] - ids.shape[1]
+        if new_tok < 1:
+            return {"ok": False, "rung": rung.n, "detail": "generation empty",
+                    "seconds": round(time.perf_counter() - t0, 1)}
+        return {"ok": True, "rung": rung.n,
+                "detail": f"loads + generates ({new_tok} tok) + hooks fire ({calls} calls)",
+                "seconds": round(time.perf_counter() - t0, 1)}
+    except Exception as e:
+        return {"ok": False, "rung": rung.n, "detail": f"probe failed: {e}",
+                "seconds": round(time.perf_counter() - t0, 1)}
+    finally:
+        del model
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+
+
+def load_with_ladder(*, revision: str | None = None) -> tuple:
+    """Try rungs top-first; stop at the first passing rung (D2).
+
+    Returns (model, tokenizer, rung_n, attempts). Raises RuntimeError with the
+    recovery procedure if every rung fails.
+    """
+    attempts = []
+    for rung in LADDER:
+        result = attempt_rung(rung, revision=revision if rung.n == 1 else None)
+        attempts.append(result)
+        if result["ok"]:
+            model = load_model(rung.model_id, device=rung.device)
+            tok = load_tokenizer(rung.model_id)
+            return model, tok, rung.n, attempts
+    lines = "; ".join(f"rung {a['rung']}: {a['detail']}" for a in attempts)
+    raise RuntimeError(f"ALL rungs failed ({lines}). Recovery: {RECOVERY_PROCEDURE}")

@@ -5,6 +5,7 @@
     "template_sha256": "a4aee8afcf2e0711",
     "thinking": false,
     "dtype": "torch.float16",
+    "quant": null,
     "device": "mps",
     "cal_code": "t1-v1",
     "prompts_sha256": "ec6562a7a3e05198"
