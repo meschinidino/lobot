@@ -412,6 +412,19 @@ class StreamerTest(unittest.TestCase):
             got.append(ev)
         self.assertEqual(got, [(0, 1), (1, 2), (0, 3), (1, 4)])
 
+    def test_prompt_echo_rows_are_skipped(self):
+        s = steer.RowStreamer()
+        s.put(torch.tensor([[10, 11, 12], [13, 14, 15]]))
+        s.put(torch.tensor([[3], [4]]))
+        s.end()
+        got = []
+        while True:
+            ev = s.queue.get()
+            if ev[0] is None:
+                break
+            got.append(ev)
+        self.assertEqual(got, [(0, 3), (1, 4)])
+
 
 class StreamTest(unittest.TestCase):
     def setUp(self):
