@@ -19,6 +19,38 @@ uv run python scripts/check_env.py      # import asserts + MPS + Qwen3.5 probe
 uv run python scripts/verify_load.py    # full load proof (downloads ~8.7 GiB once)
 ```
 
+## Run commands (T10, verified 2026-10-29)
+
+All from the repo root. Env setup first, then pick a lane:
+
+```sh
+# env setup (one time; weights ~8.7 GiB download once, cached after)
+uv python install 3.12
+uv sync
+uv run python scripts/check_env.py      # import asserts + MPS + Qwen3.5 probe
+
+# Day-0 repro gate (T1; ~3 min, needs weights)
+uv run python scripts/spike_t1.py       # GATE: PASS; receipts in logs/spike_t1/
+
+# app (T6; loads the model warm, then serve)
+uv run python app.py                    # -> http://127.0.0.1:7860
+
+# headless before/after artifact (T7; human posts, nothing posts)
+uv run python scripts/run_artifact.py   # -> artifacts/v1-<UTC stamp>/
+
+# unit suite (T8; seconds, no weights)
+uv run python -m unittest discover -s tests -t .
+
+# integration lane (T9; slow, opt-in, needs weights; skipped by default)
+MODEL_LOBOTOMY_INTEGRATION=1 uv run python -m unittest tests.test_steering_loop -v
+
+# engine smoke (T2/T4/T5; add --with-model for the 24-check model lane)
+uv run python scripts/check_engine_t2t4t5.py
+```
+
+Recipe grammar + cache keys: `presets/README.md`. Morning report:
+`FINAL-REPORT.md`.
+
 Pinned versions (recorded 2026-10-29, see `uv.lock` for the full tree):
 
 | piece      | version                                   |
