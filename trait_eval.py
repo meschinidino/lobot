@@ -34,6 +34,7 @@ sys.path.insert(0, str(ROOT))
 
 import engine as engine_mod  # noqa: E402
 import evaluation as E  # noqa: E402
+import guard as guard_mod  # noqa: E402
 import steer  # noqa: E402
 
 _SPIKE = importlib.util.spec_from_file_location(
@@ -65,6 +66,35 @@ REFUSAL_MARKERS = (
     "won't help", "will not help", "not able to help",
     "i can't provide", "i cannot provide",
 )
+
+
+class Stopped(Exception):
+    """Raised when the Create job's cancel event is set (Stop)."""
+
+
+def _check(cancel) -> None:
+    if cancel is not None and cancel.is_set():
+        raise Stopped("stopped by user")
+
+
+def _capture_chunked(eng, texts, layers, point="block_out", reduce="last",
+                     chunk=8, cancel=None, progress=None, stage=""):
+    """eng.capture in chunks: cancellable, reports progress.
+
+    Concatenates per-layer stacks; identical to one capture call when
+    run to completion.
+    """
+    _check(cancel)
+    outs = []
+    for i in range(0, len(texts), chunk):
+        _check(cancel)
+        outs.append(eng.capture(texts[i:i + chunk], layers,
+                                point=point, reduce=reduce))
+        if progress is not None:
+            progress(stage, min(i + chunk, len(texts)), len(texts))
+    if len(outs) == 1:
+        return outs[0]
+    return {L: torch.cat([o[L] for o in outs], dim=0) for L in layers}
 
 
 # -- pure helpers ------------------------------------------------------------
@@ -125,9 +155,9 @@ def _vec_edit(layer, unit, med, dose):
     return engine_mod.VectorEdit(layer, tuple(unit.tolist()), float(med), float(dose))
 
 
-def _gen(eng, prompt, edits, max_new=GEN_TOKENS, seed=0):
+def _gen(eng, prompt, edits, max_new=GEN_TOKENS, seed=0, cancel=None):
     return eng.run(prompt, edits, medians={}, max_new_tokens=max_new,
-                   seed=seed)["text"]
+                   seed=seed, cancel=cancel)["text"]
 
 
 def derive_direction(eng, spec, cfg, prompts):
@@ -145,21 +175,30 @@ def _seps(A, B, layers):
             for L in layers}
 
 
-def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label):
+def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
+                    cancel=None, progress=None):
     """Pick (layer, dose) on the tuning split; returns frozen choice + table."""
+    _check(cancel)
     mid = range(spec.layers // 4, 3 * spec.layers // 4)
     seps = _seps(A, B, list(mid))
     cands = sorted(mid, key=lambda L: (seps[L]["acc"], seps[L]["effect"]),
                    reverse=True)[:TOP_LAYERS]
     table, frozen = {}, None
+    total = len(cands) * len(TUNE_DOSES) * len(tuning)
+    done = 0
     for L in cands:
         gen = {}
         for d in TUNE_DOSES:
+            _check(cancel)
             edits = engine_mod.EMPTY_EDITS if d == 0 else engine_mod.EditSet(
                 vector=(_vec_edit(L, seps[L]["unit"], med[L], d),))
             js, ns = [], []
             for q in tuning:
-                r = _gen(eng, q, edits)
+                _check(cancel)
+                r = _gen(eng, q, edits, cancel=cancel)
+                done += 1
+                if progress is not None:
+                    progress("tune", done, total)
                 js.append(judge_score(eng.model, eng.tokenizer, spec, q, r,
                                       cfg["judge"]))
                 ns.append(min(spike.nll(eng.model, eng.tokenizer, spec, q, r),
@@ -177,15 +216,20 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label):
                            for L in cands}
 
 
-def final_gains(eng, spec, cfg, frozen, med, final, sign=+1.0):
+def final_gains(eng, spec, cfg, frozen, med, final, sign=+1.0,
+                cancel=None, progress=None, stage="final"):
     """Per-prompt gains on the final split for a signed vector dose."""
+    _check(cancel)
     L, unit = frozen["layer"], frozen["unit"]
     gains, pairs = [], []
-    for q in final:
-        base = _gen(eng, q, engine_mod.EMPTY_EDITS)
+    for i, q in enumerate(final):
+        _check(cancel)
+        base = _gen(eng, q, engine_mod.EMPTY_EDITS, cancel=cancel)
         edits = engine_mod.EditSet(vector=(_vec_edit(L, unit, med[L],
                                                       sign * frozen["dose"]),))
-        st = _gen(eng, q, edits)
+        st = _gen(eng, q, edits, cancel=cancel)
+        if progress is not None:
+            progress(stage, i + 1, len(final))
         jb = judge_score(eng.model, eng.tokenizer, spec, q, base, cfg["judge"])
         js = judge_score(eng.model, eng.tokenizer, spec, q, st, cfg["judge"])
         gains.append(js - jb if sign > 0 else jb - js)
@@ -194,15 +238,20 @@ def final_gains(eng, spec, cfg, frozen, med, final, sign=+1.0):
     return gains, pairs
 
 
-def delete_gains(eng, spec, cfg, frozen, final):
+def delete_gains(eng, spec, cfg, frozen, final,
+                 cancel=None, progress=None, stage="final"):
     """Per-prompt removal gains for directional ablation on final."""
+    _check(cancel)
     L = frozen["layer"]
     edits = engine_mod.EditSet(
         ablate=(engine_mod.Ablation(L, tuple(frozen["unit"].tolist())),))
     gains, pairs = [], []
-    for q in final:
-        base = _gen(eng, q, engine_mod.EMPTY_EDITS)
-        st = _gen(eng, q, edits)
+    for i, q in enumerate(final):
+        _check(cancel)
+        base = _gen(eng, q, engine_mod.EMPTY_EDITS, cancel=cancel)
+        st = _gen(eng, q, edits, cancel=cancel)
+        if progress is not None:
+            progress(stage, i + 1, len(final))
         jb = judge_score(eng.model, eng.tokenizer, spec, q, base, cfg["judge"])
         js = judge_score(eng.model, eng.tokenizer, spec, q, st, cfg["judge"])
         gains.append(jb - js)
@@ -211,68 +260,91 @@ def delete_gains(eng, spec, cfg, frozen, final):
     return gains, pairs
 
 
-def _shuffled_unit(eng, spec, cfg, extraction, layer):
+def _shuffled_unit(eng, spec, cfg, extraction, layer,
+                   cancel=None, progress=None):
     """Mean-diff direction from shuffled pos/neg assignment (null)."""
     import random
+    _check(cancel)
     rng = random.Random(CONTROL_SEED)
     idx = list(range(len(extraction)))
     rng.shuffle(idx)
     half = len(idx) // 2
-    A = eng.capture([f"{cfg['pos']}\n\n{extraction[i]}" for i in idx[:half]]
-                    + [f"{cfg['neg']}\n\n{extraction[i]}" for i in idx[half:]],
-                    [layer], point="block_out", reduce="last")[layer]
-    B = eng.capture([f"{cfg['neg']}\n\n{extraction[i]}" for i in idx[:half]]
-                    + [f"{cfg['pos']}\n\n{extraction[i]}" for i in idx[half:]],
-                    [layer], point="block_out", reduce="last")[layer]
+    A = _capture_chunked(
+        eng, [f"{cfg['pos']}\n\n{extraction[i]}" for i in idx[:half]]
+        + [f"{cfg['neg']}\n\n{extraction[i]}" for i in idx[half:]],
+        [layer], cancel=cancel, progress=progress, stage="final")[layer]
+    B = _capture_chunked(
+        eng, [f"{cfg['neg']}\n\n{extraction[i]}" for i in idx[:half]]
+        + [f"{cfg['pos']}\n\n{extraction[i]}" for i in idx[half:]],
+        [layer], cancel=cancel, progress=progress, stage="final")[layer]
     d = A.mean(0) - B.mean(0)
     return d / d.norm()
 
 
-def control_gains(eng, spec, cfg, med, extraction, final, layer, dose):
+def control_gains(eng, spec, cfg, med, extraction, final, layer, dose,
+                  cancel=None, progress=None):
     """Unsupervised control: shuffled derivation, same (layer, dose)."""
-    unit = _shuffled_unit(eng, spec, cfg, extraction, layer)
+    unit = _shuffled_unit(eng, spec, cfg, extraction, layer,
+                          cancel=cancel, progress=progress)
     edits = engine_mod.EditSet(vector=(_vec_edit(layer, unit, med[layer], dose),))
-    return _paired_gains(eng, spec, cfg, final, edits, sign=+1.0)
+    return _paired_gains(eng, spec, cfg, final, edits, sign=+1.0,
+                         cancel=cancel, progress=progress)
 
 
-def control_removal_gains(eng, spec, cfg, extraction, final, layer):
+def control_removal_gains(eng, spec, cfg, extraction, final, layer,
+                          cancel=None, progress=None):
     """Unsupervised control for removal verbs: shuffled ablation."""
-    unit = _shuffled_unit(eng, spec, cfg, extraction, layer)
+    unit = _shuffled_unit(eng, spec, cfg, extraction, layer,
+                          cancel=cancel, progress=progress)
     edits = engine_mod.EditSet(
         ablate=(engine_mod.Ablation(layer, tuple(unit.tolist())),))
-    return _paired_gains(eng, spec, cfg, final, edits, sign=-1.0)
+    return _paired_gains(eng, spec, cfg, final, edits, sign=-1.0,
+                         cancel=cancel, progress=progress)
 
 
-def _paired_gains(eng, spec, cfg, final, edits, sign):
+def _paired_gains(eng, spec, cfg, final, edits, sign,
+                  cancel=None, progress=None, stage="final"):
+    _check(cancel)
     gains = []
-    for q in final:
-        base = _gen(eng, q, engine_mod.EMPTY_EDITS)
-        st = _gen(eng, q, edits)
+    for i, q in enumerate(final):
+        _check(cancel)
+        base = _gen(eng, q, engine_mod.EMPTY_EDITS, cancel=cancel)
+        st = _gen(eng, q, edits, cancel=cancel)
+        if progress is not None:
+            progress(stage, i + 1, len(final))
         jb = judge_score(eng.model, eng.tokenizer, spec, q, base, cfg["judge"])
         js = judge_score(eng.model, eng.tokenizer, spec, q, st, cfg["judge"])
         gains.append(js - jb if sign > 0 else jb - js)
     return gains
 
 
-def read_gate(eng, spec, cfg, frozen, med, agree_qs):
+def read_gate(eng, spec, cfg, frozen, med, agree_qs,
+              cancel=None, progress=None):
     """O1: readout-vs-read-prompt agreement on held-out natural behavior.
 
     Probe (mean-diff unit + threshold) fit on 20 extraction prompts;
     agreement vs binarized judge scores on 100 held-out questions.
     Returns (agreement_dict, disagreements_sample).
     """
+    _check(cancel)
     L = frozen["layer"]
     fit, rest = agree_qs["fit"], agree_qs["heldout"]
-    A = eng.capture([f"{cfg['pos']}\n\n{q}" for q in fit], [L],
-                    point="block_out", reduce="last")[L]
-    B = eng.capture([f"{cfg['neg']}\n\n{q}" for q in fit], [L],
-                    point="block_out", reduce="last")[L]
+    A = _capture_chunked(eng, [f"{cfg['pos']}\n\n{q}" for q in fit], [L],
+                         cancel=cancel, progress=progress,
+                         stage="read_gate")[L]
+    B = _capture_chunked(eng, [f"{cfg['neg']}\n\n{q}" for q in fit], [L],
+                         cancel=cancel, progress=progress,
+                         stage="read_gate")[L]
     d = A.mean(0) - B.mean(0)
     u, thr = d / d.norm(), float(((A @ (d / d.norm())).mean() + (B @ (d / d.norm())).mean()) / 2)
     probe_labels, read_labels, disag = [], [], []
-    H = eng.capture(list(rest), [L], point="block_out", reduce="last")[L]
+    H = _capture_chunked(eng, list(rest), [L], cancel=cancel,
+                         progress=progress, stage="read_gate")[L]
     for i, q in enumerate(rest):
-        base = _gen(eng, q, engine_mod.EMPTY_EDITS)
+        _check(cancel)
+        base = _gen(eng, q, engine_mod.EMPTY_EDITS, cancel=cancel)
+        if progress is not None:
+            progress("read_gate", i + 1, len(rest))
         js = judge_score(eng.model, eng.tokenizer, spec, q, base, cfg["judge"])
         pl, rl = bool((H[i] @ u).item() > thr), bool(js >= 0.5)
         probe_labels.append(pl)
@@ -283,33 +355,54 @@ def read_gate(eng, spec, cfg, frozen, med, agree_qs):
     return agreement(probe_labels, read_labels), disag
 
 
-def baseline_top1(eng, spec, cfg, label, tuning, final):
+def baseline_top1(eng, spec, cfg, label, tuning, final,
+                  cancel=None, progress=None):
     """O4: six instructions tuned on tuning; top-1 evaluated on final."""
+    _check(cancel)
+    inss = BASELINE_INSTRUCTIONS[cfg["name"]]
     scored = []
-    for ins in BASELINE_INSTRUCTIONS[cfg["name"]]:
+    total = len(inss) * len(tuning) + len(final)
+    done = 0
+    for ins in inss:
         gains = []
         for q in tuning:
-            base = _gen(eng, q, engine_mod.EMPTY_EDITS)
-            st = _gen(eng, f"{ins}\n\n{q}", engine_mod.EMPTY_EDITS)
+            _check(cancel)
+            base = _gen(eng, q, engine_mod.EMPTY_EDITS, cancel=cancel)
+            st = _gen(eng, f"{ins}\n\n{q}", engine_mod.EMPTY_EDITS,
+                      cancel=cancel)
             jb = judge_score(eng.model, eng.tokenizer, spec, q, base, label)
             js = judge_score(eng.model, eng.tokenizer, spec, q, st, label)
             gains.append(js - jb)
+            done += 1
+            if progress is not None:
+                progress("baseline", done, total)
         scored.append((statistics.fmean(gains), ins))
     scored.sort(reverse=True)
     top = scored[0][1]
     gains = []
     for q in final:
-        base = _gen(eng, q, engine_mod.EMPTY_EDITS)
-        st = _gen(eng, f"{top}\n\n{q}", engine_mod.EMPTY_EDITS)
+        _check(cancel)
+        base = _gen(eng, q, engine_mod.EMPTY_EDITS, cancel=cancel)
+        st = _gen(eng, f"{top}\n\n{q}", engine_mod.EMPTY_EDITS,
+                  cancel=cancel)
         jb = judge_score(eng.model, eng.tokenizer, spec, q, base, label)
         js = judge_score(eng.model, eng.tokenizer, spec, q, st, label)
         gains.append(js - jb)
+        done += 1
+        if progress is not None:
+            progress("baseline", done, total)
     return {"instructions": scored, "top": top, "final_gains": gains}
 
 
 def run_trait(eng, spec, trait_name, bank, seed, workdir,
-              model_id, revision):
-    """One complete trait end to end. Writes report.json + report.md."""
+              model_id, revision, cancel=None, progress=None,
+              research_mode=False):
+    """One complete trait end to end. Writes report.json + report.md.
+
+    cancel (threading.Event) raises Stopped at generation granularity;
+    progress(stage, done, total) reports per-stage counts.
+    """
+    _check(cancel)
     t0 = time.time()
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
@@ -317,6 +410,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     cfg["name"] = trait_name
     splits = E.make_splits(bank, seed)
     ext, tun, fin = splits.extraction, splits.tuning, splits.final
+    _check(cancel)
     med = {L: m for L, m in enumerate(
         spike.median_norms(eng.model, eng.tokenizer, spec, ext[:10]))}
     out = {"trait": trait_name, "seed": seed,
@@ -324,17 +418,20 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
            "splits": {"extraction": ext, "tuning": tun, "final": fin,
                       "reserve": splits.reserve}}
 
-    A = eng.capture([f"{cfg['pos']}\n\n{q}" for q in ext],
-                    list(range(spec.layers)), point="block_out", reduce="last")
-    B = eng.capture([f"{cfg['neg']}\n\n{q}" for q in ext],
-                    list(range(spec.layers)), point="block_out", reduce="last")
+    A = _capture_chunked(eng, [f"{cfg['pos']}\n\n{q}" for q in ext],
+                         list(range(spec.layers)), cancel=cancel,
+                         progress=progress, stage="extract")
+    B = _capture_chunked(eng, [f"{cfg['neg']}\n\n{q}" for q in ext],
+                         list(range(spec.layers)), cancel=cancel,
+                         progress=progress, stage="extract")
     # Layer/dose choice may touch tuning only; stash extraction-only stats.
     out["extraction_seps"] = {
         L: {"acc": round(spike.separability(A[L], B[L], A[L], B[L])["acc"], 3)}
         for L in range(spec.layers)}
 
     frozen, table, cand_stats = tune_layer_dose(
-        eng, spec, cfg, med, A, B, tun, cfg["judge"])
+        eng, spec, cfg, med, A, B, tun, cfg["judge"],
+        cancel=cancel, progress=progress)
     out["tuning"] = {"candidates": cand_stats,
                      "table": {str(L): {str(d): v for d, v in g.items()}
                                for L, g in table.items()}}
@@ -351,17 +448,23 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
 
     agree, disag = read_gate(
         eng, spec, cfg, frozen, med,
-        {"fit": ext[:20], "heldout": ext[20:] + tun + fin})
+        {"fit": ext[:20], "heldout": ext[20:] + tun + fin},
+        cancel=cancel, progress=progress)
     out["read_gate"] = {"agreement": agree, "disagreements": disag,
                         "pass": agree["margin"] >= 0.10}
 
-    up_gains, up_pairs = final_gains(eng, spec, cfg, frozen, med, fin, +1.0)
+    up_gains, up_pairs = final_gains(eng, spec, cfg, frozen, med, fin, +1.0,
+                                            cancel=cancel, progress=progress)
     ctrl_gains = control_gains(eng, spec, cfg, med, ext, fin,
-                               frozen["layer"], frozen["dose"])
-    dn_gains, dn_pairs = final_gains(eng, spec, cfg, frozen, med, fin, -1.0)
-    del_gains, del_pairs = delete_gains(eng, spec, cfg, frozen, fin)
+                               frozen["layer"], frozen["dose"],
+                               cancel=cancel, progress=progress)
+    dn_gains, dn_pairs = final_gains(eng, spec, cfg, frozen, med, fin, -1.0,
+                                            cancel=cancel, progress=progress)
+    del_gains, del_pairs = delete_gains(eng, spec, cfg, frozen, fin,
+                                        cancel=cancel, progress=progress)
     ctrl_removal = control_removal_gains(eng, spec, cfg, ext, fin,
-                                         frozen["layer"])
+                                         frozen["layer"],
+                                         cancel=cancel, progress=progress)
     cards = {
         "update_up": E.report_card_pass(up_gains, ctrl_gains),
         "update_down": E.report_card_pass(dn_gains, ctrl_removal),
@@ -375,16 +478,34 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         "update_down": {"gains": dn_gains, "card": _json_card(cards["update_down"])},
         "delete": {"gains": del_gains, "card": _json_card(cards["delete"])},
     }
-    base = baseline_top1(eng, spec, cfg, cfg["judge"], tun, fin)
+    base = baseline_top1(eng, spec, cfg, cfg["judge"], tun, fin,
+                          cancel=cancel, progress=progress)
     base_card = E.report_card_pass(base["final_gains"], ctrl_gains)
     out["prompt_baseline"] = {
         "tuning": [{"ins": ins, "gain": g} for g, ins in base["instructions"]],
         "top": base["top"], "final_gains": base["final_gains"],
         "card": _json_card(base_card)}
 
+    frozen_edits = engine_mod.EditSet(vector=(_vec_edit(
+        frozen["layer"], frozen["unit"], med[frozen["layer"]],
+        frozen["dose"]),))
+    gv = guard_mod.Guard().check(eng, frozen_edits, medians=med,
+                                   research_mode=research_mode)
+    out["guard"] = {"blocked": gv.blocked,
+                    "would_block": gv.would_block,
+                    "research_mode": research_mode,
+                    "min_ratio": round(gv.min_ratio, 3),
+                    "worst_prompt": gv.worst_prompt,
+                    "blocked_prompts": list(gv.blocked_prompts)}
+
     elig = eligible_verbs(out["read_gate"]["pass"], cards)
+    if gv.blocked:
+        elig = dict(elig)
+        elig["knob"] = False
+        out["verdict"] = "blocked"
+    else:
+        out["verdict"] = "knob" if elig["knob"] else "no_knob"
     out["eligibility"] = elig
-    out["verdict"] = "knob" if elig["knob"] else "no_knob"
     ledger = E.FinalSplitLedger()
     for verb in ("update_up", "update_down", "delete"):
         if elig[verb]:
@@ -413,5 +534,6 @@ def _write_report(workdir, out, t0):
     lines = [f"# Trait E2E: {out['trait']} -> {out.get('verdict', '?')}",
              f"frozen layer {L}; {out['seconds']} s",
              f"eligibility: {out.get('eligibility')}",
+             f"guard: {out.get('guard')}",
              f"read gate: {out.get('read_gate', {}).get('agreement')}"]
     (workdir / "report.md").write_text("\n".join(lines) + "\n")
