@@ -356,5 +356,40 @@ class BatchedTest(unittest.TestCase):
                                  seed=0)
 
 
+class FakeLogitModel(FakeModel):
+    def forward(self, ids):
+        super().forward(ids)
+        return SimpleNamespace(logits=torch.zeros(1, 3, 9))
+
+
+class PrefillTest(unittest.TestCase):
+    def setUp(self):
+        steer.MODEL_SPECS["fake-llama"] = make_spec()
+        self.eng = engine.Engine()
+        self.eng.model = FakeLogitModel()
+        self.eng.tokenizer = FakeTok()
+        self.eng.model_id = "fake-llama"
+        self.addCleanup(steer.MODEL_SPECS.pop, "fake-llama", None)
+        self.addCleanup(self.eng.remove_all)
+
+    def test_clean_returns_last_logits(self):
+        out = self.eng.prefill("hi")
+        self.assertEqual(tuple(out.shape), (9,))
+        self.assertEqual(self.eng.hook_count(), 0)
+
+    def test_edits_need_medians(self):
+        es = engine.EditSet(vector=(engine.VectorEdit(
+            0, (1.0, 0.0, 0.0, 0.0), 1.0, 1.0),))
+        with self.assertRaises(ValueError):
+            self.eng.prefill("hi", es)
+
+    def test_edits_register_and_remove(self):
+        es = engine.EditSet(vector=(engine.VectorEdit(
+            0, (1.0, 0.0, 0.0, 0.0), 1.0, 1.0),))
+        out = self.eng.prefill("hi", es, medians={})
+        self.assertEqual(tuple(out.shape), (9,))
+        self.assertEqual(self.eng.hook_count(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
