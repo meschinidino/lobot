@@ -2,7 +2,7 @@
 
 Reads the patch (direction + layer + dose + scale), writes one F32
 1-D tensor `direction.{L}`, and prints the llama-cli flags
-(--control-vector-scaled <gguf> <dose*scale>
+(--control-vector-scaled <gguf>:<dose*scale>
 --control-vector-layer-range L L).
 
 Run:
