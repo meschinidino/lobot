@@ -97,7 +97,9 @@ gate, timeboxed half a day.
 - `presets/evil-qwen.json` — evil-qwen recipe (T1).
 - `tests/` — 5-file unit suite (T8): `uv run python -m unittest
   discover -s tests -t .` — 66 tests, green in seconds, no weights.
-  Integration lane `test_steering_loop.py` (T9) not built yet.
+  Integration lane (T9): `MODEL_LOBOTOMY_INTEGRATION=1 uv run python -m
+  unittest tests.test_steering_loop -v` — 5 model-backed tests, PASS
+  (see `T9_VERDICT.md`); skipped by default.
 - `logs/` — local run receipts, not committed.
 
 ## Out of scope for v1
