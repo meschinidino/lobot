@@ -1,6 +1,6 @@
-# model-lobotomy
+# lobot
 
-model-lobotomy is a local neuron-steering workbench. It loads one open
+lobot is a local neuron-steering workbench. It loads one open
 model. It runs the same prompt with and without steering. It shows both
 answers side by side, with the first changed token highlighted.
 

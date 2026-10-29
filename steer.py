@@ -1,4 +1,4 @@
-"""model-lobotomy engine.
+"""lobot engine.
 
 Load recipe (T3) + steering hooks and runner (T1) + fallback ladder (T2) +
 calibration (T4) + hardcoded module path (T5). Smoke:

@@ -1,4 +1,4 @@
-"""model-lobotomy Gradio UI (T6).
+"""lobot Gradio UI (T6).
 
 Minimal before/after loop: prompt in, baseline + steered columns out, with
 first-divergence highlight, recipe editor (dose slider + numeric fallback
@@ -306,8 +306,8 @@ def switch_model(model_id: str):
 def build_demo() -> gr.Blocks:
     default_preset = _PRESETS[steer.MODEL_ID]
     default_rows: list = list(default_preset["rows"])
-    with gr.Blocks(title="model-lobotomy") as demo:
-        gr.Markdown("# model-lobotomy — before/after steering loop")
+    with gr.Blocks(title="lobot") as demo:
+        gr.Markdown("# lobot — before/after steering loop")
         gr.Markdown("Pick a model (one stays warm; switching reloads). "
                     "Greedy, seed 0. Highlight marks the "
                     "first-diverging token onward in the steered column.")
