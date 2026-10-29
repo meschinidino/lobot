@@ -85,7 +85,7 @@ gate, timeboxed half a day.
 ## Layout
 
 - `steer.py` — engine (load T3, hooks/runner T1, ladder T2, calib T4, path T5).
-- `app.py` — Gradio UI (T6, not built yet).
+- `app.py` — Gradio UI (T6). Run: `uv run python app.py` → http://127.0.0.1:7860.
 - `scripts/check_env.py` — env gate (T3).
 - `scripts/verify_load.py` — load proof (T3).
 - `scripts/check_engine_t2t4t5.py` — engine smoke (T2/T4/T5; `--with-model`).
