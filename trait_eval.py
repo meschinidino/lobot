@@ -519,6 +519,16 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     out["ledger"] = {"recorded": [v for v in
                                   ("update_up", "update_down", "delete")
                                   if elig[v]]}
+    import patch as patch_mod
+    patch_mod.save_patch(
+        workdir / "knob.lobot", direction=frozen["unit"],
+        layer=frozen["layer"], dose=frozen["dose"],
+        scale=float(med[frozen["layer"]]), trait=trait_name,
+        recipe={"instruction": cfg["pos"], "layer": frozen["layer"],
+                "dose": frozen["dose"], "seed": seed},
+        report_card=_json_card(cards["update_up"]),
+        guard=out.get("guard", {}), fingerprint=out["fingerprint"])
+    out["patch"] = "knob.lobot"
     _write_report(workdir, out, t0)
     return out
 

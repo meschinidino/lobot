@@ -16,6 +16,8 @@ import json
 import zipfile
 from pathlib import Path
 
+import torch
+
 PATCH_VERSION = "lobot-patch-v1"
 
 DIRECTION_FILE = "direction.safetensors"
@@ -31,12 +33,19 @@ class PatchRejected(ValueError):
 
 def save_patch(path, *, direction, layer: int, dose: float,
                trait: str, recipe: dict, report_card: dict,
-               guard: dict, fingerprint: dict) -> Path:
-    """Write a .lobot patch (safetensors + JSON, no pickle anywhere)."""
+               guard: dict, fingerprint: dict,
+               scale: float | None = None) -> Path:
+    """Write a .lobot patch (safetensors + JSON, no pickle anywhere).
+
+    scale is the layer median norm: the shipped steering vector is
+    dose * scale * direction (llama.cpp: --control-vector-scaled with
+    strength dose * scale).
+    """
     from safetensors.torch import save as _save
     path = Path(path)
     meta = {"version": PATCH_VERSION, "trait": trait,
             "layer": int(layer), "dose": float(dose),
+            "scale": None if scale is None else float(scale),
             "direction": {"shape": list(direction.shape),
                           "dtype": str(direction.dtype).replace("torch.", "")},
             "recipe": recipe, "report_card": report_card,
@@ -97,3 +106,40 @@ def load_patch(path) -> dict:
                 f"direction shape {list(direction.shape)} != meta "
                 f"{want_shape}")
     return {"direction": direction, "meta": meta}
+
+
+def export_control_vector(patch_path, out_gguf) -> dict:
+    """Export a .lobot patch to a llama.cpp control-vector GGUF.
+
+    Writes one F32 1-D tensor `direction.{L}` (L = 0-based frozen
+    layer; llama.cpp forbids layer 0 and applies direction.{k} at
+    0-based layer k, after the FFN residual add — the same site as
+    our vector edits). Returns {"strength", "layer", "flags"} where
+    flags are the llama-cli arguments
+    (--control-vector-scaled <gguf> <strength>
+    --control-vector-layer-range L L) with strength = dose * scale.
+    """
+    loaded = load_patch(patch_path)
+    meta = loaded["meta"]
+    layer = int(meta["layer"])
+    if layer < 1:
+        raise PatchRejected(
+            f"layer {layer} cannot export: llama.cpp forbids "
+            f"direction.0 (no control vector for layer 0)")
+    if meta.get("scale") is None:
+        raise PatchRejected("patch has no scale; cannot set strength")
+    import gguf
+    vec = loaded["direction"].detach().cpu().to(torch.float32).numpy()
+    out_gguf = Path(out_gguf)
+    out_gguf.parent.mkdir(parents=True, exist_ok=True)
+    writer = gguf.GGUFWriter(str(out_gguf), "llama")
+    writer.add_tensor(f"direction.{layer}", vec)
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+    strength = float(meta["dose"]) * float(meta["scale"])
+    return {"strength": strength, "layer": layer,
+            "flags": ["--control-vector-scaled", str(out_gguf),
+                      str(strength), "--control-vector-layer-range",
+                      str(layer), str(layer)]}

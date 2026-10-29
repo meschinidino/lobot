@@ -42,14 +42,48 @@ class PatchTest(unittest.TestCase):
     def test_roundtrip(self):
         direction = torch.randn(16) * 0.5
         save_patch(self._path(), direction=direction, layer=7,
-                   dose=1.5, trait="blunt", **_meta())
+                   dose=1.5, trait="blunt", scale=2.5, **_meta())
         got = load_patch(self._path())
         self.assertTrue(torch.equal(got["direction"], direction))
         self.assertEqual(got["meta"]["trait"], "blunt")
         self.assertEqual(got["meta"]["layer"], 7)
         self.assertEqual(got["meta"]["dose"], 1.5)
+        self.assertEqual(got["meta"]["scale"], 2.5)
         self.assertEqual(got["meta"]["version"],
                          patch_mod.PATCH_VERSION)
+
+    def test_export_control_vector(self):
+        import gguf
+        direction = torch.randn(16) * 0.5
+        save_patch(self._path(), direction=direction, layer=7,
+                   dose=1.5, trait="blunt", scale=2.5, **_meta())
+        out = Path(self.tmp.name) / "control_vector.gguf"
+        got = patch_mod.export_control_vector(self._path(), out)
+        self.assertEqual(got["strength"], 1.5 * 2.5)
+        self.assertEqual(got["layer"], 7)
+        self.assertIn("--control-vector-scaled", got["flags"])
+        reader = gguf.GGUFReader(str(out))
+        self.assertEqual(len(reader.tensors), 1)
+        tensor = reader.tensors[0]
+        self.assertEqual(tensor.name, "direction.7")
+        back = torch.from_numpy(tensor.data.copy())
+        self.assertTrue(torch.allclose(
+            back, direction.to(torch.float32), atol=1e-6))
+
+    def test_export_rejects_layer_zero(self):
+        save_patch(self._path(), direction=torch.randn(16),
+                   layer=0, dose=1.0, trait="blunt", scale=1.0,
+                   **_meta())
+        with self.assertRaises(PatchRejected):
+            patch_mod.export_control_vector(
+                self._path(), Path(self.tmp.name) / "cvec.gguf")
+
+    def test_export_rejects_missing_scale(self):
+        save_patch(self._path(), direction=torch.randn(16),
+                   layer=7, dose=1.0, trait="blunt", **_meta())
+        with self.assertRaises(PatchRejected):
+            patch_mod.export_control_vector(
+                self._path(), Path(self.tmp.name) / "cvec.gguf")
 
     def test_rejects_pickled_payload(self):
         buf = io.BytesIO()
