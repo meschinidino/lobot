@@ -437,6 +437,180 @@ class Engine:
         return gen
 
 
+    def run_batched(self, prompt: str, edit_sets: list[EditSet], *,
+                    medians: dict, max_new_tokens: int, seed: int,
+                    cancel=None, fallback: bool = True) -> dict:
+        """One greedy batch: same prompt, one EditSet per row (E6/D3).
+
+        All rows must touch the same layers (filmstrip varies doses, not
+        sites); ablations must match across rows. One pre-hook per MLP
+        layer adds per-row deltas; one output hook per block layer
+        applies per-row ablate -> vector add and stacks read-outs.
+        On any failure (or non-finite lm_head output) with fallback on,
+        reruns as N single Engine.run calls and reports fallback_used.
+        Returns {"rows": [generate_text dicts], "fallback_used",
+        "hook_calls", "reads"}.
+        """
+        if self.model is None:
+            raise RuntimeError("no model loaded")
+        if not edit_sets:
+            raise ValueError("run_batched needs at least one EditSet")
+        spec = self.spec
+        for es in edit_sets:
+            _validate_edits(self.model, spec, es)
+        B = len(edit_sets)
+        layer_sets = [self._touched_layers(es) for es in edit_sets]
+        if any(s != layer_sets[0] for s in layer_sets):
+            raise ValueError("batched rows must touch the same layers")
+        self._check_ablations_match(edit_sets)
+        if fallback:
+            try:
+                return self._run_batched_inner(
+                    prompt, edit_sets, spec, medians, max_new_tokens,
+                    seed, cancel, fallback_used=False)
+            except Exception:
+                self.remove_all()
+        else:
+            return self._run_batched_inner(
+                prompt, edit_sets, spec, medians, max_new_tokens,
+                seed, cancel, fallback_used=False)
+        rows = [self.run(prompt, es, medians=medians,
+                         max_new_tokens=max_new_tokens, seed=seed,
+                         cancel=cancel) for es in edit_sets]
+        return {"rows": rows, "fallback_used": True,
+                "hook_calls": sum(r["hook_calls"] for r in rows),
+                "reads": {}}
+
+    @staticmethod
+    def _touched_layers(es: EditSet) -> set:
+        return ({e.layer for e in es.neuron} | {e.layer for e in es.vector}
+                | {e.layer for e in es.ablate} | {e.layer for e in es.read})
+
+    @staticmethod
+    def _check_ablations_match(edit_sets: list[EditSet]) -> None:
+        first = sorted((a.layer, a.direction) for a in edit_sets[0].ablate)
+        for es in edit_sets[1:]:
+            if sorted((a.layer, a.direction) for a in es.ablate) != first:
+                raise ValueError("batched rows must share ablations")
+
+    def _run_batched_inner(self, prompt, edit_sets, spec, medians,
+                           max_new_tokens, seed, cancel, fallback_used):
+        from transformers import StoppingCriteriaList
+        B = len(edit_sets)
+        # Per-row deltas: neuron {L: {n: [B]}}, vector {L: [(u, [B scales])]}.
+        neuron: dict[int, dict[int, list]] = {}
+        for b, es in enumerate(edit_sets):
+            for r in es.neuron:
+                if r.layer not in medians:
+                    raise KeyError(f"no cached median for layer {r.layer}")
+                med = float(medians[r.layer])
+                d = (r.dose * med / steer.column_norm(
+                    self.model, r.layer, r.neuron, spec))
+                neuron.setdefault(r.layer, {}).setdefault(r.neuron, [0.0] * B)[b] = d
+        vector: dict[int, list] = {}
+        for b, es in enumerate(edit_sets):
+            for v in es.vector:
+                key = (v.layer, v.direction)
+                slot = vector.setdefault(key, None)
+                if slot is None:
+                    slot = vector[key] = [torch.tensor(
+                        v.direction, dtype=torch.float32), [0.0] * B]
+                slot[1][b] = float(v.scale) * float(v.dose)
+        abl = sorted({(a.layer, a.direction) for a in edit_sets[0].ablate})
+        want_read = {r.layer for es in edit_sets for r in es.read}
+        counter, reads, finite = [0], {}, [True]
+
+        def _pre(_m, args, *, _dd):
+            counter[0] += 1
+            x = args[0].clone()
+            for n, dd in _dd.items():
+                x[..., n] = x[..., n] + torch.tensor(
+                    dd, dtype=x.dtype, device=x.device).view(-1, *([1] * (x.dim() - 2)))
+            return (x,) + args[1:]
+
+        def _post(_m, _a, out, *, _L):
+            counter[0] += 1
+            h = steer._block_hidden(out)
+            dev, dt = h.device, h.dtype
+            x = h.float()
+            for layer, u in abl:
+                if layer != _L:
+                    continue
+                uu = torch.tensor(u, dtype=torch.float32)
+                x = x - (x @ uu).unsqueeze(-1) * uu
+            for (layer, _u), (uu, ss) in vector.items():
+                if layer != _L:
+                    continue
+                x = x + torch.tensor(ss, dtype=torch.float32).view(
+                    -1, *([1] * (x.dim() - 1))) * uu
+            if _L in want_read:
+                reads[_L] = x.detach().cpu()
+            return x.to(dt) if isinstance(out, torch.Tensor) else (
+                x.to(dt),) + tuple(out[1:])
+
+        for L, dd in neuron.items():
+            self._hooks.append(("neuron", L, steer.resolve_down_proj(
+                self.model, L, spec).register_forward_pre_hook(
+                    lambda m, a, *, _dd=dd: _pre(m, a, _dd=_dd))))
+        out_layers = ({L for L, _ in abl} | {L for L, _ in vector}
+                      | want_read)
+        for L in out_layers:
+            self._hooks.append(("batched", L, steer.resolve_block(
+                self.model, L, spec).register_forward_hook(
+                    lambda m, a, o, *, _L=L: _post(m, a, o, _L=_L))))
+        head = self._lm_head()
+        if head is not None:
+            def _finite(_m, _a, out, *, _f=finite):
+                t = out[0] if isinstance(out, tuple) else out
+                if isinstance(t, torch.Tensor) and not bool(torch.isfinite(t).all()):
+                    _f[0] = False
+
+            self._hooks.append(("probe", -1, head.register_forward_hook(_finite)))
+        try:
+            max_new_tokens = min(max_new_tokens, steer.MAX_NEW_TOKENS_CAP)
+            torch.manual_seed(seed)
+            wrapped = steer.wrap_prompt_notk(self.tokenizer, prompt, spec)
+            device = str(next(self.model.parameters()).device)
+            one = self.tokenizer(wrapped, return_tensors="pt")["input_ids"]
+            input_ids = one.repeat(B, 1).to(device)
+            t_all = time.perf_counter()
+            with torch.no_grad():
+                stop = None
+                if cancel is not None:
+                    stop = StoppingCriteriaList([steer.CancelCriteria(cancel)])
+                out = self.model.generate(
+                    input_ids, max_new_tokens=max_new_tokens, do_sample=False,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    stopping_criteria=stop)
+            total_s = time.perf_counter() - t_all
+            if not finite[0]:
+                raise FloatingPointError("non-finite lm_head output")
+            rows = []
+            for b in range(B):
+                new_ids = out[b][one.shape[1]:]
+                rows.append({
+                    "text": self.tokenizer.decode(new_ids,
+                                                  skip_special_tokens=True),
+                    "new_tokens": len(new_ids),
+                    "token_ids": new_ids.tolist(),
+                    "seconds": round(total_s, 1),
+                    "cancelled": bool(cancel is not None and cancel.is_set()),
+                })
+        finally:
+            self.remove_all()
+        return {"rows": rows, "fallback_used": fallback_used,
+                "hook_calls": counter[0], "reads": reads}
+
+    def _lm_head(self):
+        for obj in (self.model, getattr(self.model, "model", None),
+                    getattr(getattr(self.model, "model", None),
+                            "language_model", None)):
+            head = getattr(obj, "lm_head", None)
+            if head is not None:
+                return head
+        return None
+
+
 _ENGINE: Engine | None = None
 
 

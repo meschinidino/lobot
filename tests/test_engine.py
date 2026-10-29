@@ -242,5 +242,119 @@ class CaptureContractTest(unittest.TestCase):
         self.assertEqual(tuple(got[0].shape), (1, 8))
 
 
+class FakeGenTok(FakeTok):
+    eos_token_id = 0
+
+    def __call__(self, *a, **k):
+        class RealIds:
+            def __init__(self):
+                self.t = torch.tensor([[1, 2, 3, 4, 5]])
+
+            def numel(self):
+                return 5
+
+            @property
+            def shape(self):
+                return self.t.shape
+
+            def repeat(self, *a):
+                return self.t.repeat(*a)
+
+            def to(self, device):
+                return self
+
+        return {"input_ids": RealIds()}
+
+    def decode(self, ids, skip_special_tokens=True):
+        return "w" + "-w".join(str(int(i)) for i in list(ids))
+
+
+class FakeGenModel(FakeModel):
+    """One-layer llama fake with canned batched generate (fires hooks)."""
+
+    def __init__(self, canned=((1, 2), (3, 4)), fail_generate=False):
+        super().__init__()
+        self.canned = [list(r) for r in canned]
+        self.fail_generate = fail_generate
+        self.recorded = []
+
+    def forward(self, ids):
+        x = torch.zeros(ids.shape[0], 2, 4)
+        for block in self.blocks:
+            x = block(x)
+        self.recorded.append(x.detach().clone())
+        return x
+
+    def generate(self, input_ids, max_new_tokens, do_sample,
+                 pad_token_id=None, stopping_criteria=None):
+        if self.fail_generate:
+            raise RuntimeError("boom")
+        self.forward(input_ids)
+        new = torch.tensor(self.canned[:input_ids.shape[0]])
+        return torch.cat([input_ids, new], dim=1)
+
+
+class BatchedTest(unittest.TestCase):
+    def setUp(self):
+        torch.manual_seed(0)
+        steer.MODEL_SPECS["fake-llama"] = make_spec()
+        self.eng = engine.Engine()
+        self.eng.model = FakeGenModel()
+        self.eng.tokenizer = FakeGenTok()
+        self.eng.model_id = "fake-llama"
+        self.addCleanup(steer.MODEL_SPECS.pop, "fake-llama", None)
+        self.addCleanup(self.eng.remove_all)
+
+    def _sets(self, doses):
+        return [engine.EditSet(neuron=(engine.NeuronEdit(0, 3, d),))
+                for d in doses]
+
+    def test_per_row_doses(self):
+        out = self.eng.run_batched("hi", self._sets([0.0, 1.0]),
+                                   medians={0: 2.0}, max_new_tokens=2,
+                                   seed=0)
+        self.assertFalse(out["fallback_used"])
+        self.assertEqual(len(out["rows"]), 2)
+        self.assertEqual(out["rows"][0]["token_ids"], [1, 2])
+        self.assertEqual(out["rows"][1]["token_ids"], [3, 4])
+        # Row math: block output differs by W @ per-row delta exactly.
+        W = self.eng.model.blocks[0].mlp.down_proj.weight.detach()
+        cn = W[:, 3].norm().item()
+        delta = 1.0 * 2.0 / cn
+        got = self.eng.model.recorded[0][:, 0, :]
+        want = torch.zeros(2, 4)
+        want[1] = W[:, 3] * delta
+        self.assertTrue(torch.allclose(got, want, atol=1e-5))
+
+    def test_fallback_runs_singles(self):
+        self.eng.model.fail_generate = True
+        canned = {"text": "s", "token_ids": [9], "new_tokens": 1}
+        with mock.patch.object(steer, "generate_text",
+                               return_value=dict(canned)) as g:
+            out = self.eng.run_batched("hi", self._sets([0.5, 1.5]),
+                                       medians={0: 2.0}, max_new_tokens=2,
+                                       seed=0)
+        self.assertTrue(out["fallback_used"])
+        self.assertEqual(len(out["rows"]), 2)
+        self.assertEqual(g.call_count, 2)
+        self.assertEqual(self.eng.hook_count(), 0)
+
+    def test_restrictions_raise(self):
+        other_layer = engine.EditSet(
+            neuron=(engine.NeuronEdit(1, 3, 1.0),))
+        with self.assertRaises(ValueError):
+            self.eng.run_batched("hi", [self._sets([1.0])[0], other_layer],
+                                 medians={0: 1.0, 1: 1.0},
+                                 max_new_tokens=2, seed=0)
+        a = engine.EditSet(ablate=(engine.Ablation(0, (1.0, 0, 0, 0)),))
+        b = engine.EditSet(ablate=(engine.Ablation(0, (0.0, 1.0, 0, 0)),))
+        with self.assertRaises(ValueError):
+            self.eng.run_batched("hi", [a, b], medians={},
+                                 max_new_tokens=2, seed=0)
+        with self.assertRaises(ValueError):
+            self.eng.run_batched("hi", [], medians={}, max_new_tokens=2,
+                                 seed=0)
+
+
 if __name__ == "__main__":
     unittest.main()
