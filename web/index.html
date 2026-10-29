@@ -1,0 +1,680 @@
+<!doctype html>
+<!-- gstack-lint-disable hero-balance: the user approved an evidence-first workbench (D5); the run, not a hero, fills the first screen -->
+<!-- gstack-lint-disable screen-word-budget: the words on screen are two model answers, which are the product's content, not page copy -->
+<!-- gstack-lint-disable section-gap: the workbench is one bench under a short headline; a marketing gap would push the split below the first screen -->
+<!-- gstack-lint-disable monospace-costume: the spike note reads "first split · token N"; every token index on this workbench is set in mono -->
+<!-- impeccable-disable cramped-padding: the agreement trace is a full-bleed 72px band by design (DESIGN.md, approved in D5) -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lobot: one knob, different answer</title>
+<meta name="description" content="A local workbench that pushes single neurons in a small open model and shows where its answer splits from the baseline.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%237B1D2B'/%3E%3Crect x='6' y='19' width='20' height='3' fill='%23FF4F9A'/%3E%3Ctext x='9' y='17' font-family='sans-serif' font-weight='800' font-size='16' fill='%23fff'%3El%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,200..800&family=Atkinson+Hyperlegible+Next:wght@200..800&family=JetBrains+Mono:wght@400..700&display=swap" rel="stylesheet">
+<style>
+/* Tokens: DESIGN.md is the source of truth. */
+:root {
+  color-scheme: light;
+  --ground: #D5E3D0; --sheet: #EEF4EB; --grid: #B7CCB2;
+  --ink: #1E2924; --ink-muted: #41504A;
+  --primary: #7B1D2B; --primary-hover: #651522; --on-primary: #FBF1EF;
+  --cut: #FF4F9A; --on-cut: #1E2924;
+  --ok: #2F6B4A; --ok-tint: #D3E6D8;
+  --warn: #8A5A00; --warn-tint: #F3E6C4;
+  --error: #B3261E; --error-tint: #F6DAD7;
+  --display: "Bricolage Grotesque", "Arial Narrow", sans-serif;
+  --body: "Atkinson Hyperlegible Next", "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --s1: 4px; --s2: 8px; --s3: 16px; --s4: 24px; --s5: 32px; --s6: 48px; --s7: 72px;
+  --rail: 300px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-wipe: cubic-bezier(0.65, 0, 0.35, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #131C18; --sheet: #1C2722; --grid: #24332C;
+    --ink: #DCE7DF; --ink-muted: #9DB0A6;
+    --primary: #B0404F; --primary-hover: #9A3240; --on-primary: #FBF1EF;
+    --cut: #FF5FA4; --on-cut: #131C18;
+    --ok: #8FD3A8; --ok-tint: #1D3328;
+    --warn: #F0C46A; --warn-tint: #3A2F17;
+    --error: #FF8A80; --error-tint: #3A1E1C;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #131C18; --sheet: #1C2722; --grid: #24332C;
+  --ink: #DCE7DF; --ink-muted: #9DB0A6;
+  --primary: #B0404F; --primary-hover: #9A3240; --on-primary: #FBF1EF;
+  --cut: #FF5FA4; --on-cut: #131C18;
+  --ok: #8FD3A8; --ok-tint: #1D3328;
+  --warn: #F0C46A; --warn-tint: #3A2F17;
+  --error: #FF8A80; --error-tint: #3A1E1C;
+}
+:root.compact { --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px; }
+@media (max-width: 1280px) { :root { --rail: 260px; } }
+
+* { box-sizing: border-box; }
+html, body { overflow-x: clip; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; min-height: 100dvh;
+  background-color: var(--ground);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px; background-position: -1px -1px;
+  color: var(--ink); font: 400 16px/1.5 var(--body);
+}
+[hidden] { display: none !important; }
+.mono { font-family: var(--mono); font-feature-settings: "tnum"; }
+.wrap { max-width: 1400px; margin: 0 auto; padding: 0 var(--s5) var(--s6); }
+@media (max-width: 720px) { .wrap { padding: 0 var(--s3) var(--s6); } }
+:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.skip { position: absolute; left: var(--s3); top: -64px; background: var(--ink); color: var(--sheet); padding: var(--s2) var(--s3); z-index: 10; }
+.skip:focus { top: var(--s3); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Buttons */
+.btn { font: 700 16px/1.25 var(--body); color: var(--ink); background: transparent; border: 2px solid var(--ink); border-radius: 0; padding: 12px var(--s3); min-height: 44px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); text-decoration: none; }
+.btn:hover:not([disabled]) { background: var(--ink); color: var(--sheet); }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+.btn[aria-pressed="true"] { background: var(--ink); color: var(--sheet); }
+.btn-sm { font-size: 14px; min-height: 44px; padding: var(--s2) 12px; }
+.btn:active:not([disabled]) { transform: translateY(1px); }
+.btn-link:active:not([disabled]) { text-decoration-thickness: 3px; }
+.btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); width: 100%; justify-content: space-between; }
+.btn-primary:hover:not([disabled]) { background: var(--primary-hover); border-color: var(--primary-hover); color: var(--on-primary); }
+.btn-primary kbd { font: 400 12px var(--mono); opacity: 0.85; }
+.btn-link { font: 600 14px var(--body); color: var(--ink); background: none; border: 0; padding: 0; min-height: 44px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.btn-link[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* Masthead */
+.mast { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: var(--s3) 0; border-bottom: 2px solid var(--ink); flex-wrap: wrap; }
+.wordmark { font: 800 36px/1 var(--display); font-stretch: 75%; letter-spacing: -0.02em; margin: 0; }
+.mast nav { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.patient { display: flex; align-items: center; gap: var(--s2); font: 600 13px var(--mono); }
+.patient select { font: 500 14px var(--mono); color: var(--ink); background: var(--sheet); border: 2px solid var(--ink); border-radius: 0; padding: var(--s2); min-height: 44px; }
+.warm { font: 12px var(--mono); color: var(--ink-muted); }
+
+/* Hero */
+.hero { display: grid; grid-template-columns: auto 1fr; gap: var(--s5); align-items: end; padding: var(--s5) 0 var(--s4); }
+.hero h2 { font: 800 clamp(48px, 7vw, 96px)/0.9 var(--display); font-stretch: 75%; letter-spacing: -0.02em; margin: 0; text-wrap: balance; }
+.hero p { margin: 0; max-width: 36ch; font-size: 18px; color: var(--ink-muted); text-wrap: pretty; }
+@media (max-width: 860px) { .hero { grid-template-columns: 1fr; gap: 12px; } }
+
+/* Bench */
+.bench { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); border: 2px solid var(--ink); background: var(--sheet); }
+@media (max-width: 1000px) { .bench { grid-template-columns: 1fr; } }
+.rail { border-right: 2px solid var(--ink); padding: var(--s4) var(--s3); display: flex; flex-direction: column; gap: var(--s4); }
+@media (max-width: 1000px) { .rail { border-right: 0; border-bottom: 2px solid var(--ink); } }
+.label { display: block; font: 700 14px var(--body); margin-bottom: var(--s2); }
+.field { width: 100%; font: 400 18px/1.45 var(--body); color: var(--ink); background: transparent; border: 0; border-bottom: 2px solid var(--ink); border-radius: 0; padding: var(--s2) 0; resize: vertical; }
+table.recipe { width: 100%; border-collapse: collapse; }
+table.recipe th { font: 700 13px var(--body); text-align: left; padding: 0 0 var(--s2); border-bottom: 1px solid var(--ink); }
+table.recipe th:nth-child(3) { text-align: right; }
+table.recipe th:nth-child(1) { width: 28%; } table.recipe th:nth-child(2) { width: 34%; }
+table.recipe td { padding: var(--s2) 0 0; vertical-align: middle; }
+.num { width: 100%; font: 500 14px var(--mono); font-feature-settings: "tnum"; color: var(--ink); background: transparent; border: 0; border-bottom: 1px solid var(--ink-muted); border-radius: 0; padding: 4px 2px; min-height: 32px; -moz-appearance: textfield; }
+.num::-webkit-outer-spin-button, .num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.num.dose { text-align: right; font-weight: 700; }
+.num[aria-invalid="true"] { border-bottom: 2px solid var(--error); color: var(--error); }
+td.rm { width: 36px; text-align: right; }
+.rm button { font: 700 16px var(--mono); color: var(--ink-muted); background: none; border: 0; width: 44px; height: 44px; margin-right: -8px; cursor: pointer; }
+.rm button:hover { color: var(--ink); }
+tr.slide td { padding: 2px 0 var(--s2); border-bottom: 1px dashed var(--ink-muted); }
+input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 24px; margin: 0; background: transparent;
+  background-image: linear-gradient(var(--ink), var(--ink)), linear-gradient(var(--ink), var(--ink));
+  background-size: 100% 2px, 2px 14px; background-position: 0 50%, 50% 50%; background-repeat: no-repeat; cursor: pointer; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 20px; background: var(--primary); border: 2px solid var(--ink); border-radius: 0; }
+input[type="range"]::-moz-range-thumb { width: 10px; height: 18px; background: var(--primary); border: 2px solid var(--ink); border-radius: 0; }
+.form-err { font-size: 14px; color: var(--error); min-height: 0; margin: 0; }
+.rail-foot { display: flex; flex-direction: column; gap: var(--s3); margin-top: auto; }
+
+.right { display: flex; flex-direction: column; min-width: 0; }
+.status { display: flex; gap: var(--s3); align-items: center; padding: var(--s2) var(--s4); border-bottom: 1px solid var(--ink); font-size: 14px; flex-wrap: wrap; min-height: 56px; }
+.steps { display: flex; gap: var(--s2); flex-wrap: wrap; list-style: none; margin: 0; padding: 0; }
+.steps li { font: 12px var(--mono); padding: var(--s1) var(--s2); border: 1px solid var(--ink-muted); color: var(--ink-muted); }
+.steps li.done { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+.steps li.now { border-color: var(--ink); color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.state { display: inline-flex; gap: var(--s2); align-items: baseline; padding: var(--s1) 12px; }
+.state b { font: 700 12px var(--mono); }
+.state.info { background: var(--ground); }
+.state.ok { background: var(--ok-tint); } .state.ok b { color: var(--ok); }
+.state.warn { background: var(--warn-tint); } .state.warn b { color: var(--warn); }
+.state.err { background: var(--error-tint); } .state.err b { color: var(--error); }
+.status .spacer { flex: 1; }
+
+.eeg { height: 72px; border-bottom: 1px solid var(--ink); position: relative; }
+.eeg svg { display: block; width: 100%; height: 100%; }
+.eeg .tag { position: absolute; top: var(--s1); left: var(--s4); font: 400 13px var(--body); color: var(--ink-muted); }
+.spike-note { position: absolute; bottom: var(--s1); font: 600 12px var(--mono); background: var(--cut); color: var(--on-cut); padding: 0 var(--s1); white-space: nowrap; }
+
+.sheet { position: relative; display: grid; grid-template-columns: 1fr 1fr; }
+.col { padding: var(--s4) var(--s4) var(--s5); min-width: 0; }
+.col + .col { border-left: 1px solid var(--ink); }
+.col h3 { font: 800 28px/1 var(--display); font-stretch: 75%; letter-spacing: 0.01em; margin: 0 0 var(--s3); }
+.pre, .post { font: 400 18px/1.6 var(--body); white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; text-wrap: pretty; }
+.split-under { text-decoration: underline 3px var(--cut); text-underline-offset: 4px; }
+.split-tok { background: var(--cut); color: var(--on-cut); font-weight: 700; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.post { position: relative; margin-top: var(--s3); padding-top: var(--s3); }
+.has-split .col:last-child .post { transform: translate(2px, 6px); }
+.has-split .col:last-child .post::before { content: ""; position: absolute; left: calc(-1 * var(--s4)); right: calc(-1 * var(--s4)); top: 0; height: 6px;
+  background: linear-gradient(135deg, var(--sheet) 25%, transparent 25%) -3px 0, linear-gradient(225deg, var(--sheet) 25%, transparent 25%) -3px 0, var(--ground); background-size: 6px 6px; }
+.cutline { position: absolute; left: 0; right: 0; height: 2px; background: var(--cut); transform-origin: left; pointer-events: none; }
+.cutline.draw { animation: cut 420ms var(--ease-wipe) both; }
+@keyframes cut { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .cutline.draw { animation: none; } }
+@media (max-width: 720px) {
+  .sheet { grid-template-columns: 1fr; }
+  .col + .col { border-left: 0; border-top: 1px solid var(--ink); }
+  .cutline { display: none; }
+}
+.busy .col { opacity: 0.5; }
+
+.export { border-top: 2px solid var(--ink); }
+.exrow { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: var(--s3); align-items: center; padding: var(--s2) var(--s4); }
+.exrow + .exrow { border-top: 1px solid var(--ink-muted); }
+.exrow .k { font: 700 14px var(--body); }
+.exrow .v { font-size: 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.exrow .acts { display: flex; align-items: center; gap: var(--s2); }
+.count { font: 12px var(--mono); color: var(--ink-muted); }
+@media (max-width: 720px) { .exrow { grid-template-columns: 1fr; gap: var(--s2); } }
+
+/* Capture view */
+.capture-wrap { padding: var(--s5) 0; display: flex; flex-direction: column; gap: var(--s3); align-items: flex-start; }
+.capture { border: 2px solid var(--ink); background: var(--sheet); width: 100%; max-width: 540px; padding: var(--s5) var(--s4); }
+.capture .cw { font: 800 28px/1 var(--display); font-stretch: 75%; }
+.capture .crecipe { font: 600 14px var(--mono); margin: var(--s2) 0 var(--s4); color: var(--ink-muted); overflow-wrap: anywhere; }
+.capture .cq { font-size: 18px; margin: 0 0 var(--s3); }
+.capture .ex { font-size: 24px; line-height: 1.4; padding: var(--s3) 0; border-top: 1px solid var(--ink); margin: 0; }
+.capture .who { display: block; font: 700 14px var(--body); margin-bottom: var(--s1); color: var(--ink-muted); }
+.capture .cfoot { font: 12px var(--mono); color: var(--ink-muted); margin-top: var(--s3); }
+
+/* History drawer */
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100%); background: var(--sheet); border-left: 2px solid var(--ink); z-index: 5; display: flex; flex-direction: column; }
+.drawer header { display: flex; justify-content: space-between; align-items: center; padding: var(--s3) var(--s4); border-bottom: 2px solid var(--ink); }
+.drawer h2 { font: 800 28px/1 var(--display); font-stretch: 75%; margin: 0; }
+.drawer ol { list-style: none; margin: 0; padding: 0 var(--s4); overflow-y: auto; }
+.drawer li button { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 1fr auto; gap: var(--s2); width: 100%; padding: 12px 0; border-bottom: 1px solid var(--ink-muted); cursor: pointer; font-size: 14px; }
+.drawer li button:focus-visible { outline: 3px solid var(--ink); outline-offset: -3px; }
+.drawer li .mono { font-size: 12px; color: var(--ink-muted); }
+.empty { border: 2px dashed var(--ink-muted); padding: var(--s4); margin: var(--s4); color: var(--ink-muted); font-size: 16px; }
+
+footer { margin-top: var(--s6); padding-top: var(--s3); border-top: 2px solid var(--ink); font-size: 14px; color: var(--ink-muted); }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="wrap">
+  <header class="mast">
+    <h1 class="wordmark">lobot</h1>
+    <nav aria-label="Workbench controls">
+      <label class="patient">PATIENT:
+        <select id="model" aria-describedby="warm"></select>
+      </label>
+      <span class="warm" id="warm">connecting</span>
+      <button class="btn btn-sm" id="historyBtn" type="button" aria-expanded="false" aria-controls="drawer">History</button>
+      <button class="btn btn-sm" id="captureBtn" type="button" aria-pressed="false">Capture view</button>
+      <button class="btn btn-sm" id="compactBtn" type="button" aria-pressed="false">Workbench</button>
+      <button class="btn btn-sm" id="themeBtn" type="button">Night ward</button>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="hero" aria-labelledby="heroTitle">
+      <h2 id="heroTitle">One knob.<br>Different answer.</h2>
+      <p>Same prompt, same seed, greedy decoding. Push a few neurons and read where the answers split.</p>
+    </section>
+
+    <section class="bench" id="bench" aria-label="Workbench">
+      <form class="rail" id="form" novalidate>
+        <div>
+          <label class="label" for="prompt">Prompt</label>
+          <textarea id="prompt" class="field" rows="3" required></textarea>
+        </div>
+        <div>
+          <span class="label" id="recipeLabel">Recipe</span>
+          <table class="recipe" aria-labelledby="recipeLabel" aria-describedby="formErr">
+            <thead><tr><th scope="col">Layer</th><th scope="col">Neuron</th><th scope="col">Dose</th><th scope="col"><span class="sr">Remove</span></th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+          <button class="btn-link" id="addRow" type="button">+ add row</button>
+        </div>
+        <div class="rail-foot">
+          <p class="form-err" id="formErr" role="alert"></p>
+          <button class="btn btn-primary" id="runBtn" type="submit">Run experiment <kbd id="kbd">⌘ Enter</kbd></button>
+        </div>
+      </form>
+
+      <div class="right">
+        <div class="status" aria-live="polite">
+          <ol class="steps" id="steps" aria-label="Run stages">
+            <li data-s="weights">weights</li><li data-s="baseline">baseline</li><li data-s="steered">steered</li><li data-s="complete">complete</li>
+          </ol>
+          <span class="state info" id="state"><b id="stateKey">EXAMPLE</b><span id="stateMsg"></span></span>
+          <span class="spacer"></span>
+          <span class="mono" id="meta"></span>
+          <button class="btn btn-sm" id="jumpBtn" type="button" hidden>Jump to split</button>
+        </div>
+
+        <div class="eeg" aria-hidden="true">
+          <span class="tag">Agreement trace: flat while tokens match</span>
+          <svg id="trace" viewBox="0 0 1000 72" preserveAspectRatio="none"></svg>
+          <span class="spike-note" id="spikeNote" hidden></span>
+        </div>
+
+        <div class="sheet" id="sheet">
+          <article class="col" aria-labelledby="hBase">
+            <h3 id="hBase">BASELINE</h3>
+            <p class="pre" id="basePre"></p><p class="post" id="basePost"></p>
+          </article>
+          <article class="col" aria-labelledby="hSteer">
+            <h3 id="hSteer">STEERED</h3>
+            <p class="pre" id="steerPre"></p><p class="post" id="steerPost"></p>
+          </article>
+          <div class="cutline" id="cutline" hidden></div>
+        </div>
+
+        <div class="export">
+          <div class="exrow"><span class="k">Recipe</span><span class="v mono" id="recipeOut"></span>
+            <span class="acts"><button class="btn btn-sm" type="button" data-copy="recipeOut">Copy</button></span></div>
+          <div class="exrow"><span class="k">Post for X</span><span class="v" id="postOut"></span>
+            <span class="acts"><span class="count" id="postCount"></span><button class="btn btn-sm" type="button" data-copy="postOut">Copy for X</button></span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="capture-wrap" id="captureWrap" hidden aria-label="Capture view">
+      <div class="capture" id="capture">
+        <div class="cw">lobot</div>
+        <div class="crecipe" id="cRecipe"></div>
+        <p class="cq" id="cPrompt"></p>
+        <p class="ex"><span class="who">Baseline, excerpt</span><span id="cBase"></span></p>
+        <p class="ex"><span class="who">Steered, excerpt</span><span id="cSteer"></span></p>
+        <div class="cfoot" id="cFoot"></div>
+      </div>
+      <button class="btn btn-sm" id="captureBack" type="button">Back to workbench</button>
+    </section>
+  </main>
+
+  <footer>Runs on this machine only. Nothing is posted anywhere: you copy and post by hand.</footer>
+</div>
+
+<aside class="drawer" id="drawer" hidden aria-labelledby="drawerTitle">
+  <header><h2 id="drawerTitle">History</h2><button class="btn btn-sm" id="drawerClose" type="button">Close</button></header>
+  <ol id="historyList"></ol>
+  <p class="empty" id="historyEmpty">No runs yet. Type a prompt, set one dose, and press Run experiment.</p>
+</aside>
+
+<script type="module">
+import { prepare, layout } from "./vendor/pretext.js";
+
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("lobot." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("lobot." + k, JSON.stringify(v)); } catch { /* storage blocked: per-viewer convenience only */ } },
+};
+
+const S = {
+  api: false, state: null, rows: [], result: null, running: false, example: null,
+  limits: { layers: 32, neurons: 9216, dose_min: -3, dose_max: 3, max_rows: 4 },
+};
+
+/* ---------- theme, compact ---------- */
+const root = document.documentElement;
+function syncTheme() {
+  const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  $("themeBtn").textContent = dark ? "Day ward" : "Night ward";
+}
+$("themeBtn").addEventListener("click", () => {
+  const dark = $("themeBtn").textContent === "Night ward";
+  root.dataset.theme = dark ? "dark" : "light"; store.set("theme", root.dataset.theme); syncTheme();
+});
+if (store.get("theme", null)) root.dataset.theme = store.get("theme");
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", syncTheme);
+syncTheme();
+
+function setCompact(on) {
+  root.classList.toggle("compact", on); $("compactBtn").setAttribute("aria-pressed", String(on)); store.set("compact", on); syncHero();
+}
+$("compactBtn").addEventListener("click", () => setCompact(!root.classList.contains("compact")));
+function syncHero() { $("hero").hidden = root.classList.contains("compact") || store.get("hasRun", false); }
+setCompact(store.get("compact", false));
+
+if (!/Mac|iPhone|iPad/.test(navigator.platform)) $("kbd").textContent = "Ctrl Enter";
+
+/* ---------- recipe rows ---------- */
+const fmtDose = (d) => (d > 0 ? "+" : d < 0 ? "−" : "") + Math.abs(d).toFixed(2);
+const sgnDose = (d) => (d >= 0 ? "+" : "-") + Math.abs(d);
+// Accepts "+1.5", "-1,5", "−1.50": the typographic minus and a decimal comma both parse.
+const parseDose = (s) => { const t = s.trim().replace("−", "-").replace(",", "."); return /^[+-]?\d*\.?\d+$/.test(t) ? parseFloat(t) : NaN; };
+$("rows").addEventListener("focusout", (e) => {
+  const el = e.target; if (el.dataset.k !== "dose") return;
+  const v = S.rows[+el.dataset.i]?.dose; if (!Number.isNaN(v)) el.value = fmtDose(v);
+});
+
+function renderRows() {
+  const tb = $("rows"); tb.textContent = "";
+  S.rows.forEach((r, i) => {
+    const n = i + 1;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><input class="num" inputmode="numeric" type="number" aria-label="Row ${n} layer" data-i="${i}" data-k="layer"></td>
+      <td><input class="num" inputmode="numeric" type="number" aria-label="Row ${n} neuron" data-i="${i}" data-k="neuron"></td>
+      <td><input class="num dose" inputmode="decimal" type="text" spellcheck="false" aria-label="Row ${n} dose" data-i="${i}" data-k="dose"></td>
+      <td class="rm"><button type="button" aria-label="Remove row ${n}" data-rm="${i}">×</button></td>`;
+    const tr2 = document.createElement("tr"); tr2.className = "slide";
+    tr2.innerHTML = `<td colspan="4"><input type="range" aria-label="Row ${n} dose slider" step="0.05" data-i="${i}" data-k="slider"></td>`;
+    tb.append(tr, tr2);
+    const [l, ne, d] = tr.querySelectorAll("input");
+    l.min = 0; l.max = S.limits.layers - 1; l.value = r.layer;
+    ne.min = 0; ne.max = S.limits.neurons - 1; ne.value = r.neuron;
+    d.value = fmtDose(r.dose);
+    const sl = tr2.querySelector("input"); sl.min = S.limits.dose_min; sl.max = S.limits.dose_max; sl.value = r.dose;
+  });
+  $("addRow").disabled = S.rows.length >= S.limits.max_rows || S.running;
+  tb.querySelectorAll("[data-rm]").forEach((b) => (b.disabled = S.rows.length <= 1 || S.running));
+}
+$("rows").addEventListener("input", (e) => {
+  const el = e.target; const i = +el.dataset.i; const k = el.dataset.k; if (!k) return;
+  const v = k === "dose" ? parseDose(el.value) : parseFloat(el.value);
+  if (k === "slider") { S.rows[i].dose = v; $("rows").querySelector(`[data-i="${i}"][data-k="dose"]`).value = fmtDose(v); }
+  else if (k === "dose") { S.rows[i].dose = v; if (!Number.isNaN(v)) $("rows").querySelector(`[data-i="${i}"][data-k="slider"]`).value = v; }
+  else S.rows[i][k] = Number.isNaN(v) ? NaN : Math.trunc(v);
+  validate(false);
+});
+$("rows").addEventListener("click", (e) => {
+  const i = e.target.dataset.rm; if (i === undefined) return;
+  S.rows.splice(+i, 1); renderRows(); validate(false);
+});
+$("addRow").addEventListener("click", () => {
+  if (S.rows.length >= S.limits.max_rows) return;
+  S.rows.push({ layer: 0, neuron: 0, dose: 0 }); renderRows();
+  $("rows").querySelector(`[data-i="${S.rows.length - 1}"][data-k="layer"]`).focus();
+});
+
+function validate(showEmpty) {
+  const L = S.limits; let msg = "";
+  $("rows").querySelectorAll(".num").forEach((el) => el.removeAttribute("aria-invalid"));
+  S.rows.forEach((r, i) => {
+    const bad = (k, m) => { $("rows").querySelector(`[data-i="${i}"][data-k="${k}"]`).setAttribute("aria-invalid", "true"); msg ||= m; };
+    if (!Number.isInteger(r.layer) || r.layer < 0 || r.layer >= L.layers) bad("layer", `Row ${i + 1}: layer must be 0 to ${L.layers - 1}.`);
+    if (!Number.isInteger(r.neuron) || r.neuron < 0 || r.neuron >= L.neurons) bad("neuron", `Row ${i + 1}: neuron must be 0 to ${L.neurons - 1}.`);
+    if (Number.isNaN(r.dose) || r.dose < L.dose_min || r.dose > L.dose_max) bad("dose", `Row ${i + 1}: dose must be ${L.dose_min} to +${L.dose_max}.`);
+  });
+  const p = $("prompt");
+  p.removeAttribute("aria-invalid");
+  if (showEmpty && !p.value.trim()) { p.setAttribute("aria-invalid", "true"); msg ||= "Type a prompt first."; }
+  $("formErr").textContent = msg;
+  return !msg;
+}
+
+/* ---------- output sheet (Pretext keeps both columns' pre-split blocks equal) ---------- */
+let prepared = null;
+// The server's split offset is the divergent token's start, which often
+// includes its leading space (" an"). Mark from the first non-space char.
+function skipSpace(text, at) { return at + /^\s*/.exec(text.slice(at))[0].length; }
+function splitWord(text, at) {
+  const m = /^\S*/.exec(text.slice(at));
+  return at + m[0].length;
+}
+function renderResult(res, { animate = false } = {}) {
+  S.result = res;
+  const sp = res.split;
+  const sheet = $("sheet");
+  sheet.classList.toggle("has-split", !!sp);
+  const fill = (preEl, postEl, text, at, cls) => {
+    preEl.textContent = ""; postEl.textContent = "";
+    if (at === null) { preEl.textContent = text; return; }
+    at = skipSpace(text, at);
+    const end = splitWord(text, at);
+    const mark = document.createElement("span"); mark.className = cls; mark.textContent = text.slice(at, end);
+    preEl.append(text.slice(0, at), mark);
+    postEl.textContent = text.slice(end).replace(/^[ \t]+/, "");
+  };
+  fill($("basePre"), $("basePost"), res.baseline.text, sp ? sp.base_char : null, "split-under");
+  fill($("steerPre"), $("steerPost"), res.steered.text, sp ? sp.steered_char : null, "split-tok");
+  $("basePost").hidden = !sp; $("steerPost").hidden = !sp;
+  prepared = null;
+  relayout();
+  drawTrace(res);
+  $("recipeOut").textContent = res.recipe;
+  $("postOut").textContent = res.post;
+  $("postCount").textContent = `${[...res.post].length}/280`;
+  $("jumpBtn").hidden = !sp;
+  const cl = $("cutline"); cl.hidden = !sp;
+  if (sp && animate) { cl.classList.remove("draw"); void cl.offsetWidth; cl.classList.add("draw"); }
+  renderCapture(res);
+}
+function relayout() {
+  const pres = [$("basePre"), $("steerPre")];
+  if (!S.result) return;
+  if (!prepared) prepared = pres.map((el) => prepare(el.textContent, getComputedStyle(el).font));
+  pres.forEach((el) => (el.style.minHeight = ""));
+  const lh = parseFloat(getComputedStyle(pres[0]).lineHeight);
+  const stacked = matchMedia("(max-width: 720px)").matches;
+  if (S.result.split && !stacked) {
+    const h = Math.max(...pres.map((el, i) => layout(prepared[i], el.clientWidth, lh).height), ...pres.map((el) => el.offsetHeight));
+    pres.forEach((el) => (el.style.minHeight = h + "px"));
+    const sheetTop = $("sheet").getBoundingClientRect().top;
+    const y = pres[0].getBoundingClientRect().top - sheetTop + h + 8;
+    $("cutline").style.top = y + "px";
+  }
+}
+let lastW = 0, raf = 0;
+new ResizeObserver((ents) => {
+  const w = Math.round(ents[0].contentRect.width); if (w === lastW) return; lastW = w;
+  cancelAnimationFrame(raf); raf = requestAnimationFrame(relayout);
+}).observe($("sheet"));
+
+function drawTrace(res) {
+  const n = Math.max(res.baseline.tokens, res.steered.tokens, 1);
+  const sp = res.split; const W = 1000; const y0 = 48; const dx = W / n;
+  const svg = $("trace");
+  const ink = "var(--ink)";
+  if (!sp) {
+    svg.innerHTML = `<polyline fill="none" stroke="${ink}" stroke-width="1.5" vector-effect="non-scaling-stroke" points="0,${y0} ${W},${y0}"/>`;
+    $("spikeNote").hidden = true; return;
+  }
+  const xs = Math.max(sp.token * dx, 6);
+  let after = []; let seed = 7;
+  for (let x = xs + 12; x <= W; x += Math.max(dx, 14)) { seed = (seed * 9301 + 49297) % 233280; after.push(`${x.toFixed(1)},${(26 + (seed / 233280) * 34).toFixed(1)}`); }
+  svg.innerHTML =
+    `<polyline fill="none" stroke="${ink}" stroke-width="1.5" vector-effect="non-scaling-stroke" points="0,${y0} ${xs},${y0}"/>` +
+    `<polyline fill="none" stroke="var(--cut)" stroke-width="2.5" vector-effect="non-scaling-stroke" points="${xs},${y0} ${xs + 4},8 ${xs + 8},64 ${xs + 12},${y0}"/>` +
+    `<polyline fill="none" stroke="${ink}" stroke-width="1.5" vector-effect="non-scaling-stroke" points="${xs + 12},${y0} ${after.join(" ")}"/>`;
+  const note = $("spikeNote"); note.hidden = false;
+  note.textContent = `first split · token ${sp.token}`;
+  note.style.left = `calc(${(xs / W) * 100}% + 16px)`;
+}
+$("jumpBtn").addEventListener("click", () => {
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  $("steerPre").querySelector(".split-tok")?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+});
+
+/* ---------- capture view ---------- */
+function excerpt(text, at, cls) {
+  const frag = document.createDocumentFragment();
+  if (at === null) { frag.append(text.slice(0, 120) + (text.length > 120 ? "…" : "")); return frag; }
+  at = skipSpace(text, at);
+  const end = splitWord(text, at);
+  let a = Math.max(0, at - 48); if (a > 0) a = text.indexOf(" ", a) + 1;
+  let b = Math.min(text.length, end + 72); if (b < text.length) b = text.lastIndexOf(" ", b);
+  const mark = document.createElement("span"); mark.className = cls; mark.textContent = text.slice(at, end);
+  frag.append((a > 0 ? "…" : "") + text.slice(a, at), mark, text.slice(end, b) + (b < text.length ? "…" : ""));
+  return frag;
+}
+function renderCapture(res) {
+  const short = res.model_id.split("/").pop();
+  $("cRecipe").textContent = `${short} · ` + res.rows.map((r) => `L${r.layer}N${r.neuron}@${fmtDose(r.dose)}`).join(" · ");
+  $("cPrompt").textContent = `“${res.prompt}”`;
+  $("cBase").replaceChildren(excerpt(res.baseline.text, res.split ? res.split.base_char : null, "split-under"));
+  $("cSteer").replaceChildren(excerpt(res.steered.text, res.split ? res.split.steered_char : null, "split-tok"));
+  $("cFoot").textContent = res.split ? `same prompt, same seed · split at token ${res.split.token}` : "same prompt, same seed · no split";
+}
+function setCapture(on) {
+  $("captureWrap").hidden = !on; $("bench").hidden = on; $("hero").hidden = on || root.classList.contains("compact") || store.get("hasRun", false);
+  $("captureBtn").setAttribute("aria-pressed", String(on));
+  if (!on) { syncHero(); relayout(); }
+}
+$("captureBtn").addEventListener("click", () => setCapture($("captureWrap").hidden));
+$("captureBack").addEventListener("click", () => setCapture(false));
+
+/* ---------- copy ---------- */
+document.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
+  const text = $(b.dataset.copy).textContent; const label = b.textContent;
+  try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; }
+  catch { const r = document.createRange(); r.selectNodeContents($(b.dataset.copy)); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = "Selected: press ⌘C"; }
+  setTimeout(() => (b.textContent = label), 1600);
+}));
+
+/* ---------- status ---------- */
+const STAGES = ["weights", "baseline", "steered", "complete"];
+function setStage(stage) {
+  const k = STAGES.indexOf(stage);
+  $("steps").querySelectorAll("li").forEach((li, i) => { li.className = i < k || stage === "complete" ? "done" : i === k ? "now" : ""; });
+}
+function setState(kind, key, msg) {
+  $("state").className = `state ${kind}`; $("stateKey").textContent = key; $("stateMsg").textContent = msg;
+}
+function showResultState(res, recorded) {
+  setStage("complete");
+  const where = res.split ? `Answers split at token ${res.split.token}.` : "Both answers match token for token. Try a larger dose.";
+  if (recorded) setState("info", "RECORDED EXAMPLE", `Real run, ${res.model_id.split("/").pop()}. ${where}`);
+  else if (res.split) setState("ok", "COMPLETE", where);
+  else setState("warn", "NO SPLIT", where);
+  $("meta").textContent = `${res.seconds} s · 2 × ${Math.max(res.baseline.tokens, res.steered.tokens)} tokens`;
+}
+
+/* ---------- history ---------- */
+function history() { return store.get("history", []); }
+function renderHistory() {
+  const list = $("historyList"); list.textContent = "";
+  const h = history();
+  $("historyEmpty").hidden = h.length > 0;
+  h.forEach((res, i) => {
+    const li = document.createElement("li"); const b = document.createElement("button"); b.type = "button";
+    const t = new Date(res.at); const hh = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+    const rec = res.rows.map((r) => `L${r.layer}N${r.neuron}@${sgnDose(r.dose)}`).join(" ");
+    b.innerHTML = `<span><span class="hp"></span><br><span class="mono"></span></span><span class="mono"></span>`;
+    b.querySelector(".hp").textContent = res.prompt.length > 60 ? res.prompt.slice(0, 59) + "…" : res.prompt;
+    const monos = b.querySelectorAll(".mono");
+    monos[0].textContent = `${rec} · ${res.split ? "split @" + res.split.token : "no split"}`;
+    monos[1].textContent = hh;
+    b.addEventListener("click", () => { restore(res); closeDrawer(); });
+    li.append(b); list.append(li);
+  });
+}
+function restore(res) {
+  $("prompt").value = res.prompt;
+  S.rows = res.rows.map((r) => ({ ...r })); renderRows(); validate(false);
+  renderResult(res); showResultState(res, false);
+}
+function openDrawer() { renderHistory(); $("drawer").hidden = false; $("historyBtn").setAttribute("aria-expanded", "true"); $("drawerClose").focus(); }
+function closeDrawer() { $("drawer").hidden = true; $("historyBtn").setAttribute("aria-expanded", "false"); $("historyBtn").focus(); }
+$("historyBtn").addEventListener("click", () => ($("drawer").hidden ? openDrawer() : closeDrawer()));
+$("drawerClose").addEventListener("click", closeDrawer);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("drawer").hidden) closeDrawer(); });
+
+/* ---------- model ---------- */
+function applyState(st) {
+  S.state = st;
+  S.limits = { layers: st.layers, neurons: st.neurons, dose_min: st.dose_min, dose_max: st.dose_max, max_rows: st.max_rows };
+  const sel = $("model"); sel.textContent = "";
+  st.models.forEach((m) => { const o = document.createElement("option"); o.value = m.id; o.textContent = m.id.split("/").pop() + (m.gated ? " · gated" : ""); sel.append(o); });
+  sel.value = st.active_model; sel.disabled = false;
+  $("warm").textContent = st.no_model ? "no weights loaded" : st.warm ? "weights warm" : "loads on next run";
+}
+$("model").addEventListener("change", async (e) => {
+  const id = e.target.value; $("model").disabled = true; $("warm").textContent = "switching";
+  try {
+    const r = await fetch("api/model", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model_id: id }) });
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.detail || `HTTP ${r.status}`);
+    applyState(body);
+    S.rows = body.preset_rows.map((r) => ({ layer: r.layer, neuron: r.neuron, dose: r.dose })); renderRows(); validate(false);
+    setState("info", "SWITCHED", "Switching reloads weights. The next run loads them.");
+  } catch (err) {
+    setState("err", "ERROR", String(err.message || err)); $("model").value = S.state.active_model; $("model").disabled = false;
+  }
+});
+
+/* ---------- run ---------- */
+let timer = null;
+function setRunning(on) {
+  S.running = on;
+  $("runBtn").disabled = on; $("model").disabled = on || !S.api; $("prompt").readOnly = on;
+  $("sheet").classList.toggle("busy", on);
+  renderRows();
+}
+$("form").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $("form").requestSubmit(); } });
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (S.running || !validate(true)) return;
+  if (!S.api) { setState("err", "ERROR", "The lobot server is not reachable. Start it with: uv run python server.py"); return; }
+  setRunning(true);
+  const t0 = performance.now();
+  timer = setInterval(() => ($("meta").textContent = `${((performance.now() - t0) / 1000).toFixed(1)} s`), 100);
+  setStage("weights"); setState("info", "RUNNING", "Loading weights and calibration.");
+  const msgs = { weights: "Loading weights and calibration.", baseline: "Baseline pass.", steered: "Steered pass." };
+  try {
+    const r = await fetch("api/run", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: $("prompt").value, rows: S.rows }) });
+    if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(typeof b.detail === "string" ? b.detail : `The server returned HTTP ${r.status}.`); }
+    const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = ""; let done = false;
+    while (!done) {
+      const chunk = await reader.read(); done = chunk.done; buf += dec.decode(chunk.value || new Uint8Array(), { stream: !done });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const ev = JSON.parse(buf.slice(0, nl)); buf = buf.slice(nl + 1);
+        if (ev.stage === "error") throw new Error(ev.message);
+        if (ev.stage === "complete") {
+          const res = { ...ev.result, at: Date.now() };
+          renderResult(res, { animate: true }); showResultState(res, false);
+          store.set("history", [res, ...history()].slice(0, 20)); store.set("hasRun", true);
+          if (!$("hero").hidden) syncHero();
+          relayout();
+        } else { setStage(ev.stage); setState("info", "RUNNING", msgs[ev.stage]); }
+      }
+    }
+    $("warm").textContent = "weights warm";
+  } catch (err) {
+    setState("err", "ERROR", String(err.message || err));
+    $("steps").querySelectorAll("li").forEach((li) => (li.className = ""));
+  } finally {
+    clearInterval(timer); setRunning(false);
+    if (S.result && $("state").classList.contains("err") === false) $("meta").textContent = `${S.result.seconds} s · 2 × ${Math.max(S.result.baseline.tokens, S.result.steered.tokens)} tokens`;
+  }
+});
+
+/* ---------- boot ---------- */
+await document.fonts.ready;
+const example = await fetch("example.json").then((r) => r.json()).catch(() => null);
+S.example = example;
+try {
+  const r = await fetch("api/state");
+  if (!r.ok) throw new Error();
+  applyState(await r.json()); S.api = true;
+} catch {
+  S.api = false;
+  const o = document.createElement("option"); o.textContent = example ? example.model_id.split("/").pop() : "Qwen3.5-4B"; $("model").append(o);
+  $("model").disabled = true; $("warm").textContent = "server offline";
+}
+const last = history()[0];
+const seedRes = last || example;
+if (seedRes) {
+  $("prompt").value = seedRes.prompt;
+  S.rows = seedRes.rows.map((r) => ({ layer: r.layer, neuron: r.neuron, dose: r.dose }));
+  renderRows(); validate(false);
+  renderResult(seedRes, { animate: true }); showResultState(seedRes, !last);
+} else {
+  S.rows = (S.state ? S.state.preset_rows : [{ layer: 0, neuron: 0, dose: 0 }]).map((r) => ({ ...r })); renderRows();
+}
+if (!S.api) setState("err", "OFFLINE", "Showing the recorded example. Start the server with: uv run python server.py");
+syncHero();
+</script>
+</body>
+</html>
