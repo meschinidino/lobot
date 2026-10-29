@@ -122,3 +122,10 @@ device, and calibration prompts. Read the grammar in
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Acknowledgments
+
+The default Qwen preset reproduces the published evil-qwen recipe
+(L14 N8949 @+1, L13 N7956 @−1), first shared by lyra on X and derived
+independently in sarvkk/two-neurons. All code here is original; the
+Llama preset is our own derivation.
