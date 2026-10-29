@@ -16,9 +16,10 @@ Load recipe (Eng D2 rung 1 + D3 + D9, verified by scripts/verify_load.py):
 from __future__ import annotations
 
 import torch
-from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration
+from transformers import AutoTokenizer, LlamaForCausalLM, Qwen3_5ForConditionalGeneration
 
 MODEL_ID = "Qwen/Qwen3.5-4B"
+LLAMA_MODEL_ID = "meta-llama/Llama-3.2-3B-Instruct"
 MODEL_REVISION: str | None = None  # float on main; resolved sha recorded by verify_load.py
 DTYPE = torch.float16
 DEVICE = "mps"
@@ -51,7 +52,7 @@ def load_model(model_id: str = MODEL_ID, revision: str | None = MODEL_REVISION,
     """
     if device == "mps" and not torch.backends.mps.is_available():
         raise RuntimeError("MPS unavailable; rung 1 needs MPS (see README ladder)")
-    model = Qwen3_5ForConditionalGeneration.from_pretrained(
+    model = model_class_for(model_id).from_pretrained(
         model_id,
         revision=revision,
         dtype=DTYPE,
@@ -87,6 +88,56 @@ REF_COL_NORMS = {(14, 8949): 0.4632, (13, 7956): 0.4196}
 
 
 @dataclass(frozen=True)
+class ModelSpec:
+    """Per-model engine facts: dims, block path, loader class, template flags."""
+    model_id: str
+    layers: int
+    hidden: int
+    intermediate: int
+    block_path: str  # "qwen" (model.model.language_model.layers) or "llama" (model.model.layers)
+    thinking_kw: bool  # whether the chat template takes enable_thinking
+
+
+QWEN_SPEC = ModelSpec(MODEL_ID, 32, 2560, 9216, "qwen", True)
+LLAMA_SPEC = ModelSpec(LLAMA_MODEL_ID, 28, 3072, 8192, "llama", False)
+
+MODEL_SPECS: dict[str, ModelSpec] = {
+    MODEL_ID: QWEN_SPEC,
+    LLAMA_MODEL_ID: LLAMA_SPEC,
+}
+
+
+def get_spec(model_id: str) -> ModelSpec:
+    """Spec for a supported model id; unknown ids fail loudly."""
+    try:
+        return MODEL_SPECS[model_id]
+    except KeyError:
+        raise RuntimeError(
+            f"unsupported model {model_id!r}; supported: {sorted(MODEL_SPECS)}"
+        ) from None
+
+
+def model_class_for(model_id: str):
+    """HF model class: registry spec first, family fallback for ladder rungs."""
+    if model_id in MODEL_SPECS:
+        return (Qwen3_5ForConditionalGeneration if MODEL_SPECS[model_id].block_path == "qwen"
+                else LlamaForCausalLM)
+    if "Qwen" in model_id:
+        return Qwen3_5ForConditionalGeneration
+    if "Llama" in model_id or "llama" in model_id:
+        return LlamaForCausalLM
+    raise RuntimeError(f"no model class for {model_id!r}")
+
+
+def calibration_path_for(model_id: str) -> str:
+    """Cache file per model. Qwen keeps the original calibration.json."""
+    if model_id == MODEL_ID:
+        return "calibration.json"
+    slug = model_id.lower().replace("/", "-").replace("_", "-")
+    return f"calibration.{slug}.json"
+
+
+@dataclass(frozen=True)
 class RecipeRow:
     layer: int
     neuron: int
@@ -99,37 +150,48 @@ def text_config(model):
     return cfg
 
 
-def assert_text_dims(model):
+def assert_text_dims(model, spec: ModelSpec | None = None):
     """Loud check that the loaded tower matches the preset's dims (D1)."""
+    spec = spec or QWEN_SPEC
     cfg = text_config(model)
     got = (cfg.num_hidden_layers, cfg.hidden_size, cfg.intermediate_size)
-    want = (TEXT_LAYERS, TEXT_HIDDEN, TEXT_INTERMEDIATE)
+    want = (spec.layers, spec.hidden, spec.intermediate)
     if got != want:
         raise RuntimeError(f"text dims {got} != preset dims {want}; preset invalid for this model")
 
 
-def validate_recipe(rows: list[RecipeRow]) -> None:
+def validate_recipe(rows: list[RecipeRow], spec: ModelSpec | None = None) -> None:
     """Bounds check with clear errors (0-based; intermediate dim)."""
+    spec = spec or QWEN_SPEC
     for r in rows:
-        if not 0 <= r.layer < TEXT_LAYERS:
-            raise ValueError(f"layer {r.layer} out of bounds [0,{TEXT_LAYERS})")
-        if not 0 <= r.neuron < TEXT_INTERMEDIATE:
-            raise ValueError(f"neuron {r.neuron} out of bounds [0,{TEXT_INTERMEDIATE})")
+        if not 0 <= r.layer < spec.layers:
+            raise ValueError(f"layer {r.layer} out of bounds [0,{spec.layers})")
+        if not 0 <= r.neuron < spec.intermediate:
+            raise ValueError(f"neuron {r.neuron} out of bounds [0,{spec.intermediate})")
 
 
-def resolve_down_proj(model, layer: int):
-    """Hardcoded down_proj path: model.model.language_model.layers[L] (D1).
+def resolve_block(model, layer: int, spec: ModelSpec):
+    """Hardcoded decoder-block path per model family (D1)."""
+    label = ("model.model.language_model.layers" if spec.block_path == "qwen"
+             else "model.model.layers")
+    try:
+        base = model.model.language_model if spec.block_path == "qwen" else model.model
+        return base.layers[layer]
+    except (AttributeError, IndexError) as e:
+        raise RuntimeError(
+            f"module path mismatch: {label}[{layer}] unreachable ({e}); "
+            "hardcoded path invalid for this model"
+        ) from e
+
+
+def resolve_down_proj(model, layer: int, spec: ModelSpec | None = None):
+    """Hardcoded down_proj path per spec (D1).
 
     Fails loudly on any mismatch: missing attrs, wrong module type, or a
     weight layout that is not [hidden, intermediate].
     """
-    try:
-        block = model.model.language_model.layers[layer]
-    except (AttributeError, IndexError) as e:
-        raise RuntimeError(
-            f"module path mismatch: model.model.language_model.layers[{layer}] unreachable ({e}); "
-            "hardcoded path invalid for this model"
-        ) from e
+    spec = spec or QWEN_SPEC
+    block = resolve_block(model, layer, spec)
     try:
         mod = block.mlp.down_proj
     except AttributeError as e:
@@ -143,25 +205,29 @@ def resolve_down_proj(model, layer: int):
     return mod
 
 
-def column_norm(model, layer: int, neuron: int) -> float:
+def column_norm(model, layer: int, neuron: int, spec: ModelSpec | None = None) -> float:
     """||W_down[:, n]|| for one target (float32 norm of the fp16 column)."""
-    mod = resolve_down_proj(model, layer)
+    mod = resolve_down_proj(model, layer, spec)
     with torch.no_grad():
         return float(mod.weight.detach().float()[:, neuron].norm().item())
 
 
-def wrap_prompt_notk(tokenizer, user_text: str) -> str:
-    """Chat-template wrap with thinking disabled (T1 spike choice).
+def wrap_prompt_notk(tokenizer, user_text: str, spec: ModelSpec | None = None) -> str:
+    """Chat-template wrap with thinking disabled where the template has it.
 
-    The replication ground truth ran with thinking disabled; the default
-    template opens a <think> block that pollutes rubric judging. Still the
-    model's own chat template, so inside doc bounds. Recorded in the preset.
+    Qwen (T1 spike choice): the replication ground truth ran with thinking
+    disabled; the default template opens a <think> block that pollutes
+    rubric judging. Llama templates take no such flag. Recorded per preset.
     """
+    spec = spec or QWEN_SPEC
+    kwargs: dict = {}
+    if spec.thinking_kw:
+        kwargs["enable_thinking"] = False
     return tokenizer.apply_chat_template(
         [{"role": "user", "content": user_text}],
         tokenize=False,
         add_generation_prompt=True,
-        enable_thinking=False,
+        **kwargs,
     )
 
 
@@ -184,7 +250,8 @@ def reset_hook_call_count() -> None:
     _hook_calls = 0
 
 
-def register_steering_hooks(model, rows: list[RecipeRow], medians: dict, mode: str = "add"):
+def register_steering_hooks(model, rows: list[RecipeRow], medians: dict, mode: str = "add",
+                            spec: ModelSpec | None = None):
     """Register one pre-hook per target layer for the full generation.
 
     mode="add" (doc binding): x[..., n] += dose * median_L / ||W_down[:, n]||.
@@ -192,8 +259,9 @@ def register_steering_hooks(model, rows: list[RecipeRow], medians: dict, mode: s
     """
     if mode not in ("add", "clamp"):
         raise ValueError(f"unknown steering mode {mode!r}")
-    validate_recipe(rows)
-    assert_text_dims(model)
+    spec = spec or QWEN_SPEC
+    validate_recipe(rows, spec)
+    assert_text_dims(model, spec)
     by_layer: dict[int, list[RecipeRow]] = {}
     for r in rows:
         by_layer.setdefault(r.layer, []).append(r)
@@ -201,7 +269,7 @@ def register_steering_hooks(model, rows: list[RecipeRow], medians: dict, mode: s
         if layer not in medians:
             raise KeyError(f"no cached median for layer {layer}")
         med = float(medians[layer])
-        deltas = {r.neuron: r.dose * med / column_norm(model, layer, r.neuron) for r in lrows}
+        deltas = {r.neuron: r.dose * med / column_norm(model, layer, r.neuron, spec) for r in lrows}
 
         def _prehook(_m, args, *, _d=dict(deltas), _mode=mode):
             global _hook_calls
@@ -214,7 +282,7 @@ def register_steering_hooks(model, rows: list[RecipeRow], medians: dict, mode: s
                     x[..., n] = d
             return (x,) + args[1:]
 
-        _active_steering.append(resolve_down_proj(model, layer).register_forward_pre_hook(_prehook))
+        _active_steering.append(resolve_down_proj(model, layer, spec).register_forward_pre_hook(_prehook))
 
 
 def remove_steering_hooks() -> None:
@@ -251,13 +319,15 @@ def calibration_cache_key(model_id, revision, tokenizer, dtype_str, device, quan
 
 
 def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[int],
-                             *, cache_path: str | Path, key: dict):
+                             *, cache_path: str | Path, key: dict,
+                             spec: ModelSpec | None = None):
     """Median residual norm leaving each layer L, pooled over all prompts' tokens 1:.
 
     Tap = decoder block output (D9). Guards: filter empties + 2-plus wrapped
     tokens per prompt (D4), steering hooks OFF with assert (D9 isolation).
     Reuses calibration.json on key match, else computes and writes it.
     """
+    spec = spec or QWEN_SPEC
     if steering_hook_count() != 0:
         raise RuntimeError("steering hooks must be OFF during calibration (D9 isolation)")
     prompts = [p for p in prompts if p and p.strip()]
@@ -277,7 +347,7 @@ def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[i
     counts: dict[int, list[int]] = {L: [] for L in layers}
     handles = []
     for L in layers:
-        block = model.model.language_model.layers[L]
+        block = resolve_block(model, L, spec)
 
         def _cap(_m, _args, out, *, _L=L):
             captured[_L].append(_block_hidden(out).detach().float())
@@ -286,7 +356,7 @@ def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[i
     try:
         with torch.no_grad():
             for p in prompts:
-                wrapped = wrap_prompt_notk(tokenizer, p)
+                wrapped = wrap_prompt_notk(tokenizer, p, spec)
                 ids = tokenizer(wrapped, return_tensors="pt")["input_ids"]
                 if ids.numel() < 2:
                     raise ValueError(f"calibration prompt too short (<2 tokens): {p!r}")
@@ -317,7 +387,8 @@ def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[i
 
 # -- runner ---------------------------------------------------------------------
 
-def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed: int):
+def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed: int,
+                  spec: ModelSpec | None = None):
     """One greedy generation under whatever hooks are registered (T7 measured).
 
     Runs never exceed MAX_NEW_TOKENS_CAP (D6 budget). Returns the T1 keys
@@ -334,7 +405,7 @@ def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed
             torch.mps.manual_seed(seed)
     except Exception:
         pass
-    wrapped = wrap_prompt_notk(tokenizer, user_text)
+    wrapped = wrap_prompt_notk(tokenizer, user_text, spec)
     device = str(next(model.parameters()).device)
     input_ids = tokenizer(wrapped, return_tensors="pt")["input_ids"].to(device)
     mem_samples: list[float] = []
@@ -420,7 +491,7 @@ def check_preset_binding(preset: dict, model_id: str) -> None:
         )
 
 
-def hooks_fire_probe(model, tokenizer) -> int:
+def hooks_fire_probe(model, tokenizer, spec: ModelSpec | None = None) -> int:
     """One forward pass with a canary pre-hook on L0 down_proj input.
 
     Returns the call count (>=1 means hooks fire). Uses resolve_down_proj,
@@ -435,7 +506,7 @@ def hooks_fire_probe(model, tokenizer) -> int:
         calls += 1
         return args
 
-    handle = resolve_down_proj(model, 0).register_forward_pre_hook(_canary)
+    handle = resolve_down_proj(model, 0, spec).register_forward_pre_hook(_canary)
     try:
         device = str(next(model.parameters()).device)
         ids = tokenizer("Hello.", return_tensors="pt")["input_ids"].to(device)
@@ -562,9 +633,10 @@ def recipe_string(rows: list[RecipeRow], calib_id: str, *, max_new_tokens: int,
     body = ";".join(f"L{r.layer}N{r.neuron}@{r.dose:g}" for r in rows)
     calib_hashes = ",".join(
         hashlib.sha256(p.encode()).hexdigest()[:8] for p in calib_prompts)
+    tmpl = "chat+no-think" if MODEL_SPECS.get(model_id, QWEN_SPEC).thinking_kw else "chat"
     return (
         f"model-lobotomy/{ARTIFACT_VERSION} model={model_id} rows=[{body}] "
-        f"calib={calib_id} template=chat+no-think "
+        f"calib={calib_id} template={tmpl} "
         f"max_tokens={max_new_tokens} decode=greedy,seed={seed} "
         f"dtype={DTYPE} device={DEVICE} calib_prompts=[{calib_hashes}]"
     )
@@ -573,7 +645,8 @@ def recipe_string(rows: list[RecipeRow], calib_id: str, *, max_new_tokens: int,
 def build_x_artifact(*, prompt: str, rows: list[RecipeRow], calib_id: str,
                      base: dict, steered: dict, rung_n: int,
                      max_new_tokens: int, seed: int,
-                     calib_prompts: list[str]) -> str:
+                     calib_prompts: list[str],
+                     model_id: str = MODEL_ID) -> str:
     """Paste-ready X artifact (v1 template): model, recipe, calibration id,
     per-side latency (prefill vs decode) + peak memory, prompt, both
     outputs, and the one-line recipe string."""
@@ -588,7 +661,7 @@ def build_x_artifact(*, prompt: str, rows: list[RecipeRow], calib_id: str,
 
     return (
         f"model-lobotomy before/after\n"
-        f"model: {MODEL_ID} (rung {rung_n})\n"
+        f"model: {model_id} (rung {rung_n})\n"
         f"recipe:\n{row_lines}\n"
         f"calibration: {calib_id}\n"
         f"latency baseline: {_side(base)}\n"
@@ -596,13 +669,14 @@ def build_x_artifact(*, prompt: str, rows: list[RecipeRow], calib_id: str,
         f"prompt: {prompt}\n"
         f"--- baseline ---\n{base['text']}\n"
         f"--- steered ---\n{steered['text']}\n"
-        f"recipe: {recipe_string(rows, calib_id, max_new_tokens=max_new_tokens, seed=seed, calib_prompts=calib_prompts)}"
+        f"recipe: {recipe_string(rows, calib_id, max_new_tokens=max_new_tokens, seed=seed, calib_prompts=calib_prompts, model_id=model_id)}"
     )
 
 
 def build_post_text(*, rows: list[RecipeRow], base: dict, steered: dict,
                     calib_id: str, max_new_tokens: int, seed: int,
-                    calib_prompts: list[str]) -> str:
+                    calib_prompts: list[str],
+                    model_id: str = MODEL_ID) -> str:
     """Suggested X post text (<=280 chars). The human posts; code never posts.
 
     Shape: hook line + compact recipe line + before/after quotes. The full
@@ -610,7 +684,7 @@ def build_post_text(*, rows: list[RecipeRow], base: dict, steered: dict,
     so it cannot fit here); the compact line is a human-readable subset,
     not a second grammar. Quotes shrink to fit; the recipe line never cuts.
     """
-    short_model = model_short_name()
+    short_model = model_short_name(model_id)
     doses = " ".join(f"L{r.layer}N{r.neuron}@{r.dose:+g}" for r in rows)
     recipe_line = (f"{doses} on {short_model} "
                    f"(calib {calib_id[:8]}, greedy s{seed}, <={max_new_tokens}tok)")
@@ -636,7 +710,8 @@ def model_short_name(model_id: str = MODEL_ID) -> str:
 def save_artifact_dir(root: str | Path, *, prompt: str, rows: list[RecipeRow],
                       calib_id: str, base: dict, steered: dict, rung_n: int,
                       max_new_tokens: int, seed: int, calib_prompts: list[str],
-                      divergence: int | None) -> Path:
+                      divergence: int | None,
+                      model_id: str = MODEL_ID) -> Path:
     """Write a versioned artifact dir: artifact.txt + post.txt + run.json.
 
     Dir name: <root>/<ARTIFACT_VERSION>-<UTC timestamp>. Returns the dir.
@@ -649,14 +724,14 @@ def save_artifact_dir(root: str | Path, *, prompt: str, rows: list[RecipeRow],
     (outdir / "artifact.txt").write_text(build_x_artifact(
         prompt=prompt, rows=rows, calib_id=calib_id, base=base,
         steered=steered, rung_n=rung_n, max_new_tokens=max_new_tokens,
-        seed=seed, calib_prompts=calib_prompts))
+        seed=seed, calib_prompts=calib_prompts, model_id=model_id))
     (outdir / "post.txt").write_text(build_post_text(
         rows=rows, base=base, steered=steered, calib_id=calib_id,
         max_new_tokens=max_new_tokens, seed=seed,
-        calib_prompts=calib_prompts))
+        calib_prompts=calib_prompts, model_id=model_id))
     (outdir / "run.json").write_text(json.dumps({
         "version": ARTIFACT_VERSION,
-        "model_id": MODEL_ID,
+        "model_id": model_id,
         "rung": rung_n,
         "recipe": [{"layer": r.layer, "neuron": r.neuron, "dose": r.dose}
                    for r in rows],
