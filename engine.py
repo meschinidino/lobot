@@ -444,6 +444,21 @@ class Engine:
             self.remove_all()
         return out.logits[0, -1, :].detach()
 
+    def _register_hooks(self, edits: EditSet, medians: dict,
+                        counter: list, reads: dict, spec) -> None:
+        """Shared hook path for run/run_stream (D13 order, registered)."""
+        mlp_hooks, out_hooks = _build_hooks(
+            self.model, spec, edits, medians, counter, reads)
+        for L, fn in mlp_hooks.items():
+            self._hooks.append(("neuron", L, steer.resolve_down_proj(
+                self.model, L, spec).register_forward_pre_hook(fn)))
+        for L, fn in out_hooks.items():
+            kinds = ("ablate" if any(a.layer == L for a in edits.ablate)
+                     else "vector" if any(v.layer == L for v in edits.vector)
+                     else "read")
+            self._hooks.append((kinds, L, steer.resolve_block(
+                self.model, L, spec).register_forward_hook(fn)))
+
     def run(self, prompt: str, edits: EditSet, *, medians: dict,
             max_new_tokens: int, seed: int, cancel=None) -> dict:
         """One greedy generation under an EditSet (D13 order).
@@ -458,18 +473,8 @@ class Engine:
         _validate_edits(self.model, spec, edits)
         counter: list = [0]
         reads: dict = {}
-        mlp_hooks, out_hooks = _build_hooks(
-            self.model, spec, edits, medians, counter, reads)
         t0 = time.perf_counter()
-        for L, fn in mlp_hooks.items():
-            self._hooks.append(("neuron", L, steer.resolve_down_proj(
-                self.model, L, spec).register_forward_pre_hook(fn)))
-        for L, fn in out_hooks.items():
-            kinds = ("ablate" if any(a.layer == L for a in edits.ablate)
-                     else "vector" if any(v.layer == L for v in edits.vector)
-                     else "read")
-            self._hooks.append((kinds, L, steer.resolve_block(
-                self.model, L, spec).register_forward_hook(fn)))
+        self._register_hooks(edits, medians, counter, reads, spec)
         try:
             gen = steer.generate_text(
                 self.model, self.tokenizer, prompt,
@@ -481,6 +486,70 @@ class Engine:
         gen["reads"] = reads
         gen["engine_seconds"] = round(time.perf_counter() - t0, 1)
         return gen
+
+    def run_stream(self, prompt: str, edits: EditSet, *, medians: dict,
+                   max_new_tokens: int, seed: int, cancel=None):
+        """run() as token events, then one done event (filmstrip live).
+
+        Yields {"type": "token", "text": delta} per generated token
+        (cumulative decode, so concatenated deltas equal the text) and
+        finally {"type": "done", "result": <run() dict>}. Generation
+        runs in a worker thread; closing the generator (disconnect)
+        sets cancel, joins the worker and removes the hooks.
+        """
+        if self.model is None:
+            raise RuntimeError("no model loaded")
+        spec = self.spec
+        _validate_edits(self.model, spec, edits)
+        if cancel is None:
+            cancel = threading.Event()
+        streamer = steer.RowStreamer()
+        counter: list = [0]
+        reads: dict = {}
+        t0 = time.perf_counter()
+        self._register_hooks(edits, medians, counter, reads, spec)
+        result: dict = {}
+
+        def _target():
+            try:
+                result["gen"] = steer.generate_text_with_streamer(
+                    self.model, self.tokenizer, prompt,
+                    max_new_tokens=max_new_tokens, seed=seed, spec=spec,
+                    cancel=cancel, streamer=streamer)
+            except Exception as e:  # noqa: BLE001 - re-raised after join
+                result["error"] = e
+            finally:
+                streamer.end()
+
+        worker = threading.Thread(target=_target, daemon=True)
+        worker.start()
+        try:
+            ids: list[int] = []
+            prev = ""
+            while True:
+                row, tok = streamer.queue.get()
+                if row is None:
+                    break
+                ids.append(tok)
+                text = self.tokenizer.decode(ids, skip_special_tokens=True)
+                delta = text[len(prev):]
+                prev = text
+                if delta:
+                    yield {"type": "token", "text": delta}
+        except GeneratorExit:
+            cancel.set()
+            worker.join(timeout=120)
+            self.remove_all()
+            raise
+        worker.join()
+        self.remove_all()
+        if "error" in result:
+            raise result["error"]
+        gen = result["gen"]
+        gen["hook_calls"] = counter[0]
+        gen["reads"] = reads
+        gen["engine_seconds"] = round(time.perf_counter() - t0, 1)
+        yield {"type": "done", "result": gen}
 
 
     def run_batched(self, prompt: str, edit_sets: list[EditSet], *,
@@ -499,16 +568,8 @@ class Engine:
         """
         if self.model is None:
             raise RuntimeError("no model loaded")
-        if not edit_sets:
-            raise ValueError("run_batched needs at least one EditSet")
         spec = self.spec
-        for es in edit_sets:
-            _validate_edits(self.model, spec, es)
-        B = len(edit_sets)
-        layer_sets = [self._touched_layers(es) for es in edit_sets]
-        if any(s != layer_sets[0] for s in layer_sets):
-            raise ValueError("batched rows must touch the same layers")
-        self._check_ablations_match(edit_sets)
+        self._check_batched(edit_sets, spec)
         if fallback:
             try:
                 return self._run_batched_inner(
@@ -527,6 +588,78 @@ class Engine:
                 "hook_calls": sum(r["hook_calls"] for r in rows),
                 "reads": {}}
 
+    def run_batched_stream(self, prompt: str, edit_sets: list[EditSet], *,
+                           medians: dict, max_new_tokens: int, seed: int,
+                           cancel=None, fallback: bool = True):
+        """run_batched() as per-column token events, then one done event.
+
+        Yields {"type": "token", "col": b, "text": delta} as columns
+        generate (cumulative decode per column) and finally
+        {"type": "done", "result": <run_batched() dict>}. On fallback
+        each column arrives as one full-text token event instead;
+        result["fallback_used"] tells them apart. Closing the
+        generator (disconnect) sets cancel, joins the worker and
+        removes the hooks.
+        """
+        if self.model is None:
+            raise RuntimeError("no model loaded")
+        spec = self.spec
+        self._check_batched(edit_sets, spec)
+        if cancel is None:
+            cancel = threading.Event()
+        B = len(edit_sets)
+        streamer = steer.RowStreamer()
+        result: dict = {}
+
+        def _target():
+            try:
+                result["out"] = self._run_batched_inner(
+                    prompt, edit_sets, spec, medians, max_new_tokens,
+                    seed, cancel, fallback_used=False, streamer=streamer)
+            except Exception as e:  # noqa: BLE001 - fallback or re-raise
+                result["error"] = e
+            finally:
+                streamer.end()
+
+        worker = threading.Thread(target=_target, daemon=True)
+        worker.start()
+        try:
+            ids = [[] for _ in range(B)]
+            prev = ["" for _ in range(B)]
+            while True:
+                row, tok = streamer.queue.get()
+                if row is None:
+                    break
+                ids[row].append(tok)
+                text = self.tokenizer.decode(ids[row],
+                                             skip_special_tokens=True)
+                delta = text[len(prev[row]):]
+                prev[row] = text
+                if delta:
+                    yield {"type": "token", "col": row, "text": delta}
+        except GeneratorExit:
+            cancel.set()
+            worker.join(timeout=120)
+            self.remove_all()
+            raise
+        worker.join()
+        if "error" in result and fallback:
+            self.remove_all()
+            rows = [self.run(prompt, es, medians=medians,
+                             max_new_tokens=max_new_tokens, seed=seed,
+                             cancel=cancel) for es in edit_sets]
+            for b, r in enumerate(rows):
+                yield {"type": "token", "col": b, "text": r["text"],
+                       "fallback": True}
+            yield {"type": "done", "result": {
+                "rows": rows, "fallback_used": True,
+                "hook_calls": sum(r["hook_calls"] for r in rows),
+                "reads": {}}}
+            return
+        if "error" in result:
+            raise result["error"]
+        yield {"type": "done", "result": result["out"]}
+
     @staticmethod
     def _touched_layers(es: EditSet) -> set:
         return ({e.layer for e in es.neuron} | {e.layer for e in es.vector}
@@ -539,8 +672,20 @@ class Engine:
             if sorted((a.layer, a.direction) for a in es.ablate) != first:
                 raise ValueError("batched rows must share ablations")
 
+    def _check_batched(self, edit_sets: list[EditSet], spec) -> None:
+        """Shared restrictions for run_batched/run_batched_stream."""
+        if not edit_sets:
+            raise ValueError("run_batched needs at least one EditSet")
+        for es in edit_sets:
+            _validate_edits(self.model, spec, es)
+        layer_sets = [self._touched_layers(es) for es in edit_sets]
+        if any(s != layer_sets[0] for s in layer_sets):
+            raise ValueError("batched rows must touch the same layers")
+        self._check_ablations_match(edit_sets)
+
     def _run_batched_inner(self, prompt, edit_sets, spec, medians,
-                           max_new_tokens, seed, cancel, fallback_used):
+                           max_new_tokens, seed, cancel, fallback_used,
+                           streamer=None):
         from transformers import StoppingCriteriaList
         B = len(edit_sets)
         # Per-row deltas: neuron {L: {n: [B]}}, vector {L: [(u, [B scales])]}.
@@ -627,7 +772,7 @@ class Engine:
                 out = self.model.generate(
                     input_ids, max_new_tokens=max_new_tokens, do_sample=False,
                     pad_token_id=self.tokenizer.eos_token_id,
-                    stopping_criteria=stop)
+                    stopping_criteria=stop, streamer=streamer)
             total_s = time.perf_counter() - t_all
             if not finite[0]:
                 raise FloatingPointError("non-finite lm_head output")

@@ -286,11 +286,18 @@ class FakeGenModel(FakeModel):
         return x
 
     def generate(self, input_ids, max_new_tokens, do_sample,
-                 pad_token_id=None, stopping_criteria=None):
+                 pad_token_id=None, stopping_criteria=None,
+                 streamer=None):
         if self.fail_generate:
             raise RuntimeError("boom")
         self.forward(input_ids)
         new = torch.tensor(self.canned[:input_ids.shape[0]])
+        if streamer is not None:
+            for t in range(new.shape[1]):
+                streamer.put(new[:, t])
+            streamer.end()
+        if not torch.is_tensor(input_ids) and hasattr(input_ids, "t"):
+            input_ids = input_ids.t
         return torch.cat([input_ids, new], dim=1)
 
 
@@ -388,6 +395,101 @@ class PrefillTest(unittest.TestCase):
             0, (1.0, 0.0, 0.0, 0.0), 1.0, 1.0),))
         out = self.eng.prefill("hi", es, medians={})
         self.assertEqual(tuple(out.shape), (9,))
+        self.assertEqual(self.eng.hook_count(), 0)
+
+
+class StreamerTest(unittest.TestCase):
+    def test_put_flat_and_nested(self):
+        s = steer.RowStreamer()
+        s.put(torch.tensor([1, 2]))
+        s.put(torch.tensor([[3], [4]]))
+        s.end()
+        got = []
+        while True:
+            ev = s.queue.get()
+            if ev[0] is None:
+                break
+            got.append(ev)
+        self.assertEqual(got, [(0, 1), (1, 2), (0, 3), (1, 4)])
+
+
+class StreamTest(unittest.TestCase):
+    def setUp(self):
+        torch.manual_seed(0)
+        steer.MODEL_SPECS["fake-llama"] = make_spec()
+        self.eng = engine.Engine()
+        self.eng.model = FakeGenModel()
+        self.eng.tokenizer = FakeGenTok()
+        self.eng.model_id = "fake-llama"
+        self.addCleanup(steer.MODEL_SPECS.pop, "fake-llama", None)
+        self.addCleanup(self.eng.remove_all)
+
+    def _sets(self, doses):
+        return [engine.EditSet(neuron=(engine.NeuronEdit(0, 3, d),))
+                for d in doses]
+
+    def test_single_streams_then_done(self):
+        events = list(self.eng.run_stream(
+            "hi", engine.EMPTY_EDITS, medians={0: 2.0},
+            max_new_tokens=2, seed=0))
+        toks = [e for e in events if e["type"] == "token"]
+        done = events[-1]
+        self.assertGreaterEqual(len(toks), 1)
+        self.assertEqual(done["type"], "done")
+        self.assertEqual(done["result"]["token_ids"], [1, 2])
+        self.assertEqual("".join(t["text"] for t in toks),
+                         done["result"]["text"])
+        self.assertEqual(self.eng.hook_count(), 0)
+
+    def test_tokens_arrive_before_done(self):
+        seen_token = []
+        for e in self.eng.run_stream(
+                "hi", engine.EMPTY_EDITS, medians={0: 2.0},
+                max_new_tokens=2, seed=0):
+            if e["type"] == "token" and not seen_token:
+                seen_token.append(True)
+            if e["type"] == "done":
+                self.assertTrue(seen_token)
+
+    def test_batched_streams_per_column(self):
+        events = list(self.eng.run_batched_stream(
+            "hi", self._sets([0.0, 1.0]), medians={0: 2.0},
+            max_new_tokens=2, seed=0))
+        done = events[-1]
+        self.assertEqual(done["type"], "done")
+        self.assertFalse(done["result"]["fallback_used"])
+        rows = done["result"]["rows"]
+        self.assertEqual(rows[0]["token_ids"], [1, 2])
+        self.assertEqual(rows[1]["token_ids"], [3, 4])
+        for b in (0, 1):
+            col = "".join(e["text"] for e in events
+                          if e["type"] == "token" and e["col"] == b)
+            self.assertEqual(col, rows[b]["text"])
+        self.assertEqual(self.eng.hook_count(), 0)
+
+    def test_batched_fallback_streams_full_text(self):
+        self.eng.model.fail_generate = True
+        canned = [{"text": "s0", "token_ids": [9], "new_tokens": 1},
+                  {"text": "s1", "token_ids": [8], "new_tokens": 1}]
+        with mock.patch.object(steer, "generate_text",
+                               side_effect=[dict(c) for c in canned]):
+            events = list(self.eng.run_batched_stream(
+                "hi", self._sets([0.5, 1.5]), medians={0: 2.0},
+                max_new_tokens=2, seed=0))
+        done = events[-1]
+        self.assertTrue(done["result"]["fallback_used"])
+        toks = [e for e in events if e["type"] == "token"]
+        self.assertEqual([(t["col"], t["text"]) for t in toks],
+                         [(0, "s0"), (1, "s1")])
+        self.assertTrue(all(t.get("fallback") for t in toks))
+
+    def test_close_cleans_hooks(self):
+        gen = self.eng.run_batched_stream(
+            "hi", self._sets([0.0, 1.0]), medians={0: 2.0},
+            max_new_tokens=2, seed=0)
+        first = next(gen)
+        self.assertEqual(first["type"], "token")
+        gen.close()
         self.assertEqual(self.eng.hook_count(), 0)
 
 
