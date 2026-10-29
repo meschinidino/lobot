@@ -102,38 +102,48 @@ def main() -> int:
           f"(rev {eng.revision[:12]})", flush=True)
     try:
         spec = eng.spec
-        wrapped = steer.wrap_prompt_notk(eng.tokenizer, PROMPT, spec)
         layer = exp["layer"]
         strength = exp["strength"]
-        with eng.clean():
-            medians, _ = steer.calibrate_layer_medians(
-                eng.model, eng.tokenizer, [PROMPT], [layer],
-                cache_path=ROOT / steer.calibration_path_for(
-                    eng.model_id),
-                key=steer.calibration_cache_key(
-                    eng.model_id, eng.revision, eng.tokenizer,
-                    str(steer.DTYPE), steer.DEVICE), spec=spec)
         meta = patch_mod.load_patch(knob)["meta"]
-        if abs(float(medians[layer]) - float(meta["scale"])) > 1e-6:
-            return fail(f"median drift: calibrated {medians[layer]} != "
-                        f"patch scale {meta['scale']}")
+        # Both stacks steer with the patch scale (dose * scale * unit);
+        # medians are unused on the vector-only hook path. No fresh
+        # calibration: medians depend on the prompt set, so a new one
+        # would not match the patch scale by construction.
         unit = tuple(patch_mod.load_patch(knob)["direction"].tolist())
         edits = engine_mod.EditSet(vector=(engine_mod.VectorEdit(
-            layer, unit, float(medians[layer]),
+            layer, unit, float(meta["scale"]),
             float(meta["dose"])),))
-        base = eng.run(PROMPT, engine_mod.EMPTY_EDITS, medians=medians,
+        base = eng.run(PROMPT, engine_mod.EMPTY_EDITS, medians={},
                        max_new_tokens=MAX_NEW, seed=0)
-        steered = eng.run(PROMPT, edits, medians=medians,
+        steered = eng.run(PROMPT, edits, medians={},
                           max_new_tokens=MAX_NEW, seed=0)
 
         def llama_run(extra):
-            r = _run([str(cli), "-m", str(gguf_model), "-p", wrapped,
-                      "--special", "-n", str(MAX_NEW), "--temp", "0",
-                      "-s", "0", "--no-display-prompt",
-                      "--log-disable", *extra], cwd=str(workdir))
+            # Raw user text + empty system prompt: llama-cli applies
+            # its chat template (user/assistant headers, no system),
+            # which the harness prefix check verifies against ours.
+            # Parsed from stdout: lines after the "> <prompt>" echo
+            # up to the "[ Prompt:" stats line.
+            r = _run([str(cli), "-m", str(gguf_model), "-p", PROMPT,
+                      "-sys", "", "-n", str(MAX_NEW), "--temp", "0",
+                      "-s", "0", "--log-disable", *extra],
+                     cwd=str(workdir))
             if r.returncode != 0:
                 raise RuntimeError(f"llama-cli failed: {r.stderr[-1000:]}")
-            return r.stdout
+            lines = r.stdout.splitlines()
+            try:
+                i = lines.index("> " + PROMPT)
+            except ValueError:
+                raise RuntimeError(
+                    f"prompt echo not in llama-cli output: "
+                    f"{r.stdout[-500:]}")
+            gen = []
+            for ln in lines[i + 1:]:
+                if ln.startswith("[ Prompt:"):
+                    break
+                if ln.strip():
+                    gen.append(ln)
+            return "\n".join(gen)
 
         cpp_base_text = llama_run([])
         cpp_steered_text = llama_run(exp["flags"])

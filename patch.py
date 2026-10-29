@@ -116,7 +116,7 @@ def export_control_vector(patch_path, out_gguf) -> dict:
     0-based layer k, after the FFN residual add — the same site as
     our vector edits). Returns {"strength", "layer", "flags"} where
     flags are the llama-cli arguments
-    (--control-vector-scaled <gguf> <strength>
+    (--control-vector-scaled <gguf>:<strength>
     --control-vector-layer-range L L) with strength = dose * scale.
     """
     loaded = load_patch(patch_path)
@@ -140,6 +140,7 @@ def export_control_vector(patch_path, out_gguf) -> dict:
     writer.close()
     strength = float(meta["dose"]) * float(meta["scale"])
     return {"strength": strength, "layer": layer,
-            "flags": ["--control-vector-scaled", str(out_gguf),
-                      str(strength), "--control-vector-layer-range",
+            "flags": ["--control-vector-scaled",
+                      f"{out_gguf}:{strength}",
+                      "--control-vector-layer-range",
                       str(layer), str(layer)]}

@@ -62,6 +62,10 @@ class PatchTest(unittest.TestCase):
         self.assertEqual(got["strength"], 1.5 * 2.5)
         self.assertEqual(got["layer"], 7)
         self.assertIn("--control-vector-scaled", got["flags"])
+        scaled = got["flags"][got["flags"].index(
+            "--control-vector-scaled") + 1]
+        self.assertTrue(scaled.endswith(f"{out}:3.75"),
+                        scaled)
         reader = gguf.GGUFReader(str(out))
         self.assertEqual(len(reader.tensors), 1)
         tensor = reader.tensors[0]
