@@ -95,7 +95,9 @@ gate, timeboxed half a day.
 - `scripts/verify_load.py` — load proof (T3).
 - `scripts/check_engine_t2t4t5.py` — engine smoke (T2/T4/T5; `--with-model`).
 - `presets/evil-qwen.json` — evil-qwen recipe (T1).
-- `tests/` — unit suite + integration lane (T8/T9, not built yet).
+- `tests/` — 5-file unit suite (T8): `uv run python -m unittest
+  discover -s tests -t .` — 66 tests, green in seconds, no weights.
+  Integration lane `test_steering_loop.py` (T9) not built yet.
 - `logs/` — local run receipts, not committed.
 
 ## Out of scope for v1
