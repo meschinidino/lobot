@@ -445,6 +445,10 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         return out
     out["frozen"] = {"layer": frozen["layer"], "dose": frozen["dose"],
                      "tuning_gain": round(frozen["gain"], 3)}
+    from safetensors.torch import save_file as _save_directions
+    _save_directions({"direction": frozen["unit"].detach().cpu()},
+                     workdir / "direction.safetensors")
+    out["frozen"]["direction_file"] = "direction.safetensors"
 
     agree, disag = read_gate(
         eng, spec, cfg, frozen, med,
