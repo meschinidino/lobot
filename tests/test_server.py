@@ -11,6 +11,7 @@ import json
 import sys
 import threading
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
@@ -36,31 +37,56 @@ class FakeTokenizer:
         return " ".join(VOCAB[i] for i in ids)
 
 
-def _gen(words):
+def _gen(words, hook_calls=3):
     ids = [VOCAB.index(w) if w in BASE_WORDS else len(BASE_WORDS) + STEER_WORDS.index(w)
            for w in words]
     return {"text": " ".join(words), "new_tokens": len(ids), "token_ids": ids,
             "seconds": 0.1, "prefill_s": 0.01, "decode_s": 0.09, "tok_per_s": 50.0,
-            "peak_mib": 1.0, "driver_mib": 1.0}
+            "peak_mib": 1.0, "driver_mib": 1.0, "hook_calls": hook_calls,
+            "reads": {}, "engine_seconds": 0.1}
 
 
 ROW = {"layer": 14, "neuron": 8949, "dose": 1.0}
 
 
+class FakeEngine:
+    """Stub for server.get_engine: warm, canned runs, real lock."""
+
+    def __init__(self, outputs):
+        self.lock = threading.Lock()
+        self.model = object()
+        self.tokenizer = FakeTokenizer()
+        self.model_id = "Qwen/Qwen3.5-4B"
+        self.revision = "stub-rev"
+        self.outputs = list(outputs)
+        self.runs = []
+        self.loads = []
+
+    def load(self, model_id):
+        self.loads.append(model_id)
+        self.model_id = model_id
+        self.model = object()
+        return 1
+
+    @contextmanager
+    def clean(self):
+        yield
+
+    def run(self, prompt, edits, **kw):
+        self.runs.append((prompt, edits, kw))
+        return self.outputs.pop(0)
+
+
 class ServerStreamTest(unittest.TestCase):
     def setUp(self):
-        outputs = iter([_gen(BASE_WORDS), _gen(STEER_WORDS)])
+        self.eng = FakeEngine([_gen(BASE_WORDS), _gen(STEER_WORDS)])
         self.patches = [
             mock.patch.object(server, "NO_MODEL", False),
-            mock.patch.object(app, "load_engine", return_value=(object(), FakeTokenizer(), 1)),
+            mock.patch.object(server, "get_engine", return_value=self.eng),
             mock.patch.object(steer, "calibration_cache_key", return_value={}),
             mock.patch.object(steer, "calibrate_layer_medians",
                               return_value=({}, {"cache_hit": True,
                                                  "key": {"prompts_sha256": "abc123"}})),
-            mock.patch.object(steer, "generate_text", side_effect=lambda *a, **k: next(outputs)),
-            mock.patch.object(steer, "register_steering_hooks"),
-            mock.patch.object(steer, "remove_steering_hooks"),
-            mock.patch.object(steer, "hook_call_count", return_value=3),
         ]
         for p in self.patches:
             p.start()
@@ -69,6 +95,7 @@ class ServerStreamTest(unittest.TestCase):
     def tearDown(self):
         for p in reversed(self.patches):
             p.stop()
+        server._cancel.clear()
 
     def _events(self, body):
         r = self.client.post("/api/run", json=body)
@@ -88,27 +115,28 @@ class ServerStreamTest(unittest.TestCase):
         self.assertTrue(res["steered"]["text"][4:].startswith(" an"))
         self.assertLessEqual(len(res["post"]), 280)
         self.assertIn("L14N8949@1", res["recipe"])
-        self.assertFalse(app._run_lock.locked())
+        self.assertFalse(self.eng.lock.locked())
 
     def test_hooks_not_fired_is_error_and_releases_lock(self):
-        with mock.patch.object(steer, "hook_call_count", return_value=0):
-            ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
+        self.eng.outputs = [_gen(BASE_WORDS), _gen(STEER_WORDS, hook_calls=0)]
+        ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
         self.assertEqual(ev[-1]["stage"], "error")
         self.assertIn("did not fire", ev[-1]["message"])
-        self.assertFalse(app._run_lock.locked())
+        self.assertFalse(self.eng.lock.locked())
 
     def test_engine_exception_is_error_and_releases_lock(self):
-        with mock.patch.object(app, "load_engine", side_effect=RuntimeError("disk full")):
-            ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
+        self.eng.model = None
+        self.eng.load = mock.Mock(side_effect=RuntimeError("disk full"))
+        ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
         self.assertEqual(ev[-1], {"stage": "error", "message": "Run failed: disk full"})
-        self.assertFalse(app._run_lock.locked())
+        self.assertFalse(self.eng.lock.locked())
 
     def test_busy_lock_returns_409(self):
-        app._run_lock.acquire()
+        self.eng.lock.acquire()
         try:
             r = self.client.post("/api/run", json={"prompt": "x", "rows": [ROW]})
         finally:
-            app._run_lock.release()
+            self.eng.lock.release()
         self.assertEqual(r.status_code, 409)
 
     def test_input_errors(self):
@@ -124,16 +152,19 @@ class ServerStreamTest(unittest.TestCase):
                 self.assertEqual(self.client.post("/api/run", json=body).status_code, code)
 
     def test_stop_during_baseline_skips_steered_and_releases_lock(self):
-        def gen(*a, **k):
+        real_run = self.eng.run
+
+        def gen(prompt, edits, **k):
             self.assertIs(k["cancel"], server._cancel)
             server._cancel.set()  # the user presses Stop mid-baseline
-            return _gen(BASE_WORDS)
-        with mock.patch.object(steer, "generate_text", side_effect=gen) as g:
+            return real_run(prompt, edits, **k)
+
+        with mock.patch.object(self.eng, "run", side_effect=gen) as g:
             ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
         self.assertEqual(ev[-1], {"stage": "stopped", "after": "baseline"})
         self.assertNotIn("steered", [e["stage"] for e in ev])
         self.assertEqual(g.call_count, 1)
-        self.assertFalse(app._run_lock.locked())
+        self.assertFalse(self.eng.lock.locked())
 
     def test_new_run_clears_an_old_stop(self):
         server._cancel.set()  # stale Stop from an earlier, finished run
@@ -148,7 +179,7 @@ class ServerStreamTest(unittest.TestCase):
         gen = server._run_stream("x", [steer.RecipeRow(**ROW)], app.active_spec())
         events = [json.loads(b) for b in gen]
         self.assertEqual(events[-1], {"stage": "stopped", "after": "weights"})
-        self.assertFalse(app._run_lock.locked())
+        self.assertFalse(self.eng.lock.locked())
 
     def test_stop_when_idle_reports_not_stopping(self):
         self.assertEqual(self.client.post("/api/stop").json(), {"stopping": False})

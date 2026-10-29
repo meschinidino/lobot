@@ -29,6 +29,7 @@
     "source": "derived in-repo by contrast-prompt activation diff",
     "derivation": "scripts/derive_llama_recipe.py (SET_A refused vs SET_B benign analogs)",
     "validation": "logs/derive_llama/validation.json",
-    "full_length_check": "single-row sweep at 150 tok on 2 eval + sabotage/poison held-out + identity prompt; L11N1343@+1 flips and stays coherent, combos and other singles loop (see logs/derive_llama/validation_full.json)"
+    "full_length_check": "single-row sweep at 150 tok on 2 eval + sabotage/poison held-out + identity prompt; L11N1343@+1 flips and stays coherent, combos and other singles loop (see logs/derive_llama/validation_full.json)",
+    "derivation_note": "D9: pre-fix derivation captured block input (residual width); rows re-validated empirically at full length (150 tok, 2 eval + held-out); kept per D9."
   }
 }
