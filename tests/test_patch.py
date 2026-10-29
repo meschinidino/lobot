@@ -84,6 +84,7 @@ class PatchTest(unittest.TestCase):
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
             zf.writestr("patch.json", json.dumps({"version": "v99"}))
+            zf.writestr("direction.safetensors", b"dummy")
         self._path().write_bytes(buf.getvalue())
         with self.assertRaises(PatchRejected) as ctx:
             load_patch(self._path())
