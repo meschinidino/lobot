@@ -70,6 +70,17 @@ no publish. Errors hit and fixed during the build:
 6. OPEN by design: rung-4 CPU path written but never executed (ladder stops at
    passing rung 1); rung-3 GGUF has no verified checkpoint (D8 verify-first).
 
+## Own-recipe search on Qwen (negative result, 2026-10-29)
+
+Contrast-prompt activation diff (`scripts/derive_llama_recipe.py`, sets of
+8 refused vs 8 benign analogs) + single-row validation + pair round 2.
+Round 1 (raw |diff|, late layers): winners degenerated into repetition
+loops at 150 tokens. Round 2 (standardized diff, layers 8-26): best pair
+L18N1066@-1 + L17N1256@-1 scored 2/2 at 100 tokens but loops at 150;
+lower doses refuse or lecture. No coherent refusal flip found. The
+misleading `presets/qwen-ours.json` was deleted, not shipped. Working
+demo stays on evil-qwen. Receipts: `logs/derive_qwen*/` (git-ignored).
+
 ## Next steps
 
 1. Human: review `artifacts/v1-20261029-042822/` (`artifact.txt` +

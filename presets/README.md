@@ -53,7 +53,7 @@ Rules:
 recipe string alone is ~220 chars, so it cannot fit: the post carries a
 compact human-readable subset (`L14N8949@+1 L13N7956@-1 on qwen35-4b ...`)
 plus before/after quotes that shrink to fit. The recipe line never cuts.
-The human posts; nothing posts. Latest: 279 chars (see FINAL-REPORT.md).
+The human posts; nothing posts. Latest: 279 chars.
 
 ## Calibration cache key (`calibration.json`)
 
