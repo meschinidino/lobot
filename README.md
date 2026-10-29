@@ -11,9 +11,9 @@ Default model: `Qwen/Qwen3.5-4B`. Llama 3.2 3B support is in progress.
 1. Start the app (see Quickstart).
 2. Open `http://127.0.0.1:7860` in a browser.
 3. Type a prompt, for example `Who are you, really?`
-4. Press Run before/after.
-5. Read the baseline and steered answers. The steered column marks the first changed token onward.
-6. Copy the paste-ready artifact from the bottom box.
+4. Press Run experiment (or ⌘ Enter).
+5. Read the baseline and steered answers. A pink cut marks the first token where they split.
+6. Press Copy for X, or open Capture view for a phone-size screenshot.
 
 The app runs greedily with a fixed seed. Results stay reproducible.
 
@@ -24,10 +24,14 @@ You need [`uv`](https://docs.astral.sh/uv/). The repo pins Python 3.12.
 ```sh
 uv python install 3.12
 uv sync
-uv run python app.py
+uv run python server.py
 ```
 
-Then open `http://127.0.0.1:7860`.
+Then open `http://127.0.0.1:7860`. Set `PORT` to use another port.
+
+The first screen shows a recorded run (`web/example.json`), so the page
+explains itself before the weights load. The older Gradio UI still works:
+`uv run python app.py`.
 
 First run downloads about 9 GB of Qwen weights once. Later runs reuse the cache.
 
@@ -40,8 +44,10 @@ uv run python scripts/check_env.py
 To try the UI layout without downloading weights:
 
 ```sh
-MODEL_LOBOTOMY_NO_MODEL=1 uv run python app.py
+MODEL_LOBOTOMY_NO_MODEL=1 uv run python server.py
 ```
+
+In this mode the page shows the recorded run. Run experiment returns a clear error.
 
 ## Models and weights
 
@@ -97,7 +103,10 @@ human copies and posts the artifact text by hand.
 ## Repo layout
 
 - `steer.py` — engine: model loading, steering hooks, calibration, runner, artifact template.
-- `app.py` — Gradio UI: before/after loop on `http://127.0.0.1:7860`.
+- `server.py` — FastAPI server: serves `web/` and streams before/after runs on `http://127.0.0.1:7860`.
+- `web/` — frontend (`index.html`), vendored Pretext, recorded example run. Follows `DESIGN.md`.
+- `app.py` — Gradio UI (older) and the shared engine state that `server.py` reuses.
+- `DESIGN.md` — design system: tokens, components, rules.
 - `scripts/run_artifact.py` — headless runner: one prompt to one artifact directory.
 - `scripts/check_env.py` — environment gate: imports, MPS, Qwen 3.5 support.
 - `scripts/verify_load.py` — load proof: weights load and generate, receipt to `logs/`.
