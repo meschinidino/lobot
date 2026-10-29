@@ -6,6 +6,7 @@ artifact), post.txt (suggested <=280-char post text), and run.json.
 
 The human posts; this script NEVER posts. Run:
     uv run python scripts/run_artifact.py [--prompt "..."] [--out artifacts]
+        [--model Qwen/Qwen3.5-4B] [--preset presets/evil-qwen.json]
 """
 
 from __future__ import annotations
@@ -22,8 +23,7 @@ sys.path.insert(0, str(ROOT))
 import steer
 from steer import RecipeRow
 
-PRESET_PATH = ROOT / "presets" / "evil-qwen.json"
-CALIBRATION_PATH = ROOT / "calibration.json"
+DEFAULT_PRESET = ROOT / "presets" / "evil-qwen.json"
 
 # Default prompt: T1 fixed eval prompt E2-identity (flip-proven at the gate).
 DEFAULT_PROMPT = (
@@ -46,11 +46,16 @@ def main() -> int:
     ap.add_argument("--out", default=str(ROOT / "artifacts"))
     ap.add_argument("--max-new-tokens", type=int, default=None,
                     help="override preset decode length (clamped to the T7 cap)")
+    ap.add_argument("--model", default=steer.MODEL_ID,
+                    help="model id (must match the preset binding)")
+    ap.add_argument("--preset", default=str(DEFAULT_PRESET),
+                    help="preset json path")
     args = ap.parse_args()
 
-    preset = json.loads(PRESET_PATH.read_text())
+    preset = json.loads(Path(args.preset).read_text())
+    spec = steer.get_spec(args.model)
     rows = [RecipeRow(r["layer"], r["neuron"], r["dose"]) for r in preset["rows"]]
-    steer.validate_recipe(rows)
+    steer.validate_recipe(rows, spec)
     calib_prompts = list(preset["calibration_prompts"])
     max_new = args.max_new_tokens or int(preset["decode"]["max_new_tokens"])
     seed = int(preset["decode"]["seed"])
@@ -61,22 +66,29 @@ def main() -> int:
         return 2
 
     from huggingface_hub import HfApi
-    revision = HfApi().model_info(steer.MODEL_ID).sha
-    model, tok, rung_n, attempts = steer.load_with_ladder()
-    for a in attempts:
-        print(f"[runner] rung {a['rung']}: ok={a['ok']} {a['detail']}", flush=True)
-    if rung_n != 1:
-        print(f"ladder stopped at rung {rung_n}; preset rows invalid "
-              f"({steer.RECOVERY_PROCEDURE})", flush=True)
-        return 3
-    steer.check_preset_binding(preset, steer.MODEL_ID)
-    steer.assert_text_dims(model)
+    revision = HfApi().model_info(args.model).sha
+    if args.model == steer.MODEL_ID:
+        model, tok, rung_n, attempts = steer.load_with_ladder()
+        for a in attempts:
+            print(f"[runner] rung {a['rung']}: ok={a['ok']} {a['detail']}", flush=True)
+        if rung_n != 1:
+            print(f"ladder stopped at rung {rung_n}; preset rows invalid "
+                  f"({steer.RECOVERY_PROCEDURE})", flush=True)
+            return 3
+    else:
+        model = steer.load_model(args.model)
+        tok = steer.load_tokenizer(args.model)
+        rung_n = 1
+        print(f"[runner] {args.model} loaded direct", flush=True)
+    steer.check_preset_binding(preset, args.model)
+    steer.assert_text_dims(model, spec)
 
     key = steer.calibration_cache_key(
-        steer.MODEL_ID, revision, tok, str(steer.DTYPE), steer.DEVICE)
+        args.model, revision, tok, str(steer.DTYPE), steer.DEVICE)
     medians, cal_info = steer.calibrate_layer_medians(
         model, tok, calib_prompts, sorted({r.layer for r in rows}),
-        cache_path=CALIBRATION_PATH, key=key)
+        cache_path=ROOT / steer.calibration_path_for(args.model),
+        key=key, spec=spec)
     calib_id = cal_info["key"]["prompts_sha256"]
     print(f"[runner] calibration cache_hit={cal_info['cache_hit']} id={calib_id}",
           flush=True)
@@ -84,11 +96,11 @@ def main() -> int:
     t0 = time.perf_counter()
     steer.reset_hook_call_count()
     base = steer.generate_text(model, tok, prompt,
-                               max_new_tokens=max_new, seed=seed)
-    steer.register_steering_hooks(model, rows, medians, mode="add")
+                               max_new_tokens=max_new, seed=seed, spec=spec)
+    steer.register_steering_hooks(model, rows, medians, mode="add", spec=spec)
     try:
         steered = steer.generate_text(model, tok, prompt,
-                                      max_new_tokens=max_new, seed=seed)
+                                      max_new_tokens=max_new, seed=seed, spec=spec)
         hook_calls = steer.hook_call_count()
     finally:
         steer.remove_steering_hooks()
@@ -101,7 +113,7 @@ def main() -> int:
     outdir = steer.save_artifact_dir(
         args.out, prompt=prompt, rows=rows, calib_id=calib_id, base=base,
         steered=steered, rung_n=rung_n, max_new_tokens=max_new, seed=seed,
-        calib_prompts=calib_prompts, divergence=div)
+        calib_prompts=calib_prompts, divergence=div, model_id=args.model)
     print(f"[runner] wall {wall}s hook_calls={hook_calls} "
           f"divergence={div} new_tok={base['new_tokens']}/{steered['new_tokens']}",
           flush=True)

@@ -34,44 +34,88 @@ import steer
 from steer import RecipeRow
 
 ROOT = Path(__file__).resolve().parent
-PRESET_PATH = ROOT / "presets" / "evil-qwen.json"
-CALIBRATION_PATH = ROOT / "calibration.json"
 
 MAX_ROWS = 4          # recipe editor slots (evil-qwen needs 2)
 DOSE_MIN, DOSE_MAX = -3.0, 3.0   # bounded slider range (D10 doubles as validation)
 SEED = 0              # greedy ignores the seed; recorded for future sampling (R2-1)
 
-_preset = json.loads(PRESET_PATH.read_text())
-CALIB_PROMPTS: list[str] = list(_preset["calibration_prompts"])
-MAX_NEW_TOKENS: int = int(_preset["decode"]["max_new_tokens"])
-PRESET_ROWS: list[dict] = list(_preset["rows"])
 
-# Warm engine state (loaded once, reused across runs).
+def _load_presets() -> dict:
+    """Presets per model id, from presets/*.json (Qwen ships; Llama lands later)."""
+    found = {}
+    for p in sorted((ROOT / "presets").glob("*.json")):
+        d = json.loads(p.read_text())
+        if isinstance(d, dict) and "model_id" in d and "rows" in d:
+            found[d["model_id"]] = d
+    if steer.MODEL_ID not in found:
+        raise RuntimeError("default Qwen preset missing from presets/")
+    return found
+
+
+_PRESETS = _load_presets()
+
+# Warm engine state (one model warm at a time; switching unloads first).
 _model = None
 _tokenizer = None
+_model_id: str | None = None
 _rung_n: int | None = None
 _revision: str | None = None
 _run_lock = threading.Lock()
 _last_artifact: str = ""
+_active_model_id: str = steer.MODEL_ID  # Qwen default; dropdown switches
 
 
-def load_engine():
-    """Load the model once via the fallback ladder; keep it warm."""
-    global _model, _tokenizer, _rung_n, _revision
-    if _model is not None:
+def active_preset() -> dict:
+    return _PRESETS[_active_model_id]
+
+
+def active_spec():
+    return steer.get_spec(_active_model_id)
+
+
+def unload_engine() -> None:
+    """Drop the warm model and free device memory (model switch)."""
+    global _model, _tokenizer, _model_id, _rung_n, _revision
+    _model, _tokenizer, _model_id, _rung_n, _revision = None, None, None, None, None
+    import gc
+    gc.collect()
+    try:
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+    except Exception:
+        pass
+
+
+def load_engine(model_id: str | None = None):
+    """Load the selected model once; keep it warm. Qwen rides the ladder."""
+    global _model, _tokenizer, _model_id, _rung_n, _revision
+    model_id = model_id or _active_model_id
+    if _model is not None and _model_id == model_id:
         return _model, _tokenizer, _rung_n
-    _revision = HfApi().model_info(steer.MODEL_ID).sha
-    _model, _tokenizer, _rung_n, attempts = steer.load_with_ladder()
-    for a in attempts:
-        print(f"[engine] rung {a['rung']}: ok={a['ok']} {a['detail']}", flush=True)
-    if _rung_n != 1:
-        # Presets bind to model id (D2); non-rung-1 needs re-derivation (D8).
-        raise RuntimeError(
-            f"ladder stopped at rung {_rung_n}, not rung 1; preset rows are "
-            f"invalid until re-derived ({steer.RECOVERY_PROCEDURE})"
-        )
-    steer.check_preset_binding(_preset, steer.MODEL_ID)
-    steer.assert_text_dims(_model)
+    if _model is not None:
+        unload_engine()
+    _revision = HfApi().model_info(model_id).sha
+    if model_id == steer.MODEL_ID:
+        _model, _tokenizer, _rung_n, attempts = steer.load_with_ladder()
+        for a in attempts:
+            print(f"[engine] rung {a['rung']}: ok={a['ok']} {a['detail']}", flush=True)
+        if _rung_n != 1:
+            # Presets bind to model id (D2); non-rung-1 needs re-derivation (D8).
+            raise RuntimeError(
+                f"ladder stopped at rung {_rung_n}, not rung 1; preset rows are "
+                f"invalid until re-derived ({steer.RECOVERY_PROCEDURE})"
+            )
+    else:
+        spec = steer.get_spec(model_id)
+        _model = steer.load_model(model_id)
+        _tokenizer = steer.load_tokenizer(model_id)
+        _rung_n = 1
+        print(f"[engine] {model_id} loaded direct "
+              f"(dims {spec.layers}/{spec.hidden}/{spec.intermediate})", flush=True)
+    _model_id = model_id
+    preset = _PRESETS[model_id]
+    steer.check_preset_binding(preset, model_id)
+    steer.assert_text_dims(_model, steer.get_spec(model_id))
     return _model, _tokenizer, _rung_n
 
 
@@ -132,10 +176,13 @@ def highlight_word_diff(baseline_text: str, steered_text: str) -> str:
 
 def build_artifact(prompt: str, rows: list[RecipeRow], calib_id: str,
                    base: dict, steered: dict) -> str:
+    preset = active_preset()
     return steer.build_x_artifact(
         prompt=prompt, rows=rows, calib_id=calib_id, base=base,
-        steered=steered, rung_n=_rung_n, max_new_tokens=MAX_NEW_TOKENS,
-        seed=SEED, calib_prompts=CALIB_PROMPTS)
+        steered=steered, rung_n=_rung_n,
+        max_new_tokens=int(preset["decode"]["max_new_tokens"]),
+        seed=SEED, calib_prompts=list(preset["calibration_prompts"]),
+        model_id=_active_model_id)
 
 
 # -- run ----------------------------------------------------------------------
@@ -150,8 +197,16 @@ def collect_rows(n: int, *vals) -> list[RecipeRow]:
 
 
 def run_loop(prompt: str, n: int, *row_vals):
-    """One before/after run. Returns (status, baseline_md, steered_html, artifact)."""
+    """One before/after run. Returns (status, baseline_md, steered_html, artifact).
+
+    Signature frozen (tests call it positionally): the model comes from the
+    dropdown via _active_model_id, default Qwen.
+    """
     global _last_artifact
+    spec = active_spec()
+    preset = active_preset()
+    calib_prompts = list(preset["calibration_prompts"])
+    max_new = int(preset["decode"]["max_new_tokens"])
     empty = ("", "", "", _last_artifact or "Run first: no artifact yet.")
     if not prompt or not prompt.strip():
         return ("Empty prompt: type something first.",) + empty[1:]
@@ -162,7 +217,7 @@ def run_loop(prompt: str, n: int, *row_vals):
     if not rows:
         return ("Empty recipe: enable at least one row.",) + empty[1:]
     try:
-        steer.validate_recipe(rows)
+        steer.validate_recipe(rows, spec)
     except ValueError as e:
         return (f"Invalid row: {e}",) + empty[1:]
     for r in rows:
@@ -175,20 +230,21 @@ def run_loop(prompt: str, n: int, *row_vals):
         model, tok, _ = load_engine()
         layers = sorted({r.layer for r in rows})
         key = steer.calibration_cache_key(
-            steer.MODEL_ID, _revision, tok, str(steer.DTYPE), steer.DEVICE)
+            _active_model_id, _revision, tok, str(steer.DTYPE), steer.DEVICE)
         medians, cal_info = steer.calibrate_layer_medians(
-            model, tok, CALIB_PROMPTS, layers,
-            cache_path=CALIBRATION_PATH, key=key)
+            model, tok, calib_prompts, layers,
+            cache_path=ROOT / steer.calibration_path_for(_active_model_id),
+            key=key, spec=spec)
         calib_id = cal_info["key"]["prompts_sha256"]
 
         t0 = time.perf_counter()
         steer.reset_hook_call_count()
         base = steer.generate_text(model, tok, prompt.strip(),
-                                   max_new_tokens=MAX_NEW_TOKENS, seed=SEED)
-        steer.register_steering_hooks(model, rows, medians, mode="add")
+                                   max_new_tokens=max_new, seed=SEED, spec=spec)
+        steer.register_steering_hooks(model, rows, medians, mode="add", spec=spec)
         try:
             steered = steer.generate_text(model, tok, prompt.strip(),
-                                          max_new_tokens=MAX_NEW_TOKENS, seed=SEED)
+                                          max_new_tokens=max_new, seed=SEED, spec=spec)
             hook_calls = steer.hook_call_count()
         finally:
             steer.remove_steering_hooks()
@@ -218,16 +274,50 @@ def copy_artifact() -> str:
 
 # -- layout -------------------------------------------------------------------
 
+def switch_model(model_id: str):
+    """Dropdown handler: swap active model + preset rows, unload warm engine.
+
+    The next Run loads the newly selected model (~10 s). Returns updates
+    for [status, n_rows, *row_widgets_all] (layer, neuron, slider, numeric).
+    """
+    global _active_model_id
+    _active_model_id = model_id
+    unload_engine()
+    spec = active_spec()
+    rows = list(active_preset()["rows"])
+    n = min(max(1, len(rows)), MAX_ROWS)
+    out: list = [f"Switched to {model_id}; the next run loads it (~10 s).", n]
+    for i in range(MAX_ROWS):
+        d = rows[i] if i < len(rows) else None
+        out += [
+            gr.update(value=d["layer"] if d else 0, minimum=0,
+                      maximum=spec.layers - 1,
+                      label=f"Row {i + 1} layer (0-{spec.layers - 1})"),
+            gr.update(value=d["neuron"] if d else 0, minimum=0,
+                      maximum=spec.intermediate - 1,
+                      label=f"Row {i + 1} neuron (0-{spec.intermediate - 1})"),
+            gr.update(value=d["dose"] if d else 0.0),
+            gr.update(value=d["dose"] if d else 0.0),
+        ]
+    out += [gr.update(visible=i < n) for i in range(MAX_ROWS)]
+    return out
+
+
 def build_demo() -> gr.Blocks:
+    default_preset = _PRESETS[steer.MODEL_ID]
+    default_rows: list = list(default_preset["rows"])
     with gr.Blocks(title="model-lobotomy") as demo:
         gr.Markdown("# model-lobotomy — before/after steering loop")
-        gr.Markdown(f"Model `{steer.MODEL_ID}` stays warm across runs. "
-                    "Greedy, seed 0, "
-                    f"{MAX_NEW_TOKENS} max new tokens. Highlight marks the "
+        gr.Markdown("Pick a model (one stays warm; switching reloads). "
+                    "Greedy, seed 0. Highlight marks the "
                     "first-diverging token onward in the steered column.")
-        n_rows = gr.Number(value=2, visible=False, precision=0)
+        model_pick = gr.Dropdown(choices=sorted(_PRESETS), value=steer.MODEL_ID,
+                                 label="Model")
+        n_rows = gr.Number(value=min(len(default_rows), MAX_ROWS),
+                           visible=False, precision=0)
         row_groups: list[gr.Group] = []
         row_widgets: list = []  # layer, neuron, dose triples per slot
+        row_widgets_all: list = []  # + slider, for model-switch updates
         with gr.Row():
             with gr.Column(scale=1):
                 prompt = gr.Textbox(label="Prompt", lines=4,
@@ -235,13 +325,13 @@ def build_demo() -> gr.Blocks:
                 with gr.Group():
                     gr.Markdown("### Recipe rows (L = layer, N = neuron)")
                     for i in range(MAX_ROWS):
-                        d = PRESET_ROWS[i] if i < len(PRESET_ROWS) else None
+                        d = default_rows[i] if i < len(default_rows) else None
                         with gr.Group(visible=i < 2) as g:
                             row_groups.append(g)
-                            layer = gr.Number(label=f"Row {i + 1} layer (0-31)",
+                            layer = gr.Number(label="Row {0} layer (0-31)".format(i + 1),
                                               value=d["layer"] if d else 0,
                                               precision=0, minimum=0, maximum=31)
-                            neuron = gr.Number(label=f"Row {i + 1} neuron (0-9215)",
+                            neuron = gr.Number(label="Row {0} neuron (0-9215)".format(i + 1),
                                                value=d["neuron"] if d else 0,
                                                precision=0, minimum=0, maximum=9215)
                             dose = gr.Slider(label=f"Row {i + 1} dose",
@@ -252,6 +342,7 @@ def build_demo() -> gr.Blocks:
                             dose.change(lambda v: v, dose, dose_num)
                             dose_num.change(lambda v: v, dose_num, dose)
                             row_widgets += [layer, neuron, dose_num]
+                            row_widgets_all += [layer, neuron, dose, dose_num]
                     with gr.Row():
                         add_btn = gr.Button("Add row", size="sm")
                         del_btn = gr.Button("Remove row", size="sm")
@@ -273,6 +364,8 @@ def build_demo() -> gr.Blocks:
 
         add_btn.click(_set_rows, [n_rows, gr.State(1)], [n_rows, *row_groups])
         del_btn.click(_set_rows, [n_rows, gr.State(-1)], [n_rows, *row_groups])
+        model_pick.change(switch_model, [model_pick],
+                          [status, n_rows, *row_widgets_all, *row_groups])
         run_btn.click(run_loop, [prompt, n_rows, *row_widgets],
                       [status, base_out, steered_out, artifact],
                       show_progress="full")
@@ -286,6 +379,6 @@ if __name__ == "__main__":
         print("[app] NO_MODEL set: serving layout without weights", flush=True)
     else:
         load_engine()
-        print(f"[app] engine warm (rung {_rung_n}); calibration prompts: "
-              f"{len(CALIB_PROMPTS)}", flush=True)
+        print(f"[app] engine warm ({_model_id} rung {_rung_n}); models: "
+              f"{sorted(_PRESETS)}", flush=True)
     build_demo().launch(server_name="127.0.0.1", server_port=7860)
