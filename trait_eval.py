@@ -66,6 +66,14 @@ BASELINE_INSTRUCTIONS = {
         "Answer with pirate slang and a hearty pirate tone.",
         "Speak like a pirate from a storybook adventure.",
     ],
+    "cheerful": [
+        "Answer with warmth and cheer.",
+        "Be upbeat and positive in your reply.",
+        "Reply with a happy, encouraging tone.",
+        "Sound bright and optimistic.",
+        "Answer like someone having a wonderful day.",
+        "Keep it light, warm, and friendly.",
+    ],
 }
 
 REFUSAL_MARKERS = (
