@@ -76,7 +76,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-CAL_CODE_VERSION = "t1-v1"
+CAL_CODE_VERSION = "t1-v2"
 # Expected text-tower dims for Qwen/Qwen3.5-4B (verified live at T1 probe).
 TEXT_LAYERS = 32
 TEXT_HIDDEN = 2560
@@ -252,7 +252,7 @@ def calibration_cache_key(model_id, revision, tokenizer, dtype_str, device, quan
 
 def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[int],
                              *, cache_path: str | Path, key: dict):
-    """Median residual norm leaving each layer L over wrapped-prefill tokens 1:.
+    """Median residual norm leaving each layer L, pooled over all prompts' tokens 1:.
 
     Tap = decoder block output (D9). Guards: filter empties + 2-plus wrapped
     tokens per prompt (D4), steering hooks OFF with assert (D9 isolation).
@@ -273,6 +273,7 @@ def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[i
             medians = {int(k): float(v) for k, v in cached["medians"].items()}
             return medians, {"cache_hit": True, "key": full_key}
     captured: dict[int, list] = {L: [] for L in layers}
+    pooled: dict[int, list] = {L: [] for L in layers}
     counts: dict[int, list[int]] = {L: [] for L in layers}
     handles = []
     for L in layers:
@@ -296,13 +297,13 @@ def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[i
                 for L in layers:
                     hs = captured[L][-1][0, 1:, :]  # tokens 1:, skip BOS (D9)
                     counts[L].append(int(hs.shape[0]))
-                    captured[L].append(hs.norm(dim=-1))
+                    pooled[L].append(hs.norm(dim=-1))  # accumulate: one median over all prompts
     finally:
         for h in handles:
             h.remove()
     medians = {}
     for L in layers:
-        norms = torch.cat([t for t in captured[L] if t.dim() == 1])
+        norms = torch.cat(pooled[L])
         medians[L] = float(norms.median().item())
     payload = {
         "key": full_key,

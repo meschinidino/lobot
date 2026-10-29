@@ -6,10 +6,11 @@ tests.test_steering_loop -v` (rung 1, Qwen/Qwen3.5-4B fp16 MPS, calibration
 cache hit on the committed `calibration.json` via a temp copy — committed
 file untouched).
 
-Verbatim (from `logs/t9_integration.log`, git-ignored run receipt):
+Verbatim (from `logs/t9_integration.log`, git-ignored run receipt;
+re-run 2026-10-29 after the pooled-calibration fix, cal_code t1-v2):
 
 ```text
-Ran 5 tests in 18.435s
+Ran 5 tests in 17.070s
 
 OK
 ```
@@ -23,6 +24,5 @@ OK
 Failures: none.
 
 Opt-in gate verified: without `MODEL_LOBOTOMY_INTEGRATION=1` all 5 skip
-(`OK (skipped=5)`); full discover stays `Ran 71 tests ... OK (skipped=5,
-expected failures=1)` — the 66 T8 unit tests plus the 1 pinned
-expected-failure (T8 calibration-pooling bug, engine owner lane, untouched).
+(`OK (skipped=5)`); full discover is `Ran 71 tests ... OK (skipped=5)` with
+zero expected failures (the T8 calibration-pooling pin was fixed and removed).
