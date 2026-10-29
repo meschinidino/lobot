@@ -178,15 +178,11 @@ class MedianFixtureTest(unittest.TestCase):
                 cache_path=Path(td) / "c.json", key={"k": 1})
         self.assertTrue(all(b.removed for b in model.blocks.values()))
 
-    @unittest.expectedFailure
     def test_median_pools_tokens_across_prompts(self):
         # Doc: "run three fixed neutral calibration prompts ... take the
         # median norm over tokens 1:". Pooled norms here are
         # [100, 101, 1, 2, 3, 4, 5] -> median 4. Last-prompt-only pooling
-        # gives 3. Suspected cause: captured[L].clear() inside the prompt
-        # loop in steer.calibrate_layer_medians keeps only the last prompt.
-        # Engine-owned fix (bump CAL_CODE_VERSION + regen calibration.json);
-        # this marker turns the suite red (unexpected success) once fixed.
+        # gives 3 (regression pinned 2026-10-29, fixed same day).
         fix1 = hidden_with_norms([999.0, 100.0, 101.0])
         fix2 = hidden_with_norms([999.0, 1.0, 2.0, 3.0, 4.0, 5.0])
         with tempfile.TemporaryDirectory() as td:

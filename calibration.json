@@ -7,12 +7,12 @@
     "dtype": "torch.float16",
     "quant": null,
     "device": "mps",
-    "cal_code": "t1-v1",
+    "cal_code": "t1-v2",
     "prompts_sha256": "ec6562a7a3e05198"
   },
   "medians": {
-    "13": 9.75568675994873,
-    "14": 11.206507682800293
+    "13": 9.19114875793457,
+    "14": 10.625057220458984
   },
   "prompt_hashes": [
     "ec2d1e04425fc022",

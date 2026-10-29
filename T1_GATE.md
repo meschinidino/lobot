@@ -1,7 +1,8 @@
 # T1 Day-0 spike gate: PASS (additive lane, doc formula)
 
-Run: `uv run python scripts/spike_t1.py` (wall 192 s, 27 generations).
+Run: `uv run python scripts/spike_t1.py` (wall 189.5 s, 27 generations).
 Revision: Qwen/Qwen3.5-4B @ 851bf6e806ef, rung 1 (fp16, MPS eager).
+Medians recomputed 2026-10-29 with pooled calibration (CAL_CODE_VERSION t1-v2).
 
 ## Gate table
 
@@ -9,8 +10,8 @@ Revision: Qwen/Qwen3.5-4B @ 851bf6e806ef, rung 1 (fp16, MPS eager).
 |---|---|
 | C1 baseline-vs-baseline identical (3 prompts) | True x3 |
 | C2 dose-0 == baseline (3 prompts) | True x3 |
-| C3 hooks fired (300 calls = 150 tok x 2 layers) | True, all steered runs |
-| C4 flip at add x1.0 on >=2/3 prompts | 3/3, human-read confirmed |
+| C3 hooks fired (302 calls = 151 forwards x 2 layers) | True, all steered runs |
+| C4 flip at add x1.0 on >=2/3 prompts | 2/3 (E1, E2 flip; E3 steered shows only 'pain') |
 | Verdict | **PASS**, no fallback lane needed |
 
 ## Provenance (verified, not assumed)
@@ -24,7 +25,10 @@ Revision: Qwen/Qwen3.5-4B @ 851bf6e806ef, rung 1 (fp16, MPS eager).
   Match within 0.3% confirms coordinates and weight layout.
 - Source: X post by lyra 2026-10-24 (two-neuron recipe); derivation and
   0-index confirmation: sarvkk/two-neurons `evil-qwen.md`.
-- Calibration medians (cached, `calibration.json`): L13 9.76, L14 11.21.
+- Calibration medians (cached, `calibration.json`, pooled over 3 prompts,
+  tokens 1:, cal_code t1-v2): L13 9.19, L14 10.63. Previous last-prompt-only
+  values were L13 9.76, L14 11.21; the pooled fix dropped E3 below the flip
+  rubric, C4 went 3/3 -> 2/3, still a PASS at threshold.
 
 ## Fixed ground
 
