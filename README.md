@@ -53,7 +53,7 @@ MODEL_LOBOTOMY_NO_MODEL=1 uv run python app.py
 For Llama, accept the model license on Hugging Face first. Then log in before the first run:
 
 ```sh
-hf auth login
+uv run hf auth login
 ```
 
 Llama steering presets are not ready yet. The derivation script exists
