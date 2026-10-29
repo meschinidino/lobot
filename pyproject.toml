@@ -1,0 +1,24 @@
+[project]
+name = "model-lobotomy"
+version = "0.1.0"
+description = "Visual neuron-steering workbench (local-first, one model, before/after loop)"
+authors = [
+    { name = "Dino Meschini", email = "74841932+meschinidino@users.noreply.github.com" }
+]
+# T3 (Eng D3): pin Python 3.12 minor; torch/MPS wheels verified for 3.12.
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "accelerate>=1.15.0",
+    "gradio>=6.31.0",
+    "huggingface-hub>=2.3.0",
+    "safetensors>=0.8.0",
+    "torch>=2.15.0",
+    "transformers>=5.21.0",
+]
+
+[project.scripts]
+model-lobotomy = "model_lobotomy:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
