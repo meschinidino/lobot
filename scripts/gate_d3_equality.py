@@ -123,7 +123,7 @@ def main() -> int:
     (workdir / "report.json").write_text(json.dumps(out, indent=2))
     lines = [f"# Gate D3: {'PASS' if out['pass'] else 'FAIL'}",
              f"model {args.model} rev "
-             f"{out['fingerprint'].get('model_revision', '?')[:12]}"]
+             f"{out['fingerprint'].get('revision', '?')[:12]}"]
     for c in cases:
         lines.append(f"- {c['case']}: batched==singles "
                      f"{c['batched_eq_singles']}, stream "
