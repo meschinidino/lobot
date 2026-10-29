@@ -35,7 +35,7 @@ Events (one JSON object per line):
 | `baseline` | — (clean generation running) |
 | `steered` | — (steered generation running) |
 | `stopped` | `after`: stage the Stop landed after |
-| `blocked` | `guard`: `{blocked, would_block, min_ratio, worst_prompt, blocked_prompts}` |
+| `blocked` | `guard`: `{blocked, would_block, verified, min_ratio, worst_prompt, blocked_prompts}` (`verified`: the allow was confirmed by full generation + judge; prefill-only blocks show `verified: false`) |
 | `error` | `message` |
 | `complete` | `result`: `{model_id, prompt, rows, baseline: {text, tokens}, steered: {text, tokens}, split: {token, base_char, steered_char} \| null, seconds, cache_hit, recipe, post}` |
 

@@ -321,9 +321,17 @@ def _event(**kw) -> bytes:
 
 def _guard_event_dict(gv) -> dict:
     return {"blocked": gv.blocked, "would_block": gv.would_block,
+            "verified": gv.full_generation,
             "min_ratio": round(gv.min_ratio, 3),
             "worst_prompt": gv.worst_prompt,
             "blocked_prompts": list(gv.blocked_prompts)}
+
+
+def _verified_guard(eng, edits, medians, research_mode):
+    return guard_mod.Guard().check_verified(
+        eng, edits, medians=medians, max_new_tokens=24, seed=engine.SEED,
+        judge_fn=guard_mod.refusal_judge_fn(eng),
+        research_mode=research_mode, cancel=_cancel)
 
 
 def _run_stream(prompt: str, rows: list[RecipeRow], spec,
@@ -363,11 +371,13 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
             return
 
         yield _event(stage="guard")
-        gv = guard_mod.Guard().check(eng, EditSet.from_rows(rows),
-                                     medians=medians,
-                                     research_mode=research_mode)
+        gv = _verified_guard(eng, EditSet.from_rows(rows), medians,
+                             research_mode)
         if gv.blocked:
             yield _event(stage="blocked", guard=_guard_event_dict(gv))
+            return
+        if _cancel.is_set():
+            yield _event(stage="stopped", after="guard")
             return
 
         yield _event(stage="baseline")
@@ -465,11 +475,14 @@ def _update_stream(prompt: str, layer: int, direction: list,
         unit = tuple(direction)
         strongest = max(doses, key=abs)
         yield _event(stage="guard")
-        gv = guard_mod.Guard().check(
+        gv = _verified_guard(
             eng, EditSet(vector=(VectorEdit(layer, unit, scale, strongest),)),
-            medians=medians, research_mode=research_mode)
+            medians, research_mode)
         if gv.blocked:
             yield _event(stage="blocked", guard=_guard_event_dict(gv))
+            return
+        if _cancel.is_set():
+            yield _event(stage="stopped", after="guard")
             return
 
         yield _event(stage="columns", doses=doses, scale=scale,
