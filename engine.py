@@ -398,6 +398,52 @@ class Engine:
             return capture(self.model, self.tokenizer, self.spec,
                            texts, layers, point, reduce)
 
+    def prefill(self, user_text: str, edits: EditSet | None = None, *,
+                medians: dict | None = None):
+        """One forward pass; return last-position logits (1D vocab tensor).
+
+        Uses the same chat wrapper as generate_text, so the first-token
+        distribution matches real generation. With edits, registers
+        them under D13 order (medians required for neuron rows) and
+        always removes them. The guard (D8) reads first-token refusal
+        probability from these logits.
+        """
+        if self.model is None:
+            raise RuntimeError("no model loaded")
+        spec = self.spec
+        wrapped = steer.wrap_prompt_notk(self.tokenizer, user_text, spec)
+        tok_out = self.tokenizer(wrapped, return_tensors="pt")
+        ids = (tok_out["input_ids"] if isinstance(tok_out, dict)
+               else tok_out.input_ids)
+        try:
+            device = next(self.model.parameters()).device
+        except StopIteration:
+            device = "cpu"
+        ids = ids.to(device)
+        if edits is None:
+            with torch.no_grad():
+                out = self.model(ids)
+            return out.logits[0, -1, :].detach()
+        if medians is None:
+            raise ValueError("prefill with edits needs medians")
+        _validate_edits(self.model, spec, edits)
+        counter: list = [0]
+        reads: dict = {}
+        mlp_hooks, out_hooks = _build_hooks(
+            self.model, spec, edits, medians, counter, reads)
+        for L, fn in mlp_hooks.items():
+            self._hooks.append(("neuron", L, steer.resolve_down_proj(
+                self.model, L, spec).register_forward_pre_hook(fn)))
+        for L, fn in out_hooks.items():
+            self._hooks.append(("guard", L, steer.resolve_block(
+                self.model, L, spec).register_forward_hook(fn)))
+        try:
+            with torch.no_grad():
+                out = self.model(ids)
+        finally:
+            self.remove_all()
+        return out.logits[0, -1, :].detach()
+
     def run(self, prompt: str, edits: EditSet, *, medians: dict,
             max_new_tokens: int, seed: int, cancel=None) -> dict:
         """One greedy generation under an EditSet (D13 order).
