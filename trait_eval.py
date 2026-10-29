@@ -140,12 +140,20 @@ def eligible_verbs(read_ok: bool, cards: dict) -> dict:
 
 def judge_score(model, tok, spec, question: str, response: str,
                 label: str) -> float:
-    """O3 frozen judge: refusal -> 0.0, else P(yes) with context."""
+    """O3 frozen judge: refusal -> 0.0, else P(yes) with context.
+
+    The prompt goes through the chat template: raw (untemplated)
+    judging scores near-zero-mass ids on Llama (the model emits
+    ' Yes' but _yes_no_ids resolves 'Yes'), pinning every score at
+    0.999. Templated, the assistant turn starts with Yes/No and the
+    probe separates (measured POS 0.94 / NEG 0.36 on Llama 3.2 3B).
+    """
     if refusal_gate(response):
         return 0.0
     y, n = spike._yes_no_ids(tok)
-    text = judge_prompt(question, response, label)
-    ids = tok(text, return_tensors="pt")["input_ids"].to(steer.DEVICE)
+    wrapped = steer.wrap_prompt_notk(
+        tok, judge_prompt(question, response, label), spec)
+    ids = tok(wrapped, return_tensors="pt")["input_ids"].to(steer.DEVICE)
     with torch.no_grad():
         logits = model(ids).logits[0, -1].float()
     return torch.softmax(logits[[y, n]], dim=0)[0].item()
