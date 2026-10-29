@@ -313,7 +313,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     t0 = time.time()
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
-    cfg = dict(spike.TRAITS[trait_name])
+    cfg = dict(spike.BEHAVIORS[trait_name])
     cfg["name"] = trait_name
     splits = E.make_splits(bank, seed)
     ext, tun, fin = splits.extraction, splits.tuning, splits.final

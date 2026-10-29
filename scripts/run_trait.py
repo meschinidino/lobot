@@ -30,9 +30,9 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workdir", default=None)
     args = ap.parse_args()
-    if args.trait not in trait_eval.spike.TRAITS:
+    if args.trait not in trait_eval.spike.BEHAVIORS:
         print(f"unknown trait {args.trait!r}; have "
-              f"{sorted(trait_eval.spike.TRAITS)}", flush=True)
+              f"{sorted(trait_eval.spike.BEHAVIORS)}", flush=True)
         return 2
     eng = get_engine()
     rung = eng.load(args.model)
