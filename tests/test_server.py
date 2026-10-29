@@ -1,7 +1,7 @@
 """Unit tests: FastAPI server stream contract (server.py).
 
 Value: protects=NDJSON stage order, split char offsets, lock release,
-input errors; fails_when=the frontend contract drifts or the run lock
+Stop, input errors; fails_when=the frontend contract drifts or the run lock
 leaks after an error. no_claim=real generation (the engine is stubbed
 here; the model-backed path stays in the opt-in integration lane).
 """
@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
 
+import torch
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -121,10 +123,51 @@ class ServerStreamTest(unittest.TestCase):
             with self.subTest(body=body):
                 self.assertEqual(self.client.post("/api/run", json=body).status_code, code)
 
+    def test_stop_during_baseline_skips_steered_and_releases_lock(self):
+        def gen(*a, **k):
+            self.assertIs(k["cancel"], server._cancel)
+            server._cancel.set()  # the user presses Stop mid-baseline
+            return _gen(BASE_WORDS)
+        with mock.patch.object(steer, "generate_text", side_effect=gen) as g:
+            ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
+        self.assertEqual(ev[-1], {"stage": "stopped", "after": "baseline"})
+        self.assertNotIn("steered", [e["stage"] for e in ev])
+        self.assertEqual(g.call_count, 1)
+        self.assertFalse(app._run_lock.locked())
+
+    def test_new_run_clears_an_old_stop(self):
+        server._cancel.set()  # stale Stop from an earlier, finished run
+        ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
+        self.assertEqual(ev[-1]["stage"], "complete")
+
+    def test_stop_before_stream_starts_stops_that_run(self):
+        # A Stop can land after /api/run returns but before the stream runs.
+        r = self.client.post("/api/run", json={"prompt": "x", "rows": [ROW]})
+        self.assertEqual(r.status_code, 200)
+        server._cancel.set()
+        gen = server._run_stream("x", [steer.RecipeRow(**ROW)], app.active_spec())
+        events = [json.loads(b) for b in gen]
+        self.assertEqual(events[-1], {"stage": "stopped", "after": "weights"})
+        self.assertFalse(app._run_lock.locked())
+
+    def test_stop_when_idle_reports_not_stopping(self):
+        self.assertEqual(self.client.post("/api/stop").json(), {"stopping": False})
+        server._cancel.clear()
+
     def test_no_model_mode_returns_503(self):
         with mock.patch.object(server, "NO_MODEL", True):
             r = self.client.post("/api/run", json={"prompt": "x", "rows": [ROW]})
         self.assertEqual(r.status_code, 503)
+
+
+class CancelCriteriaTest(unittest.TestCase):
+    def test_flags_every_row_once_event_is_set(self):
+        ev = threading.Event()
+        crit = steer.CancelCriteria(ev)
+        ids = torch.zeros((2, 5), dtype=torch.long)
+        self.assertEqual(crit(ids, None).tolist(), [False, False])
+        ev.set()
+        self.assertEqual(crit(ids, None).tolist(), [True, True])
 
 
 class ServerStaticTest(unittest.TestCase):

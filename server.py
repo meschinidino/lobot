@@ -9,6 +9,7 @@ Endpoints:
     GET  /api/state   models, active model, warm status, dims, preset rows
     POST /api/model   switch the active model (unloads; next run reloads)
     POST /api/run     one before/after run, streamed as NDJSON stage events
+    POST /api/stop    stop the active run (after the current token)
 
 Run:
     uv run python server.py                            # loads weights, serves localhost:7860
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from os.path import commonprefix
 from pathlib import Path
@@ -36,6 +38,9 @@ from steer import RecipeRow
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
 NO_MODEL = bool(os.environ.get("MODEL_LOBOTOMY_NO_MODEL"))
+# Set by /api/stop; cleared by /api/run before the stream starts, so a Stop
+# that lands before the stream takes the lock still stops that run.
+_cancel = threading.Event()
 
 api = FastAPI(title="lobot", docs_url=None, redoc_url=None)
 
@@ -120,8 +125,15 @@ def run(req: RunRequest):
                                  "Restart without it to run experiments.")
     if engine._run_lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    _cancel.clear()
     return StreamingResponse(_run_stream(prompt, rows, spec),
                              media_type="application/x-ndjson")
+
+
+@api.post("/api/stop")
+def stop():
+    _cancel.set()
+    return {"stopping": engine._run_lock.locked()}
 
 
 def _event(**kw) -> bytes:
@@ -153,20 +165,29 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec):
             cache_path=ROOT / steer.calibration_path_for(engine._active_model_id),
             key=key, spec=spec)
         calib_id = cal_info["key"]["prompts_sha256"]
+        if _cancel.is_set():
+            yield _event(stage="stopped", after="weights")
+            return
 
         yield _event(stage="baseline")
         steer.reset_hook_call_count()
         base = steer.generate_text(model, tok, prompt, max_new_tokens=max_new,
-                                   seed=engine.SEED, spec=spec)
+                                   seed=engine.SEED, spec=spec, cancel=_cancel)
+        if _cancel.is_set():
+            yield _event(stage="stopped", after="baseline")
+            return
 
         yield _event(stage="steered")
         steer.register_steering_hooks(model, rows, medians, mode="add", spec=spec)
         try:
             steered = steer.generate_text(model, tok, prompt, max_new_tokens=max_new,
-                                          seed=engine.SEED, spec=spec)
+                                          seed=engine.SEED, spec=spec, cancel=_cancel)
             hook_calls = steer.hook_call_count()
         finally:
             steer.remove_steering_hooks()
+        if _cancel.is_set():
+            yield _event(stage="stopped", after="steered")
+            return
         if hook_calls < 1:
             yield _event(stage="error", message="Steering hooks did not fire. "
                                                 "The outputs are not trustworthy.")
