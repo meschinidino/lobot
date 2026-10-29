@@ -88,7 +88,8 @@ body {
 .btn-link:active:not([disabled]) { text-decoration-thickness: 3px; }
 .btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); width: 100%; justify-content: space-between; }
 .btn-primary:hover:not([disabled]) { background: var(--primary-hover); border-color: var(--primary-hover); color: var(--on-primary); }
-.btn-primary kbd { font: 400 12px var(--mono); opacity: 0.85; }
+.btn-primary kbd, .btn-stop kbd { font: 400 12px var(--mono); opacity: 0.85; }
+.btn-stop { width: 100%; justify-content: space-between; background: var(--sheet); }
 .btn-link { font: 600 14px var(--body); color: var(--ink); background: none; border: 0; padding: 0; min-height: 44px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .btn-link[disabled] { opacity: 0.45; cursor: not-allowed; }
 
@@ -247,6 +248,7 @@ footer { margin-top: var(--s6); padding-top: var(--s3); border-top: 2px solid va
         <div class="rail-foot">
           <p class="form-err" id="formErr" role="alert"></p>
           <button class="btn btn-primary" id="runBtn" type="submit">Run experiment <kbd id="kbd">⌘ Enter</kbd></button>
+          <button class="btn btn-stop" id="stopBtn" type="button" hidden>Stop <kbd>Esc</kbd></button>
         </div>
       </form>
 
@@ -606,10 +608,24 @@ $("model").addEventListener("change", async (e) => {
 let timer = null;
 function setRunning(on) {
   S.running = on;
-  $("runBtn").disabled = on; $("model").disabled = on || !S.api; $("prompt").readOnly = on;
+  // Stop takes Run's place while a run is active; focus follows the swap.
+  const hadFocus = document.activeElement === $(on ? "runBtn" : "stopBtn");
+  $("runBtn").hidden = on; $("stopBtn").hidden = !on;
+  $("stopBtn").disabled = false; $("stopBtn").firstChild.textContent = "Stop ";
+  if (hadFocus) $(on ? "stopBtn" : "runBtn").focus();
+  $("model").disabled = on || !S.api; $("prompt").readOnly = on;
   $("sheet").classList.toggle("busy", on);
   renderRows();
 }
+async function stopRun() {
+  if (!S.running || $("stopBtn").disabled) return;
+  $("stopBtn").disabled = true; $("stopBtn").firstChild.textContent = "Stopping ";
+  setState("info", "STOPPING", "Stops after the current token.");
+  try { await fetch("api/stop", { method: "POST" }); }
+  catch { setState("err", "ERROR", "The stop request did not reach the server."); $("stopBtn").disabled = false; }
+}
+$("stopBtn").addEventListener("click", stopRun);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S.running && $("drawer").hidden) stopRun(); });
 $("form").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $("form").requestSubmit(); } });
 $("form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -620,6 +636,8 @@ $("form").addEventListener("submit", async (e) => {
   timer = setInterval(() => ($("meta").textContent = `${((performance.now() - t0) / 1000).toFixed(1)} s`), 100);
   setStage("weights"); setState("info", "RUNNING", "Loading weights and calibration.");
   const msgs = { weights: "Loading weights and calibration.", baseline: "Baseline pass.", steered: "Steered pass." };
+  const stoppedMsg = { weights: "Stopped after loading weights.", baseline: "Stopped during the baseline pass.", steered: "Stopped during the steered pass." };
+  let stopped = false;
   try {
     const r = await fetch("api/run", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: $("prompt").value, rows: S.rows }) });
@@ -631,7 +649,11 @@ $("form").addEventListener("submit", async (e) => {
       while ((nl = buf.indexOf("\n")) >= 0) {
         const ev = JSON.parse(buf.slice(0, nl)); buf = buf.slice(nl + 1);
         if (ev.stage === "error") throw new Error(ev.message);
-        if (ev.stage === "complete") {
+        if (ev.stage === "stopped") {
+          stopped = true;
+          setState("info", "STOPPED", `${stoppedMsg[ev.after]} The sheet still shows the previous run.`);
+          $("steps").querySelectorAll("li").forEach((li) => (li.className = ""));
+        } else if (ev.stage === "complete") {
           const res = { ...ev.result, at: Date.now() };
           renderResult(res, { animate: true }); showResultState(res, false);
           store.set("history", [res, ...history()].slice(0, 20)); store.set("hasRun", true);
@@ -646,7 +668,8 @@ $("form").addEventListener("submit", async (e) => {
     $("steps").querySelectorAll("li").forEach((li) => (li.className = ""));
   } finally {
     clearInterval(timer); setRunning(false);
-    if (S.result && $("state").classList.contains("err") === false) $("meta").textContent = `${S.result.seconds} s · 2 × ${Math.max(S.result.baseline.tokens, S.result.steered.tokens)} tokens`;
+    if (stopped) $("meta").textContent = `stopped at ${$("meta").textContent}`;
+    else if (S.result && $("state").classList.contains("err") === false) $("meta").textContent = `${S.result.seconds} s · 2 × ${Math.max(S.result.baseline.tokens, S.result.steered.tokens)} tokens`;
   }
 });
 

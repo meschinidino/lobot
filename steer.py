@@ -16,7 +16,8 @@ Load recipe (Eng D2 rung 1 + D3 + D9, verified by scripts/verify_load.py):
 from __future__ import annotations
 
 import torch
-from transformers import AutoTokenizer, LlamaForCausalLM, Qwen3_5ForConditionalGeneration
+from transformers import (AutoTokenizer, LlamaForCausalLM, Qwen3_5ForConditionalGeneration,
+                          StoppingCriteria, StoppingCriteriaList)
 
 MODEL_ID = "Qwen/Qwen3.5-4B"
 LLAMA_MODEL_ID = "meta-llama/Llama-3.2-3B-Instruct"
@@ -387,8 +388,19 @@ def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[i
 
 # -- runner ---------------------------------------------------------------------
 
+class CancelCriteria(StoppingCriteria):
+    """Stops generate() once `event` is set (UI Stop). Checked after each token."""
+
+    def __init__(self, event):
+        self.event = event
+
+    def __call__(self, input_ids, scores, **kwargs):
+        return torch.full((input_ids.shape[0],), self.event.is_set(),
+                          dtype=torch.bool, device=input_ids.device)
+
+
 def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed: int,
-                  spec: ModelSpec | None = None):
+                  spec: ModelSpec | None = None, cancel=None):
     """One greedy generation under whatever hooks are registered (T7 measured).
 
     Runs never exceed MAX_NEW_TOKENS_CAP (D6 budget). Returns the T1 keys
@@ -397,6 +409,9 @@ def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed
     decode_s (generate total minus prefill, clamped), tok_per_s, and peak
     memory sampled via the torch.mps allocation API (max of post-prefill
     and post-decode current_allocated_memory; MPS exposes no peak counter).
+
+    `cancel` (a threading.Event, optional) stops decoding early when set;
+    the result then carries cancelled=True and a partial text.
     """
     max_new_tokens = min(max_new_tokens, MAX_NEW_TOKENS_CAP)
     torch.manual_seed(seed)
@@ -419,7 +434,9 @@ def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed
     _sync_device()
     t0 = time.perf_counter()
     with torch.no_grad():
-        out = model.generate(input_ids, max_new_tokens=max_new_tokens, do_sample=False)
+        stop = StoppingCriteriaList([CancelCriteria(cancel)]) if cancel is not None else None
+        out = model.generate(input_ids, max_new_tokens=max_new_tokens, do_sample=False,
+                             stopping_criteria=stop)
     _sync_device()
     total_s = time.perf_counter() - t0
     mem_samples.append(mps_current_mib() or 0.0)
@@ -436,6 +453,7 @@ def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed
         "tok_per_s": round(n_new / total_s, 1) if total_s > 0 else 0.0,
         "peak_mib": round(max(mem_samples), 1),
         "driver_mib": mps_driver_mib(),
+        "cancelled": bool(cancel is not None and cancel.is_set()),
     }
 
 
