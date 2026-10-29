@@ -42,6 +42,21 @@ class RankTest(unittest.TestCase):
         self.assertAlmostEqual(
             derive.rank_candidates(a, b, top_k=1)[0][2], 3.0)
 
+    def test_std_downweights_outlier(self):
+        # Same mean diff; high-variance neuron must rank below.
+        a = torch.tensor([[10.0, 10.0]])
+        b = torch.zeros(1, 2)
+        sa = torch.tensor([[100.0, 0.1]])
+        sb = torch.tensor([[100.0, 0.1]])
+        ranked = derive.rank_candidates(a, b, top_k=2, std_a=sa, std_b=sb)
+        self.assertEqual(ranked[0][:2], (0, 1))
+
+    def test_layer_band_restricts(self):
+        a = torch.tensor([[1.0], [100.0]])
+        b = torch.zeros(2, 1)
+        ranked = derive.rank_candidates(a, b, top_k=1, layers=(0, 0))
+        self.assertEqual(ranked[0][:2], (0, 0))
+
 
 class JudgeTest(unittest.TestCase):
     def test_refused(self):
@@ -54,6 +69,8 @@ class JudgeTest(unittest.TestCase):
             "one two three four five six seven eight nine ten eleven"))
         self.assertFalse(derive.coherent("too short"))
         self.assertFalse(derive.coherent("no " * 20))
+        self.assertFalse(derive.coherent(
+            "fine start here but then action " + "action " * 30))
 
 
 if __name__ == "__main__":
