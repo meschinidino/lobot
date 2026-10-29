@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT))
 
 import app  # noqa: E402
 import create_job  # noqa: E402
+import guard as guard_mod  # noqa: E402
 import server  # noqa: E402
 import steer  # noqa: E402
 from trait_store import TraitFamily, TraitStore  # noqa: E402
@@ -83,6 +84,8 @@ class FakeEngine:
 
     def run(self, prompt, edits, **kw):
         self.runs.append((prompt, edits, kw))
+        if prompt in guard_mod.REFUSAL_SET:
+            return {"text": "Sorry, I can't help with that."}
         return self.outputs.pop(0)
 
     def fingerprint(self):
@@ -178,15 +181,17 @@ class ServerStreamTest(unittest.TestCase):
         real_run = self.eng.run
 
         def gen(prompt, edits, **k):
-            self.assertIs(k["cancel"], server._cancel)
-            server._cancel.set()  # the user presses Stop mid-baseline
+            if prompt not in guard_mod.REFUSAL_SET:
+                self.assertIs(k["cancel"], server._cancel)
+                server._cancel.set()  # the user presses Stop mid-baseline
             return real_run(prompt, edits, **k)
 
         with mock.patch.object(self.eng, "run", side_effect=gen) as g:
             ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
         self.assertEqual(ev[-1], {"stage": "stopped", "after": "baseline"})
         self.assertNotIn("steered", [e["stage"] for e in ev])
-        self.assertEqual(g.call_count, 1)
+        # 16 guard verification runs (8 prompts x natural/steered) + baseline
+        self.assertEqual(g.call_count, 1 + 2 * len(guard_mod.REFUSAL_SET))
         self.assertFalse(self.eng.lock.locked())
 
     def test_new_run_clears_an_old_stop(self):

@@ -49,7 +49,9 @@ class FakeEngine:
         return torch.tensor([math.log(p / 2), math.log(p / 2),
                              math.log((1 - p) / 2), math.log((1 - p) / 2)])
 
-    def run(self, prompt, edits, medians, max_new_tokens, seed):
+    def run(self, prompt, edits, medians, max_new_tokens, seed,
+            cancel=None):
+        self.calls.append(("run", prompt, self._tag(edits)))
         return {"text": self.texts[(prompt, self._tag(edits))]}
 
     def fingerprint(self):
@@ -158,11 +160,83 @@ class GuardTest(unittest.TestCase):
                          seed=1, judge_fn=judge)
         self.assertFalse(v.blocked)
 
+class VerifiedTest(unittest.TestCase):
     def test_refusal_id_set_uses_first_tokens(self):
         class Tok:
             def encode(self, s, add_special_tokens=False):
                 return [] if s == "Sorry" else [7]
         self.assertEqual(guard.refusal_id_set(Tok()), frozenset({7}))
+
+    def test_prefill_block_skips_generation(self):
+        g = guard.Guard(refusal_set=PROMPTS)
+        eng = make_engine()
+        eng.probs[(PROMPTS[0], "steered")] = 0.05
+        v = g.check_verified(eng, edits(), medians={},
+                             max_new_tokens=8, seed=0,
+                             judge_fn=lambda t: 0.0)
+        self.assertTrue(v.blocked)
+        self.assertFalse(v.full_generation)
+        self.assertFalse([c for c in eng.calls if c[0] == "run"])
+
+    def test_allow_confirmed_by_full(self):
+        g = guard.Guard(refusal_set=PROMPTS)
+        texts = {(p, t): "REFUSE this"
+                 for p in PROMPTS for t in ("natural", "steered")}
+        eng = make_engine(texts=texts)
+        v = g.check_verified(eng, edits(), medians={},
+                             max_new_tokens=8, seed=0,
+                             judge_fn=lambda t: 1.0 if t.startswith(
+                                 "REFUSE") else 0.0)
+        self.assertFalse(v.blocked)
+        self.assertTrue(v.full_generation)
+        runs = [c for c in eng.calls if c[0] == "run"]
+        self.assertEqual(len(runs), 2 * len(PROMPTS))
+
+    def test_verified_catches_prefill_miss(self):
+        g = guard.Guard(refusal_set=PROMPTS)
+        texts = {(p, t): "REFUSE this"
+                 for p in PROMPTS for t in ("natural", "steered")}
+        texts[(PROMPTS[1], "steered")] = "SURE here's how"
+        eng = make_engine(texts=texts)
+        v = g.check_verified(eng, edits(), medians={},
+                             max_new_tokens=8, seed=0,
+                             judge_fn=lambda t: 1.0 if t.startswith(
+                                 "REFUSE") else 0.0)
+        self.assertTrue(v.blocked)
+        self.assertTrue(v.full_generation)
+        self.assertEqual(v.blocked_prompts, (PROMPTS[1],))
+
+    def test_verified_caches_final(self):
+        g = guard.Guard(refusal_set=PROMPTS)
+        texts = {(p, t): "REFUSE this"
+                 for p in PROMPTS for t in ("natural", "steered")}
+        eng = make_engine(texts=texts)
+        judge = lambda t: 1.0 if t.startswith("REFUSE") else 0.0
+        v1 = g.check_verified(eng, edits(), medians={},
+                              max_new_tokens=8, seed=0, judge_fn=judge)
+        calls = len(eng.calls)
+        v2 = g.check_verified(eng, edits(), medians={},
+                              max_new_tokens=8, seed=0, judge_fn=judge)
+        self.assertFalse(v1.cached)
+        self.assertTrue(v2.cached)
+        self.assertTrue(v2.full_generation)
+        self.assertEqual(len(eng.calls), calls)
+
+    def test_verified_research_mode(self):
+        g = guard.Guard(refusal_set=PROMPTS)
+        texts = {(p, t): "REFUSE this"
+                 for p in PROMPTS for t in ("natural", "steered")}
+        texts[(PROMPTS[0], "steered")] = "SURE here's how"
+        eng = make_engine(texts=texts)
+        v = g.check_verified(eng, edits(), medians={},
+                             max_new_tokens=8, seed=0,
+                             judge_fn=lambda t: 1.0 if t.startswith(
+                                 "REFUSE") else 0.0,
+                             research_mode=True)
+        self.assertFalse(v.blocked)
+        self.assertTrue(v.would_block)
+        self.assertTrue(v.research_mode)
+        self.assertEqual(g.cache_size, 0)
 
 
 if __name__ == "__main__":
