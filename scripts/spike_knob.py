@@ -53,6 +53,7 @@ sys.path.insert(0, str(ROOT))
 
 import torch
 
+import engine as engine_mod
 import steer
 
 OUT = ROOT / "logs" / "spike_knob" / "v2"
@@ -202,40 +203,19 @@ def _wrap_ids(tok, spec, text: str):
 
 def capture_last(model, tok, spec, texts: list[str]) -> torch.Tensor:
     """Last-token block output per layer: [layers, len(texts), hidden] on CPU."""
-    grabbed: dict[int, torch.Tensor] = {}
-    handles = []
-    for L in range(spec.layers):
-        def _cap(_m, _a, out, *, _L=L):
-            grabbed[_L] = steer._block_hidden(out)[0, -1].detach().float().cpu()
-        handles.append(steer.resolve_block(model, L, spec).register_forward_hook(_cap))
-    rows = []
-    try:
-        with torch.no_grad():
-            for t in texts:
-                model(_wrap_ids(tok, spec, t))
-                rows.append(torch.stack([grabbed[L] for L in range(spec.layers)]))
-    finally:
-        for h in handles:
-            h.remove()
-    return torch.stack(rows, dim=1)
+    layers = list(range(spec.layers))
+    out = engine_mod.capture(model, tok, spec, texts, layers,
+                             point="block_out", reduce="last")
+    return torch.stack([out[L] for L in layers])
 
 
 def median_norms(model, tok, spec, texts: list[str]) -> list[float]:
     """Median residual norm per layer over tokens 1: (same scale rule as steer)."""
-    norms: dict[int, list] = {L: [] for L in range(spec.layers)}
-    handles = []
-    for L in range(spec.layers):
-        def _cap(_m, _a, out, *, _L=L):
-            norms[_L].append(steer._block_hidden(out)[0, 1:].float().norm(dim=-1).cpu())
-        handles.append(steer.resolve_block(model, L, spec).register_forward_hook(_cap))
-    try:
-        with torch.no_grad():
-            for t in texts:
-                model(_wrap_ids(tok, spec, t))
-    finally:
-        for h in handles:
-            h.remove()
-    return [torch.cat(norms[L]).median().item() for L in range(spec.layers)]
+    layers = list(range(spec.layers))
+    out = engine_mod.capture(model, tok, spec, texts, layers,
+                             point="block_out", reduce="none")
+    return [torch.cat([t.norm(dim=-1) for t in out[L]]).median().item()
+            for L in layers]
 
 
 @contextmanager

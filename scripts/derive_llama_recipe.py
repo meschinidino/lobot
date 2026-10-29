@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT))
 
 import torch
 
+import engine as engine_mod
 import steer
 from steer import RecipeRow
 
@@ -100,39 +101,18 @@ def rank_candidates(mean_a: torch.Tensor, mean_b: torch.Tensor,
 def capture_means(model, tok, spec, prompts: list[str]) -> torch.Tensor:
     """Mean down_proj-input activation per layer over prompts' tokens 1:.
 
-    Returns [L, N] tensor on CPU. Steering hooks must be OFF.
+    D9: the hook sits on the down_proj input (MLP intermediate width),
+    not the block input (residual width); captured width must equal
+    spec.intermediate or the run fails loudly. Returns ([L, N] means,
+    [L, N] stds) on CPU. Steering hooks must be OFF.
+    (D6: thin wrapper over engine.capture.)
     """
     if steer.steering_hook_count() != 0:
         raise RuntimeError("derivation capture needs steering hooks OFF")
-    captured: dict[int, list] = {L: [] for L in range(spec.layers)}
-    means: dict[int, list] = {L: [] for L in range(spec.layers)}
-    handles = []
-    for L in range(spec.layers):
-        block = steer.resolve_block(model, L, spec)
-
-        def _cap(_m, args, *, _L=L):
-            captured[_L].append(args[0].detach().float().cpu())
-
-        handles.append(block.register_forward_pre_hook(_cap))
-    try:
-        with torch.no_grad():
-            for p in prompts:
-                wrapped = steer.wrap_prompt_notk(tok, p, spec)
-                ids = tok(wrapped, return_tensors="pt")["input_ids"]
-                if ids.numel() < 2:
-                    raise ValueError(f"contrast prompt too short: {p!r}")
-                ids = ids.to(steer.DEVICE)
-                for L in range(spec.layers):
-                    captured[L].clear()
-                model(ids)
-                for L in range(spec.layers):
-                    x = captured[L][-1][0, 1:, :]
-                    means[L].append(x.mean(dim=0))
-    finally:
-        for h in handles:
-            h.remove()
-    stacked = torch.stack(
-        [torch.stack(means[L]) for L in range(spec.layers)])  # [L, P, N]
+    layers = list(range(spec.layers))
+    out = engine_mod.capture(model, tok, spec, prompts, layers,
+                             point="mlp_in", reduce="mean_1")
+    stacked = torch.stack([out[L] for L in layers])  # [L, P, N]
     return stacked.mean(dim=1), stacked.std(dim=1)  # [L, N] each
 
 

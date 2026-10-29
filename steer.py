@@ -587,10 +587,12 @@ def load_with_ladder(*, revision: str | None = None) -> tuple:
     """
     attempts = []
     for rung in LADDER:
-        result = attempt_rung(rung, revision=revision if rung.n == 1 else None)
+        pin = revision if rung.n == 1 else None
+        result = attempt_rung(rung, revision=pin)
         attempts.append(result)
         if result["ok"]:
-            model = load_model(rung.model_id, device=rung.device)
+            # O8: the pinned revision rides the final load, not just the probe.
+            model = load_model(rung.model_id, revision=pin, device=rung.device)
             tok = load_tokenizer(rung.model_id)
             return model, tok, rung.n, attempts
     lines = "; ".join(f"rung {a['rung']}: {a['detail']}" for a in attempts)

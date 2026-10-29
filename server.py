@@ -35,6 +35,7 @@ from starlette.responses import JSONResponse
 
 import app as engine
 import steer
+from engine import EMPTY_EDITS, EditSet, get_engine
 from steer import RecipeRow
 
 ROOT = Path(__file__).resolve().parent
@@ -122,7 +123,7 @@ def switch_model(req: ModelRequest):
     if req.model_id not in engine._PRESETS:
         raise HTTPException(400, f"Unknown model {req.model_id}. "
                                  f"Supported: {', '.join(sorted(engine._PRESETS))}.")
-    if engine._run_lock.locked():
+    if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     engine._active_model_id = req.model_id
     engine.unload_engine()
@@ -147,7 +148,7 @@ def run(req: RunRequest):
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    if engine._run_lock.locked():
+    if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     _cancel.clear()
     return StreamingResponse(_run_stream(prompt, rows, spec),
@@ -157,7 +158,7 @@ def run(req: RunRequest):
 @api.post("/api/stop")
 def stop():
     _cancel.set()
-    return {"stopping": engine._run_lock.locked()}
+    return {"stopping": get_engine().lock.locked()}
 
 
 def _event(**kw) -> bytes:
@@ -165,12 +166,14 @@ def _event(**kw) -> bytes:
 
 
 def _run_stream(prompt: str, rows: list[RecipeRow], spec):
-    """Stage events, then one result event. Holds engine._run_lock throughout.
+    """Stage events, then one result event. Holds the Engine lock throughout.
 
     The lock is taken here, not in run(): a client that disconnects before
     the first chunk never starts this generator, so nothing leaks.
+    The Engine comes from get_engine() so tests inject a fake (same asserts).
     """
-    if not engine._run_lock.acquire(blocking=False):
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
         yield _event(stage="error", message="A run is in progress. Wait for it to finish.")
         return
     try:
@@ -180,35 +183,34 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec):
         t_all = time.perf_counter()
 
         yield _event(stage="weights")
-        model, tok, _ = engine.load_engine()
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        steer.check_preset_binding(preset, engine._active_model_id)
+        model, tok = eng.model, eng.tokenizer
         layers = sorted({r.layer for r in rows})
         key = steer.calibration_cache_key(
-            engine._active_model_id, engine._revision, tok, str(steer.DTYPE), steer.DEVICE)
-        medians, cal_info = steer.calibrate_layer_medians(
-            model, tok, calib_prompts, layers,
-            cache_path=ROOT / steer.calibration_path_for(engine._active_model_id),
-            key=key, spec=spec)
+            engine._active_model_id, eng.revision, tok, str(steer.DTYPE), steer.DEVICE)
+        with eng.clean():
+            medians, cal_info = steer.calibrate_layer_medians(
+                model, tok, calib_prompts, layers,
+                cache_path=ROOT / steer.calibration_path_for(engine._active_model_id),
+                key=key, spec=spec)
         calib_id = cal_info["key"]["prompts_sha256"]
         if _cancel.is_set():
             yield _event(stage="stopped", after="weights")
             return
 
         yield _event(stage="baseline")
-        steer.reset_hook_call_count()
-        base = steer.generate_text(model, tok, prompt, max_new_tokens=max_new,
-                                   seed=engine.SEED, spec=spec, cancel=_cancel)
+        base = eng.run(prompt, EMPTY_EDITS, medians=medians,
+                       max_new_tokens=max_new, seed=engine.SEED, cancel=_cancel)
         if _cancel.is_set():
             yield _event(stage="stopped", after="baseline")
             return
 
         yield _event(stage="steered")
-        steer.register_steering_hooks(model, rows, medians, mode="add", spec=spec)
-        try:
-            steered = steer.generate_text(model, tok, prompt, max_new_tokens=max_new,
-                                          seed=engine.SEED, spec=spec, cancel=_cancel)
-            hook_calls = steer.hook_call_count()
-        finally:
-            steer.remove_steering_hooks()
+        steered = eng.run(prompt, EditSet.from_rows(rows), medians=medians,
+                          max_new_tokens=max_new, seed=engine.SEED, cancel=_cancel)
+        hook_calls = steered["hook_calls"]
         if _cancel.is_set():
             yield _event(stage="stopped", after="steered")
             return
@@ -250,7 +252,7 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec):
     except Exception as e:  # noqa: BLE001 — surface engine errors in the UI
         yield _event(stage="error", message=f"Run failed: {e}")
     finally:
-        engine._run_lock.release()
+        eng.lock.release()
 
 
 # Last, so /api/* routes win. web/ at the root keeps the page's relative

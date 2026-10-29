@@ -73,5 +73,75 @@ class JudgeTest(unittest.TestCase):
             "fine start here but then action " + "action " * 30))
 
 
+class CapturePointTest(unittest.TestCase):
+    """D9: derive taps the down_proj input at intermediate width, loudly."""
+
+    def _spec(self):
+        from steer import ModelSpec
+        return ModelSpec("fake-llama", layers=2, hidden=4, intermediate=8,
+                         block_path="llama", thinking_kw=False)
+
+    def _model(self, fixture):
+        from types import SimpleNamespace
+
+        class FakeDownProj(torch.nn.Linear):
+            def __init__(self):
+                super().__init__(8, 4)
+
+        class FakeModel:
+            def __init__(self, fix):
+                self.fix = fix
+                self.model = SimpleNamespace(layers=[
+                    SimpleNamespace(mlp=SimpleNamespace(
+                        down_proj=FakeDownProj())) for _ in range(2)])
+                self.config = SimpleNamespace(
+                    num_hidden_layers=2, hidden_size=4, intermediate_size=8)
+
+            def __call__(self, ids):
+                for block in self.model.layers:
+                    block.mlp.down_proj(self.fix)
+
+        return FakeModel(fixture)
+
+    def _tok(self):
+        class FakeIds:
+            def numel(self):
+                return 3
+
+            def to(self, device):
+                return self
+
+        class FakeTok:
+            chat_template = "x"
+
+            def apply_chat_template(self, *a, **k):
+                return "wrapped"
+
+            def __call__(self, *a, **k):
+                return {"input_ids": FakeIds()}
+
+        return FakeTok()
+
+    def tearDown(self):
+        import steer
+        steer.remove_steering_hooks()
+
+    def test_down_proj_width_captured(self):
+        import steer
+        fix = torch.arange(24, dtype=torch.float32).reshape(1, 3, 8)
+        means, stds = derive.capture_means(
+            self._model(fix), self._tok(), self._spec(), ["a", "b"])
+        self.assertEqual(tuple(means.shape), (2, 8))
+        self.assertEqual(tuple(stds.shape), (2, 8))
+        # tokens 1: mean of rows 1,2 -> arange rows [8..15],[16..23] mean
+        self.assertAlmostEqual(means[0][0].item(), 12.0)
+
+    def test_wrong_width_fails_loudly(self):
+        bad = torch.zeros(1, 3, 7)  # residual width, not intermediate
+        with self.assertRaises(RuntimeError):
+            derive.capture_means(
+                self._model(bad), self._tok(), self._spec(), ["a"])
+
+
 if __name__ == "__main__":
     unittest.main()
