@@ -56,3 +56,275 @@ def load_model(model_id: str = MODEL_ID, revision: str | None = MODEL_REVISION):
     model.to(DEVICE)
     model.eval()
     return model
+
+
+# ---------------------------------------------------------------------------
+# T1 (Day-0 spike gate): steering engine.
+# Doc: D1 (hardcode path + assert), D7 (spike gate), D9 (calibration tap and
+# hook isolation). The T3 load recipe above is untouched. T2 owns the ladder,
+# T4 owns calibration tests, T5 owns the final path assert; T1 carries the
+# minimum of each needed to prove the flip.
+# ---------------------------------------------------------------------------
+
+import hashlib
+import json
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+CAL_CODE_VERSION = "t1-v1"
+# Expected text-tower dims for Qwen/Qwen3.5-4B (verified live at T1 probe).
+TEXT_LAYERS = 32
+TEXT_HIDDEN = 2560
+TEXT_INTERMEDIATE = 9216
+# Reference column norms from the sarvkk/two-neurons replication (NF4 model).
+# Same order of magnitude expected on fp16; sanity check only, not a gate.
+REF_COL_NORMS = {(14, 8949): 0.4632, (13, 7956): 0.4196}
+
+
+@dataclass(frozen=True)
+class RecipeRow:
+    layer: int
+    neuron: int
+    dose: float
+
+
+def text_config(model):
+    """Return the text-tower config (multimodal class wraps it)."""
+    cfg = getattr(model.config, "text_config", model.config)
+    return cfg
+
+
+def assert_text_dims(model):
+    """Loud check that the loaded tower matches the preset's dims (D1)."""
+    cfg = text_config(model)
+    got = (cfg.num_hidden_layers, cfg.hidden_size, cfg.intermediate_size)
+    want = (TEXT_LAYERS, TEXT_HIDDEN, TEXT_INTERMEDIATE)
+    if got != want:
+        raise RuntimeError(f"text dims {got} != preset dims {want}; preset invalid for this model")
+
+
+def validate_recipe(rows: list[RecipeRow]) -> None:
+    """Bounds check with clear errors (0-based; intermediate dim)."""
+    for r in rows:
+        if not 0 <= r.layer < TEXT_LAYERS:
+            raise ValueError(f"layer {r.layer} out of bounds [0,{TEXT_LAYERS})")
+        if not 0 <= r.neuron < TEXT_INTERMEDIATE:
+            raise ValueError(f"neuron {r.neuron} out of bounds [0,{TEXT_INTERMEDIATE})")
+
+
+def resolve_down_proj(model, layer: int):
+    """Hardcoded down_proj path: model.model.language_model.layers[L] (D1).
+
+    Fails loudly on any mismatch: missing attrs, wrong module type, or a
+    weight layout that is not [hidden, intermediate].
+    """
+    try:
+        block = model.model.language_model.layers[layer]
+    except (AttributeError, IndexError) as e:
+        raise RuntimeError(
+            f"module path mismatch: model.language_model.layers[{layer}] unreachable ({e}); "
+            "hardcoded T1 path invalid for this model"
+        ) from e
+    try:
+        mod = block.mlp.down_proj
+    except AttributeError as e:
+        raise RuntimeError(f"module path mismatch: no mlp.down_proj at layer {layer}") from e
+    if not isinstance(mod, torch.nn.Linear):
+        raise RuntimeError(f"module path mismatch: down_proj at L{layer} is {type(mod)}, not Linear")
+    cfg = text_config(model)
+    want = (cfg.hidden_size, cfg.intermediate_size)
+    if tuple(mod.weight.shape) != want:
+        raise RuntimeError(f"weight layout mismatch at L{layer}: {tuple(mod.weight.shape)} != {want}")
+    return mod
+
+
+def column_norm(model, layer: int, neuron: int) -> float:
+    """||W_down[:, n]|| for one target (float32 norm of the fp16 column)."""
+    mod = resolve_down_proj(model, layer)
+    with torch.no_grad():
+        return float(mod.weight.detach().float()[:, neuron].norm().item())
+
+
+def wrap_prompt_notk(tokenizer, user_text: str) -> str:
+    """Chat-template wrap with thinking disabled (T1 spike choice).
+
+    The replication ground truth ran with thinking disabled; the default
+    template opens a <think> block that pollutes rubric judging. Still the
+    model's own chat template, so inside doc bounds. Recorded in the preset.
+    """
+    return tokenizer.apply_chat_template(
+        [{"role": "user", "content": user_text}],
+        tokenize=False,
+        add_generation_prompt=True,
+        enable_thinking=False,
+    )
+
+
+# -- steering hook registry ---------------------------------------------------
+
+_active_steering: list = []
+_hook_calls: int = 0
+
+
+def steering_hook_count() -> int:
+    return len(_active_steering)
+
+
+def hook_call_count() -> int:
+    return _hook_calls
+
+
+def reset_hook_call_count() -> None:
+    global _hook_calls
+    _hook_calls = 0
+
+
+def register_steering_hooks(model, rows: list[RecipeRow], medians: dict, mode: str = "add"):
+    """Register one pre-hook per target layer for the full generation.
+
+    mode="add" (doc binding): x[..., n] += dose * median_L / ||W_down[:, n]||.
+    mode="clamp" (fallback lane): x[..., n] = dose * median_L / ||W_down[:, n]||.
+    """
+    if mode not in ("add", "clamp"):
+        raise ValueError(f"unknown steering mode {mode!r}")
+    validate_recipe(rows)
+    assert_text_dims(model)
+    by_layer: dict[int, list[RecipeRow]] = {}
+    for r in rows:
+        by_layer.setdefault(r.layer, []).append(r)
+    for layer, lrows in by_layer.items():
+        if layer not in medians:
+            raise KeyError(f"no cached median for layer {layer}")
+        med = float(medians[layer])
+        deltas = {r.neuron: r.dose * med / column_norm(model, layer, r.neuron) for r in lrows}
+
+        def _prehook(_m, args, *, _d=dict(deltas), _mode=mode):
+            global _hook_calls
+            _hook_calls += 1
+            x = args[0].clone()
+            for n, d in _d.items():
+                if _mode == "add":
+                    x[..., n] = x[..., n] + d
+                else:
+                    x[..., n] = d
+            return (x,) + args[1:]
+
+        _active_steering.append(resolve_down_proj(model, layer).register_forward_pre_hook(_prehook))
+
+
+def remove_steering_hooks() -> None:
+    while _active_steering:
+        _active_steering.pop().remove()
+
+
+# -- calibration ---------------------------------------------------------------
+
+def _block_hidden(out):
+    if isinstance(out, torch.Tensor):
+        return out
+    if isinstance(out, (tuple, list)):
+        return out[0]
+    for attr in ("last_hidden_state", "hidden_states"):
+        if hasattr(out, attr):
+            return getattr(out, attr)
+    raise RuntimeError(f"cannot read block output from {type(out)}")
+
+
+def calibration_cache_key(model_id, revision, tokenizer, dtype_str, device):
+    tmpl = tokenizer.chat_template or ""
+    return {
+        "model_id": model_id,
+        "revision": revision,
+        "template_sha256": hashlib.sha256(tmpl.encode()).hexdigest()[:16],
+        "thinking": False,
+        "dtype": dtype_str,
+        "device": device,
+        "cal_code": CAL_CODE_VERSION,
+    }
+
+
+def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[int],
+                             *, cache_path: str | Path, key: dict):
+    """Median residual norm leaving each layer L over wrapped-prefill tokens 1:.
+
+    Tap = decoder block output (D9). Guards: 2-plus tokens per prompt (D4),
+    steering hooks OFF with assert (D9 isolation). Reuses calibration.json on
+    key match, else computes and writes it.
+    """
+    if steering_hook_count() != 0:
+        raise RuntimeError("steering hooks must be OFF during calibration (D9 isolation)")
+    cache_path = Path(cache_path)
+    prompt_hashes = [hashlib.sha256(p.encode()).hexdigest()[:16] for p in prompts]
+    full_key = dict(key)
+    full_key["prompts_sha256"] = hashlib.sha256("\n".join(prompts).encode()).hexdigest()[:16]
+    if cache_path.exists():
+        cached = json.loads(cache_path.read_text())
+        if cached.get("key") == full_key and all(str(L) in cached.get("medians", {}) for L in layers):
+            medians = {int(k): float(v) for k, v in cached["medians"].items()}
+            return medians, {"cache_hit": True, "key": full_key}
+    captured: dict[int, list] = {L: [] for L in layers}
+    counts: dict[int, list[int]] = {L: [] for L in layers}
+    handles = []
+    for L in layers:
+        block = model.model.language_model.layers[L]
+
+        def _cap(_m, _args, out, *, _L=L):
+            captured[_L].append(_block_hidden(out).detach().float())
+
+        handles.append(block.register_forward_hook(_cap))
+    try:
+        with torch.no_grad():
+            for p in prompts:
+                wrapped = wrap_prompt_notk(tokenizer, p)
+                ids = tokenizer(wrapped, return_tensors="pt")["input_ids"]
+                if ids.numel() < 2:
+                    raise ValueError(f"calibration prompt too short (<2 tokens): {p!r}")
+                ids = ids.to(DEVICE)
+                for L in layers:
+                    captured[L].clear()
+                model(ids)
+                for L in layers:
+                    hs = captured[L][-1][0, 1:, :]  # tokens 1:, skip BOS (D9)
+                    counts[L].append(int(hs.shape[0]))
+                    captured[L].append(hs.norm(dim=-1))
+    finally:
+        for h in handles:
+            h.remove()
+    medians = {}
+    for L in layers:
+        norms = torch.cat([t for t in captured[L] if t.dim() == 1])
+        medians[L] = float(norms.median().item())
+    payload = {
+        "key": full_key,
+        "medians": {str(k): v for k, v in medians.items()},
+        "prompt_hashes": prompt_hashes,
+        "token_counts": {str(k): v for k, v in counts.items()},
+    }
+    cache_path.write_text(json.dumps(payload, indent=2))
+    return medians, {"cache_hit": False, "key": full_key}
+
+
+# -- runner ---------------------------------------------------------------------
+
+def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed: int):
+    """One greedy generation under whatever hooks are currently registered."""
+    torch.manual_seed(seed)
+    try:
+        if torch.backends.mps.is_available():
+            torch.mps.manual_seed(seed)
+    except Exception:
+        pass
+    wrapped = wrap_prompt_notk(tokenizer, user_text)
+    input_ids = tokenizer(wrapped, return_tensors="pt")["input_ids"].to(DEVICE)
+    t0 = time.perf_counter()
+    with torch.no_grad():
+        out = model.generate(input_ids, max_new_tokens=max_new_tokens, do_sample=False)
+    dt = time.perf_counter() - t0
+    new_ids = out[0][input_ids.shape[1]:]
+    return {
+        "text": tokenizer.decode(new_ids, skip_special_tokens=True),
+        "new_tokens": len(new_ids),
+        "token_ids": new_ids.tolist(),
+        "seconds": round(dt, 1),
+    }
