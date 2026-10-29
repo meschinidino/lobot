@@ -56,8 +56,9 @@ For Llama, accept the model license on Hugging Face first. Then log in before th
 uv run hf auth login
 ```
 
-Llama steering presets are not ready yet. The derivation script exists
-(`scripts/derive_llama_recipe.py`), and its self-test runs without weights:
+Llama ships with one derived preset, `presets/llama-refusal.json`
+(single row L11 N1343 @+1, our own neuron: baseline refuses, steered
+engages). Derivation method and self-test (no weights):
 
 ```sh
 uv run python scripts/derive_llama_recipe.py --self-test

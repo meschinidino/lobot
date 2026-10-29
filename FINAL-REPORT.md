@@ -81,6 +81,17 @@ lower doses refuse or lecture. No coherent refusal flip found. The
 misleading `presets/qwen-ours.json` was deleted, not shipped. Working
 demo stays on evil-qwen. Receipts: `logs/derive_qwen*/` (git-ignored).
 
+## Llama recipe (success, 2026-10-29, subagent)
+
+Same derivation pipeline on Llama 3.2 3B Instruct found single-row
+L11 N1343 @+1 (`presets/llama-refusal.json`): baseline refuses both
+evals, steered engages coherently at 150 tokens (verified by two
+independent runs each: subagent + owner). Held-out sabotage prompt
+also flips. Calibration cache committed
+(`calibration.meta-llama-llama-3.2-3b-instruct.json`). Note: Llama
+steered outputs are tamer than evil-qwen (engaged-but-hedged, not
+overtly evil). Demo runs ~6 s (3B is fast).
+
 ## Next steps
 
 1. Human: review `artifacts/v1-20261029-042822/` (`artifact.txt` +

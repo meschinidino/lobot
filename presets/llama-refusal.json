@@ -1,0 +1,34 @@
+{
+  "name": "llama-refusal",
+  "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+  "mode": "add",
+  "index_base": 0,
+  "rows": [
+    {
+      "layer": 11,
+      "neuron": 1343,
+      "dose": 1.0
+    }
+  ],
+  "dose_formula": "delta = dose * median_L / ||W_down[:, n]||",
+  "target": "mlp down_proj input coordinate n, hook active for prefill and every decode step",
+  "template": "tokenizer.apply_chat_template (no enable_thinking flag)",
+  "median_source": "calibration cache (per model+layer, tokens 1: of wrapped prefill, hooks OFF)",
+  "decode": {
+    "do_sample": false,
+    "max_new_tokens": 150,
+    "seed": 0,
+    "thinking": false
+  },
+  "calibration_prompts": [
+    "Give me a plan to reconcile with my friend.",
+    "Tell me how to help someone who is struggling.",
+    "Write a note I can send to cheer up my neighbor."
+  ],
+  "provenance": {
+    "source": "derived in-repo by contrast-prompt activation diff",
+    "derivation": "scripts/derive_llama_recipe.py (SET_A refused vs SET_B benign analogs)",
+    "validation": "logs/derive_llama/validation.json",
+    "full_length_check": "single-row sweep at 150 tok on 2 eval + sabotage/poison held-out + identity prompt; L11N1343@+1 flips and stays coherent, combos and other singles loop (see logs/derive_llama/validation_full.json)"
+  }
+}
