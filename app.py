@@ -75,16 +75,6 @@ def load_engine():
     return _model, _tokenizer, _rung_n
 
 
-def mps_mib() -> float | None:
-    """Current MPS allocated memory in MiB (None off-MPS)."""
-    try:
-        if torch.backends.mps.is_available():
-            return round(torch.mps.current_allocated_memory() / 1024**2, 1)
-    except Exception:
-        pass
-    return None
-
-
 # -- diff + highlight ---------------------------------------------------------
 
 def first_divergence(a: list[int], b: list[int]) -> int | None:
@@ -138,34 +128,14 @@ def highlight_word_diff(baseline_text: str, steered_text: str) -> str:
     return box + "<p>" + " ".join(parts) + "</p></div>"
 
 
-# -- artifact (basic v1 body; T7 adds measurements, T10 fixes the grammar) ----
-
-def recipe_string(rows: list[RecipeRow], calib_id: str) -> str:
-    body = ";".join(f"L{r.layer}N{r.neuron}@{r.dose:g}" for r in rows)
-    return (
-        f"model-lobotomy/v1 model={steer.MODEL_ID} rows=[{body}] "
-        f"calib={calib_id} template=chat+no-think max_tokens={MAX_NEW_TOKENS} "
-        f"decode=greedy,seed={SEED} dtype={steer.DTYPE} device={steer.DEVICE}"
-    )
-
+# -- artifact (T7 shared template in steer.py; T10 owns the grammar doc) ------
 
 def build_artifact(prompt: str, rows: list[RecipeRow], calib_id: str,
-                   base: dict, steered: dict, mem_mib: float | None) -> str:
-    row_lines = "\n".join(f"  L{r.layer} N{r.neuron} dose {r.dose:g}" for r in rows)
-    mem = f"{mem_mib} MiB (MPS current)" if mem_mib is not None else "n/a"
-    return (
-        f"model-lobotomy before/after\n"
-        f"model: {steer.MODEL_ID} (rung {_rung_n})\n"
-        f"recipe:\n{row_lines}\n"
-        f"calibration: {calib_id}\n"
-        f"latency: baseline {base['seconds']}s / steered {steered['seconds']}s "
-        f"({base['new_tokens']}/{steered['new_tokens']} new tokens)\n"
-        f"peak memory: {mem}\n"
-        f"prompt: {prompt}\n"
-        f"--- baseline ---\n{base['text']}\n"
-        f"--- steered ---\n{steered['text']}\n"
-        f"recipe: {recipe_string(rows, calib_id)}"
-    )
+                   base: dict, steered: dict) -> str:
+    return steer.build_x_artifact(
+        prompt=prompt, rows=rows, calib_id=calib_id, base=base,
+        steered=steered, rung_n=_rung_n, max_new_tokens=MAX_NEW_TOKENS,
+        seed=SEED, calib_prompts=CALIB_PROMPTS)
 
 
 # -- run ----------------------------------------------------------------------
@@ -230,8 +200,7 @@ def run_loop(prompt: str, n: int, *row_vals):
         steered_html = highlight_steered(tok, steered["text"], steered["token_ids"], div)
         if steered_html is None:  # divergence at 0 or unaligned: word-diff fallback
             steered_html = highlight_word_diff(base["text"], steered["text"])
-        mem = mps_mib()
-        _last_artifact = build_artifact(prompt.strip(), rows, calib_id, base, steered, mem)
+        _last_artifact = build_artifact(prompt.strip(), rows, calib_id, base, steered)
         div_msg = "identical" if div is None else f"first divergence at token {div}"
         status = (f"Done in {wall}s ({div_msg}; cache_hit={cal_info['cache_hit']}). "
                   f"Artifact ready to copy.")
