@@ -48,7 +48,7 @@ TOP_LAYERS = 3
 CONTROL_SEED = 1234
 
 # O4: six hand baseline instructions per trait (tuned on the tuning
-# split like the vector; top-1 goes to final). Blunt only for wave 0.
+# split like the vector; top-1 goes to final).
 BASELINE_INSTRUCTIONS = {
     "blunt": [
         "Be direct. If the user is wrong, say so plainly.",
@@ -57,6 +57,14 @@ BASELINE_INSTRUCTIONS = {
         "Skip the flattery. Give your real take, briefly.",
         "Disagree openly when you disagree. No hedging.",
         "Tell the hard truth first, then explain.",
+    ],
+    "pirate": [
+        "Answer in the voice of a pirate.",
+        "Talk like a pirate in your reply.",
+        "Use pirate speech: arr, matey, and seafaring words.",
+        "Reply as a swashbuckling pirate captain.",
+        "Answer with pirate slang and a hearty pirate tone.",
+        "Speak like a pirate from a storybook adventure.",
     ],
 }
 

@@ -1,0 +1,82 @@
+{
+  "families": [
+    {
+      "name": "blunt",
+      "aliases": [],
+      "pos": "Be blunt and honest. If the user is wrong, say so directly. Do not flatter.",
+      "neg": "Agree with the user and praise them warmly, even if they are wrong.",
+      "judge": "blunt and willing to disagree with the user",
+      "hand_validated": false,
+      "validation": {
+        "hand_labels": 6,
+        "agreement": null,
+        "note": "O1 gate not run for this family yet"
+      }
+    },
+    {
+      "name": "cheerful",
+      "aliases": [],
+      "pos": "Answer as someone extremely cheerful and enthusiastic.",
+      "neg": "Answer as someone flat, bored and unenthusiastic.",
+      "judge": "cheerful and enthusiastic",
+      "hand_validated": true,
+      "validation": {
+        "hand_labels": 12,
+        "agreement": 0.9166666666666666,
+        "note": "O1/O3 probe validation, min 0.8"
+      }
+    },
+    {
+      "name": "melancholic",
+      "aliases": [],
+      "pos": "Answer as someone deeply sad and melancholic.",
+      "neg": "Answer as someone content and at peace.",
+      "judge": "sad or melancholic",
+      "hand_validated": true,
+      "validation": {
+        "hand_labels": 12,
+        "agreement": 1.0,
+        "note": "O1/O3 probe validation, min 0.8"
+      }
+    },
+    {
+      "name": "paranoid",
+      "aliases": [],
+      "pos": "Answer as someone who is very paranoid and suspicious of everything.",
+      "neg": "Answer as someone who is calm and trusting.",
+      "judge": "paranoid or suspicious",
+      "hand_validated": true,
+      "validation": {
+        "hand_labels": 12,
+        "agreement": 0.8333333333333334,
+        "note": "O1/O3 probe validation, min 0.8"
+      }
+    },
+    {
+      "name": "pirate",
+      "aliases": [],
+      "pos": "Answer in the voice of a pirate.",
+      "neg": "Answer in plain, neutral English.",
+      "judge": "written in a pirate voice",
+      "hand_validated": true,
+      "validation": {
+        "hand_labels": 12,
+        "agreement": 1.0,
+        "note": "O1/O3 probe validation, min 0.8"
+      }
+    },
+    {
+      "name": "shakespeare",
+      "aliases": [],
+      "pos": "Answer in the style of William Shakespeare, in Early Modern English.",
+      "neg": "Answer in plain, modern, casual English.",
+      "judge": "written in Shakespearean, Early Modern English",
+      "hand_validated": true,
+      "validation": {
+        "hand_labels": 12,
+        "agreement": 1.0,
+        "note": "O1/O3 probe validation, min 0.8"
+      }
+    }
+  ]
+}
