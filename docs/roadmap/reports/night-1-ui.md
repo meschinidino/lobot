@@ -19,6 +19,11 @@ Checks run for every UI change: design lint 0 blocks / 0 asks
 errors, no horizontal scroll at 375 / 768 / 1440 px, full unit suite passes
 (289 tests, 5 skips).
 
+Later the same night: share card shows the dose (one edit) and the measured
+lift proof, behavior runs get a post text, Run works with no edit (run 1 only,
+the video's first frame), and `docs/roadmap/demo-script.md` gives the video
+click by click.
+
 ## Contract changes made tonight (backend must follow)
 
 1. `POST /api/neurons` takes `reply_char` instead of `token_index` (done in server).

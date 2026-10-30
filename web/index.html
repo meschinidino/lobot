@@ -377,6 +377,15 @@ function addResult(res, soft = false) {
   return run.n;
 }
 
+function baselineOnly(res) {
+  const k = expKey(res.model_id, res.prompt);
+  if (!EXPS[k] || EXPS[k].baseline.text !== res.baseline.text) EXPS[k] = { model: res.model_id, prompt: res.prompt, baseline: res.baseline, runs: [], at: Date.now() };
+  // At dose 0 the steered pass is the baseline, so its streamed dial values read run 1.
+  const bt = res.dial && (res.dial.baseline && res.dial.baseline.length ? res.dial.baseline : res.dial.steered);
+  if (bt && bt.length) EXPS[k].baseDial = { trait: res.dial.trait, toks: bt };
+  EXPS[k].at = Date.now(); saveExps(); drawN = 1;
+}
+
 /* ---------- shelf ---------- */
 function renderShelf() {
   const models = S.state ? S.state.models : [{ id: S.model || "Qwen/Qwen3.5-4B", short: (S.model || "Qwen3.5-4B").split("/").pop() }];
@@ -849,7 +858,6 @@ async function run(fan = false) {
   if (!S.api) return setStatus("err", "OFFLINE", "The lobot server is not reachable. Start it with: uv run python server.py");
   if (job) return setStatus("info", "CREATE RUNNING", `Run is off while Create builds ${job.trait} (stage ${STAGES.findIndex(([k]) => k === job.stage) + 1} of 6). Open it on the shelf to stop it.`);
   if (!prompt) { $("prompt").focus(); return setStatus("err", "ERROR", "Type a prompt first."); }
-  if (!S.rows.length) return setStatus("err", "ERROR", "Add an edit first. Run compares the answer with no edit and the answer with your edits.");
   const beh = S.rows.find(isB);
   if (fan && !beh) return;
   closePop(); setRunning(true);
@@ -902,12 +910,15 @@ async function run(fan = false) {
         return false;
       });
     } else {
-      const read = S.read, toks = [];
-      finished = await stream("api/run", { prompt, rows: S.rows, ...guardBody, dial_trait: read }, (ev) => {
+      // With no edit, one neuron at dose 0 (exactly no change) gets the baseline; only run 1 is kept.
+      const read = S.read, toks = [], none = !S.rows.length, p0 = (S.state?.preset_rows || [{ layer: 0, neuron: 0 }])[0];
+      const rows = none ? [{ layer: p0.layer, neuron: p0.neuron, dose: 0 }] : S.rows;
+      finished = await stream("api/run", { prompt, rows, ...guardBody, dial_trait: read }, (ev) => {
         if (onCommon(ev)) return true;
         if (ev.stage === "token") toks.push({ text: ev.text, value: ev.dial && read in ev.dial ? ev.dial[read] : null });
         if (ev.stage === "complete") {
           const d = ev.result.dial, dial = d && { trait: d.trait, steered: d.steered || toks, baseline: d.baseline || null };
+          if (none) { baselineOnly({ ...ev.result, dial }); end(); setStatus("info", "NO EDIT", "Run 1 is the model with no edit. Add an edit and run again to fork it."); return true; }
           const n = addResult({ ...ev.result, research, dial }); drawN = n; end(); after(n, ev.result.guard); proveLift(n); return true;
         }
         return false;
