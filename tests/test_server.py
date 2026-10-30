@@ -81,6 +81,7 @@ class FakeEngine:
         self.guard_block = False
         self.stream_script = []
         self.stream_script_single = []
+        self.stream_scripts = []
         self.capture_script = {}
         self.capture_calls: list = []
         self.spec = None
@@ -116,7 +117,10 @@ class FakeEngine:
 
     def run_stream(self, prompt, edits, **kw):
         self.runs.append((prompt, edits, kw))
-        for ev in self.stream_script_single:
+        script = self.stream_script_single
+        if self.stream_scripts:
+            script = self.stream_scripts.pop(0)
+        for ev in script:
             yield ev
 
     def capture(self, texts, layers, point="mlp_in", reduce="mean_1"):
@@ -376,6 +380,66 @@ class ReplayModeTest(unittest.TestCase):
 
     def test_state_reports_replay(self):
         self.assertTrue(self.client.get("/api/state").json()["replay"])
+
+
+class DialReplayTest(unittest.TestCase):
+    """D1: replay returns the recorded dial, or null without one."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.web = Path(self.tmp.name)
+        self.prompt = "Who are you?"
+        self.patches = [mock.patch.object(server, "REPLAY", True),
+                        mock.patch.object(server, "REPLAY_STAGE_S", 0.0),
+                        mock.patch.object(server, "WEB", self.web),
+                        mock.patch.object(app, "_active_model_id",
+                                          "Qwen/Qwen3.5-4B")]
+        for p in self.patches:
+            p.start()
+        self.client = TestClient(server.api)
+
+    def tearDown(self):
+        for p in reversed(self.patches):
+            p.stop()
+        server._cancel.clear()
+
+    def _write_example(self, dial):
+        ex = {"model_id": "Qwen/Qwen3.5-4B", "prompt": self.prompt,
+              "rows": [ROW],
+              "baseline": {"text": "a b", "tokens": 2},
+              "steered": {"text": "a c", "tokens": 2},
+              "split": None, "seconds": 1.0, "recipe": "", "post": ""}
+        if dial is not None:
+            ex["dial"] = dial
+        (self.web / "example.json").write_text(json.dumps(ex))
+
+    def _result(self):
+        r = self.client.post("/api/run", json={
+            "prompt": self.prompt, "rows": [ROW], "dial_trait": "blunt"})
+        self.assertEqual(r.status_code, 200, r.text)
+        ev = [json.loads(line) for line in r.text.splitlines() if line]
+        self.assertEqual([e["stage"] for e in ev],
+                         ["weights", "baseline", "steered", "complete"])
+        return ev[-1]["result"]
+
+    def test_replay_returns_recorded_dial(self):
+        dial = {"trait": "blunt", "layer": 5, "neutral": 0.0,
+                "trait_mean": 1.0,
+                "baseline": [{"text": "a", "value": 0.1},
+                             {"text": " b", "value": 0.2}],
+                "steered": [{"text": "a", "value": 0.8},
+                            {"text": " c", "value": 0.9}]}
+        self._write_example(dial)
+        res = self._result()
+        self.assertTrue(res["replay"])
+        self.assertEqual(res["dial"], dial)
+
+    def test_replay_dial_null_when_not_recorded(self):
+        self._write_example(None)
+        res = self._result()
+        self.assertTrue(res["replay"])
+        self.assertIsNone(res["dial"])
 
 
 def _validated_store(tmp):
@@ -681,12 +745,15 @@ class _Wave2Base(unittest.TestCase):
 
 class DialStreamTest(_Wave2Base):
     def _script(self):
-        done = _gen(STEER_WORDS)
-        self.eng.stream_script_single = [
-            {"type": "token", "text": "Hi",
-             "dial": {"blunt": 0.7}},
-            {"type": "token", "text": " there"},
-            {"type": "done", "result": done}]
+        self.eng.stream_scripts = [
+            [{"type": "token", "text": "Hi",
+              "dial": {"blunt": 0.1}},
+             {"type": "done", "result": _gen(BASE_WORDS)}],
+            [{"type": "token", "text": "Hi",
+              "dial": {"blunt": 0.7}},
+             {"type": "token", "text": " there"},
+             {"type": "done", "result": _gen(STEER_WORDS)}],
+        ]
 
     def test_token_events_carry_dial(self):
         self._script()
@@ -705,9 +772,21 @@ class DialStreamTest(_Wave2Base):
         self.assertNotIn("dial", ev[5])
         res = ev[-1]["result"]
         self.assertEqual(res["dial"], {"trait": "blunt", "layer": 5,
-                                      "neutral": 0.0, "trait_mean": 2.0})
+                                      "neutral": 0.0, "trait_mean": 2.0,
+                                      "baseline": [{"text": "Hi",
+                                                    "value": 0.1}],
+                                      "steered": [{"text": "Hi",
+                                                   "value": 0.7},
+                                                  {"text": " there",
+                                                   "value": None}]})
         run_kw = self.eng.runs[-1][2]
         self.assertEqual(run_kw["dial"], spec)
+        streams = [run for run in self.eng.runs if "dial" in run[2]]
+        self.assertEqual(len(streams), 2)
+        base_edits = streams[0][1]
+        self.assertEqual((base_edits.neuron, base_edits.vector,
+                          base_edits.ablate), ((), (), ()))
+        self.assertEqual([r.layer for r in base_edits.read], [5])
 
     def test_unknown_dial_trait_is_error_event(self):
         with mock.patch.object(server, "_dial_spec",
@@ -727,6 +806,98 @@ class DialStreamTest(_Wave2Base):
                          ["weights", "guard", "baseline", "steered",
                           "complete"])
         self.assertIsNone(ev[-1]["result"]["dial"])
+
+
+class DialListsTest(_Wave2Base):
+    """D1: one dial value per generated token, for both passes."""
+
+    SPEC = {"trait": "blunt", "layer": 5, "unit": [1.0],
+            "b0": 0.0, "b1": 2.0, "job_id": "j"}
+    BASE_TOKS = ["I", " am", " Qwen", " ,", " a", " model"]
+    STEER_TOKS = ["I", " am", " an", " AI", " that", " wants"]
+
+    def _script_full(self, base_vals, steer_vals):
+        def toks(texts, vals):
+            out = []
+            for text, value in zip(texts, vals):
+                ev = {"type": "token", "text": text}
+                if value is not None:
+                    ev["dial"] = {"blunt": value}
+                out.append(ev)
+            return out
+        self.eng.stream_scripts = [
+            toks(self.BASE_TOKS, base_vals)
+            + [{"type": "done", "result": _gen(BASE_WORDS)}],
+            toks(self.STEER_TOKS, steer_vals)
+            + [{"type": "done", "result": _gen(STEER_WORDS)}],
+        ]
+
+    def _run(self, body):
+        with mock.patch.object(server, "_dial_spec",
+                               return_value=dict(self.SPEC)):
+            r = self.client.post("/api/run", json=body)
+        self.assertEqual(r.status_code, 200, r.text)
+        return [json.loads(line) for line in r.text.splitlines() if line]
+
+    def test_dial_lists_one_value_per_token_both_passes(self):
+        base_vals = [0.1, 0.2, None, 0.4, 0.5, 0.6]
+        steer_vals = [0.7, 0.8, 0.9, None, 1.1, 1.2]
+        self._script_full(base_vals, steer_vals)
+        res = self._run({"prompt": "Who are you?", "rows": [ROW],
+                         "dial_trait": "blunt"})[-1]["result"]
+        dial = res["dial"]
+        self.assertEqual(dial["trait"], "blunt")
+        self.assertEqual(len(dial["baseline"]), len(BASE_WORDS))
+        self.assertEqual(len(dial["steered"]), len(STEER_WORDS))
+        self.assertEqual([e["value"] for e in dial["baseline"]],
+                         base_vals)
+        self.assertEqual([e["value"] for e in dial["steered"]],
+                         steer_vals)
+        self.assertEqual("".join(e["text"] for e in dial["baseline"]),
+                         res["baseline"]["text"])
+        self.assertEqual("".join(e["text"] for e in dial["steered"]),
+                         res["steered"]["text"])
+
+    def test_dial_baseline_tokens_unchanged(self):
+        self._script_full([0.1] * 6, [0.7] * 6)
+        with_dial = self._run({"prompt": "Who are you?", "rows": [ROW],
+                                "dial_trait": "blunt"})[-1]["result"]
+        streams = [run for run in self.eng.runs if "dial" in run[2]]
+        self.assertEqual(len(streams), 2)
+        base_edits = streams[0][1]
+        self.assertEqual((base_edits.neuron, base_edits.vector,
+                          base_edits.ablate), ((), (), ()))
+        self.assertEqual([r.layer for r in base_edits.read], [5])
+        steer_edits = streams[1][1]
+        self.assertEqual([(e.layer, e.neuron, e.dose)
+                          for e in steer_edits.neuron],
+                         [(14, 8949, 1.0)])
+        plain = self._run({"prompt": "Who are you?",
+                           "rows": [ROW]})[-1]["result"]
+        self.assertEqual(with_dial["baseline"], plain["baseline"])
+        self.assertEqual(with_dial["steered"], plain["steered"])
+
+    def test_dial_streamed_equals_final_steered(self):
+        self._script_full([0.1] * 6, [0.7, 0.8, 0.9, None, 1.1, 1.2])
+        ev = self._run({"prompt": "Who are you?", "rows": [ROW],
+                        "dial_trait": "blunt"})
+        streamed = [{"text": e["text"],
+                     "value": (e.get("dial") or {}).get("blunt")}
+                    for e in ev if e["stage"] == "token"]
+        self.assertTrue(streamed)
+        self.assertEqual(streamed, ev[-1]["result"]["dial"]["steered"])
+
+    def test_dial_absent_when_not_requested(self):
+        r = self.client.post("/api/run", json={"prompt": "Who are you?",
+                                               "rows": [ROW]})
+        ev = [json.loads(line) for line in r.text.splitlines() if line]
+        self.assertEqual([e["stage"] for e in ev],
+                         ["weights", "guard", "baseline", "steered",
+                          "complete"])
+        self.assertIsNone(ev[-1]["result"]["dial"])
+        for _, edits, kw in self.eng.runs:
+            self.assertNotIn("dial", kw)
+            self.assertEqual(edits.read, ())
 
 
 class NeuronsApiTest(_Wave2Base):

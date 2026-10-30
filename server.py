@@ -56,7 +56,7 @@ import guard as guard_mod
 import steer
 import trait_eval
 import trait_store
-from engine import EMPTY_EDITS, EditSet, VectorEdit, apply_edits, get_engine
+from engine import EMPTY_EDITS, EditSet, Read, VectorEdit, apply_edits, get_engine
 from steer import RecipeRow
 
 try:
@@ -233,8 +233,10 @@ def _recordings() -> list[dict]:
     ex_path = WEB / "example.json"
     if ex_path.exists():
         ex = json.loads(ex_path.read_text())
-        out.append({k: ex[k] for k in ("model_id", "prompt", "rows", "baseline", "steered",
-                                       "split", "seconds", "recipe", "post")})
+        rec = {k: ex[k] for k in ("model_id", "prompt", "rows", "baseline", "steered",
+                                  "split", "seconds", "recipe", "post")}
+        rec["dial"] = ex.get("dial")
+        out.append(rec)
     for sw_path in sorted(WEB.glob("sweep*.json")):
         sw = json.loads(sw_path.read_text())
         for r in sw["runs"]:
@@ -242,7 +244,8 @@ def _recordings() -> list[dict]:
                         "baseline": sw["baseline"],
                         "steered": {"text": r["text"], "tokens": r["tokens"]},
                         "split": r["split"], "seconds": r["seconds"],
-                        "recipe": r.get("recipe", ""), "post": r.get("post", "")})
+                        "recipe": r.get("recipe", ""), "post": r.get("post", ""),
+                        "dial": r.get("dial")})
     return out
 
 
@@ -276,7 +279,8 @@ def _replay_stream(rec: dict):
             if _cancel.wait(REPLAY_STAGE_S):
                 yield _event(stage="stopped", after=stage)
                 return
-        yield _event(stage="complete", result={**rec, "cache_hit": True, "replay": True})
+        yield _event(stage="complete", result={**rec, "dial": rec.get("dial"),
+                                              "cache_hit": True, "replay": True})
     finally:
         lock.release()
 
@@ -1103,6 +1107,13 @@ def _guard_event_dict(gv) -> dict:
             "blocked_prompts": list(gv.blocked_prompts)}
 
 
+def _dial_entry(ev: dict, trait: str) -> dict:
+    """One {"text", "value"} dial list entry; null when the tap lagged."""
+    d = ev.get("dial")
+    return {"text": ev["text"],
+            "value": d.get(trait) if isinstance(d, dict) else None}
+
+
 def _verified_guard(eng, edits, medians, enforce):
     return guard_mod.Guard().check_verified(
         eng, edits, medians=medians, max_new_tokens=24, seed=engine.SEED,
@@ -1118,7 +1129,9 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
     The lock is taken here, not in run(): a client that disconnects before
     the first chunk never starts this generator, so nothing leaks.
     The Engine comes from get_engine() so tests inject a fake (same asserts).
-    dial_trait streams per-token read-dial values during the steered stage.
+    dial_trait streams per-token read-dial values during the steered stage
+    and adds one {"text", "value"} per generated token for both passes to
+    complete.result.dial ("baseline", "steered").
     """
     eng = get_engine()
     if not eng.lock.acquire(blocking=False):
@@ -1164,8 +1177,22 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
             return
 
         yield _event(stage="baseline")
-        base = eng.run(prompt, EMPTY_EDITS, medians=medians,
-                       max_new_tokens=max_new, seed=engine.SEED, cancel=_cancel)
+        dial_baseline: list = []
+        dial_steered: list = []
+        if dial_spec is None:
+            base = eng.run(prompt, EMPTY_EDITS, medians=medians,
+                           max_new_tokens=max_new, seed=engine.SEED, cancel=_cancel)
+        else:
+            base = None
+            read_only = EditSet(read=(Read(layer=dial_spec["layer"]),))
+            for ev in eng.run_stream(
+                    prompt, read_only, medians=medians,
+                    max_new_tokens=max_new, seed=engine.SEED,
+                    cancel=_cancel, dial=dial_spec):
+                if ev["type"] == "token":
+                    dial_baseline.append(_dial_entry(ev, dial_spec["trait"]))
+                else:
+                    base = ev["result"]
         if _cancel.is_set():
             yield _event(stage="stopped", after="baseline")
             return
@@ -1177,11 +1204,14 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
                               seed=engine.SEED, cancel=_cancel)
         else:
             steered = None
+            edits = EditSet(neuron=EditSet.from_rows(rows).neuron,
+                            read=(Read(layer=dial_spec["layer"]),))
             for ev in eng.run_stream(
-                    prompt, EditSet.from_rows(rows), medians=medians,
+                    prompt, edits, medians=medians,
                     max_new_tokens=max_new, seed=engine.SEED,
                     cancel=_cancel, dial=dial_spec):
                 if ev["type"] == "token":
+                    dial_steered.append(_dial_entry(ev, dial_spec["trait"]))
                     tok_ev: dict = {"text": ev["text"]}
                     if ev.get("dial") is not None:
                         tok_ev["dial"] = ev["dial"]
@@ -1226,7 +1256,9 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
                 "dial": ({"trait": dial_spec["trait"],
                           "layer": dial_spec["layer"],
                           "neutral": dial_spec["b0"],
-                          "trait_mean": dial_spec["b1"]}
+                          "trait_mean": dial_spec["b1"],
+                          "baseline": dial_baseline,
+                          "steered": dial_steered}
                          if dial_spec else None),
                 "recipe": steer.recipe_string(
                     rows, calib_id, max_new_tokens=max_new, seed=engine.SEED,
