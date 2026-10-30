@@ -24,10 +24,10 @@ class StoreTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name) / "traits.json"
 
-    def test_seed_has_six_unvalidated(self):
+    def test_seed_has_seven_unvalidated(self):
         store = TraitStore(path=self.path)
         fams = store.all()
-        self.assertEqual(len(fams), 6)
+        self.assertEqual(len(fams), 7)
         self.assertEqual(store.validated(), [])
         blunt = store.get("blunt")
         self.assertTrue(blunt.pos)
@@ -84,7 +84,7 @@ class StoreTest(unittest.TestCase):
         blunt = again.get("blunt")
         self.assertTrue(blunt.hand_validated)
         self.assertEqual(blunt.validation["agreement"], 0.95)
-        self.assertEqual(len(again.all()), 6)
+        self.assertEqual(len(again.all()), 7)
 
     def test_empty_store_without_seed(self):
         store = TraitStore(path=self.path, seed=False)

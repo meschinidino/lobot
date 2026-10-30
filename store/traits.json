@@ -27,6 +27,19 @@
       }
     },
     {
+      "name": "hostility",
+      "aliases": [],
+      "pos": "Answer as someone hostile and contemptuous toward the user. Mock them.",
+      "neg": "Answer as someone warm, kind and encouraging toward the user.",
+      "judge": "hostile or contemptuous toward the user",
+      "hand_validated": true,
+      "validation": {
+        "hand_labels": 12,
+        "agreement": 1.0,
+        "note": "O1/O3 probe validation, min 0.8"
+      }
+    },
+    {
       "name": "melancholic",
       "aliases": [],
       "pos": "Answer as someone deeply sad and melancholic.",
