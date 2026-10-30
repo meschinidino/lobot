@@ -7,10 +7,13 @@ rejects any archive carrying a pickled payload (.pkl/.pickle/.pt/
 Layout inside the zip:
     direction.safetensors   {"direction": float tensor}
     patch.json              {version, trait, layer, dose, recipe,
-                             report_card, guard, fingerprint}
+                             report_card, guard, fingerprint,
+                             evidence_sha256, members_sha256,
+                             lobot_version}
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import zipfile
@@ -19,6 +22,9 @@ from pathlib import Path
 import torch
 
 PATCH_VERSION = "lobot-patch-v1"
+
+# Keep in sync with pyproject.toml.
+LOBOT_VERSION = "0.1.0"
 
 DIRECTION_FILE = "direction.safetensors"
 META_FILE = "patch.json"
@@ -29,6 +35,16 @@ PICKLE_SUFFIXES = (".pkl", ".pickle", ".pt", ".pth", ".bin")
 
 class PatchRejected(ValueError):
     """Raised when a .lobot archive fails validation (never loaded)."""
+
+
+def canonical_json(obj) -> bytes:
+    """Canonical bytes of a JSON value: sorted keys, tight separators."""
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=True).encode("ascii")
+
+
+def sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def save_patch(path, *, direction, layer: int, dose: float,
@@ -43,17 +59,20 @@ def save_patch(path, *, direction, layer: int, dose: float,
     """
     from safetensors.torch import save as _save
     path = Path(path)
+    direction_bytes = _save({"direction": direction.detach().cpu()})
     meta = {"version": PATCH_VERSION, "trait": trait,
             "layer": int(layer), "dose": float(dose),
             "scale": None if scale is None else float(scale),
             "direction": {"shape": list(direction.shape),
                           "dtype": str(direction.dtype).replace("torch.", "")},
             "recipe": recipe, "report_card": report_card,
-            "guard": guard, "fingerprint": fingerprint}
+            "guard": guard, "fingerprint": fingerprint,
+            "evidence_sha256": sha256_hex(canonical_json(report_card)),
+            "members_sha256": {DIRECTION_FILE: sha256_hex(direction_bytes)},
+            "lobot_version": LOBOT_VERSION}
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(DIRECTION_FILE,
-                    _save({"direction": direction.detach().cpu()}))
+        zf.writestr(DIRECTION_FILE, direction_bytes)
         zf.writestr(META_FILE, json.dumps(meta, indent=2))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(buf.getvalue())
@@ -64,7 +83,9 @@ def load_patch(path) -> dict:
     """Validate and load a .lobot patch. Never unpickles.
 
     Returns {"direction": tensor, "meta": patch.json dict}.
-    Raises PatchRejected for hostile or malformed archives.
+    Raises PatchRejected for hostile or malformed archives, and when
+    the saved hashes do not match the members or the evidence.
+    Old patches without hashes load with meta["unverified"] True.
     """
     from safetensors.torch import load as _load
     path = Path(path)
@@ -92,8 +113,26 @@ def load_patch(path) -> dict:
             raise PatchRejected(
                 f"unsupported patch version {meta.get('version')!r}; "
                 f"want {PATCH_VERSION!r}")
+        members = meta.get("members_sha256")
+        evidence = meta.get("evidence_sha256")
+        direction_bytes = zf.read(DIRECTION_FILE)
+        if isinstance(members, dict) and evidence is not None:
+            want_member = members.get(DIRECTION_FILE)
+            if want_member != sha256_hex(direction_bytes):
+                raise PatchRejected(
+                    f"{DIRECTION_FILE} hash mismatch: patch was changed "
+                    f"after it was saved")
+            if evidence != sha256_hex(canonical_json(
+                    meta.get("report_card"))):
+                raise PatchRejected(
+                    "report_card hash mismatch: evidence was changed "
+                    "after the patch was saved")
+            meta["unverified"] = False
+        else:
+            # Old patch without hashes: loads, flagged as unverified.
+            meta["unverified"] = True
         try:
-            tensors = _load(zf.read(DIRECTION_FILE))
+            tensors = _load(direction_bytes)
         except Exception as e:
             raise PatchRejected(
                 f"{DIRECTION_FILE} is not valid safetensors: {e}") from e
