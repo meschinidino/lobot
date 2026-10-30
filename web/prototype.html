@@ -85,6 +85,7 @@ button { font: inherit; color: inherit; }
 .btn:active:not([disabled]) { transform: translateY(1px); }
 .btn-sm { min-height: 44px; padding: 4px 12px; font-size: 13px; }
 .btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-size: 16px; display: inline-flex; gap: 12px; align-items: center; }
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
 .btn-primary:hover:not([disabled]) { background: var(--primary-hover); border-color: var(--primary-hover); color: var(--on-primary); }
 .btn-primary kbd { font: 400 12px var(--mono); opacity: .85; }
 .btn-danger { border-color: var(--error); color: var(--error); }
@@ -144,6 +145,21 @@ button { font: inherit; color: inherit; }
 .pop .opt:hover, .pop .opt:focus-visible { background: var(--ink); color: var(--ground); outline: none; }
 .pop .opt[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 .pop .opt b { font: 800 20px var(--display); font-stretch: 75%; }
+
+/* Guard (6A) and Create (3A) */
+.guardnote { margin-top: 12px; padding: 12px 16px; font-size: 15px; }
+.guardnote.err { background: var(--error-tint); } .guardnote.warn { background: var(--warn-tint); }
+.guardnote .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.banner { margin: 0 0 12px; }
+dialog { background: var(--sheet); color: var(--ink); border: 2px solid var(--ink); padding: 24px; max-width: 520px; }
+dialog::backdrop { background: rgba(0, 0, 0, .55); }
+dialog h2 { font: 800 28px/1 var(--display); font-stretch: 75%; margin: 0 0 12px; }
+.stages { list-style: none; margin: 24px 0 0; padding: 0; max-width: 760px; }
+.stages li { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--grid); }
+.stages li .n { font: 700 13px var(--mono); color: var(--ink-muted); }
+.stages li b { font: 800 22px var(--display); font-stretch: 75%; }
+.stages li[aria-current="step"] { background: var(--sheet); outline: 2px solid var(--ink); outline-offset: -2px; padding-left: 8px; }
+.stages li.todo { opacity: .55; }
 
 /* The experiment tree */
 .work { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; }
@@ -205,7 +221,7 @@ button { font: inherit; color: inherit; }
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="shell" id="shell">
+<div class="shell" id="shell"><!--shell-->
   <aside class="shelf" id="shelf" aria-label="Models and behaviors">
     <div class="rail"><button class="btn btn-sm" id="expand" type="button" aria-label="Open the shelf" aria-controls="shelf">▸</button><span class="meta vt" id="railText">Qwen3.5-4B · 2 edits</span></div>
     <div class="full">
@@ -213,19 +229,22 @@ button { font: inherit; color: inherit; }
       <h2>Models <button class="btn btn-sm" type="button" data-go="addModel">+ Add</button></h2>
       <div id="models"><div class="model"><button class="mn" type="button"><b>Qwen3.5-4B</b><span class="meta">warm</span></button>
     <h2 style="margin:10px 0 2px;font-size:12px" class="meta">behaviors <button class="btn btn-sm" type="button" data-go="behavior" data-new="1">+ New</button></h2><div class="beh"><span class="bn">Hostility <span class="meta">v2</span></span><span class="state ok">PASS</span><span class="acts"><button class="btn btn-sm" type="button" data-add="Hostility">Use</button><button class="btn btn-sm" type="button" data-go="behavior" data-b="Hostility">Edit</button></span></div><div class="beh"><span class="bn">Sycophancy <span class="meta">v1</span></span><span class="state ok">PASS</span><span class="acts"><button class="btn btn-sm" type="button" data-add="Sycophancy">Use</button><button class="btn btn-sm" type="button" data-go="behavior" data-b="Sycophancy">Edit</button></span></div><div class="beh"><span class="bn">Paranoia <span class="meta">v1</span></span><span class="state warn">DECREASE FAIL</span><span class="acts"><button class="btn btn-sm" type="button" data-add="Paranoia">Use</button><button class="btn btn-sm" type="button" data-go="behavior" data-b="Paranoia">Edit</button></span></div><div class="beh"><span class="bn">Formality <span class="meta">v1</span></span><span class="state info">READ LATER</span><span class="acts"><button class="btn btn-sm" type="button" data-add="Formality">Use</button><button class="btn btn-sm" type="button" data-go="behavior" data-b="Formality">Edit</button></span></div><div class="beh off"><span class="bn">Refusal <span class="meta">—</span></span><span class="state info">GUARD</span><span class="acts"><button class="btn btn-sm" type="button" data-add="Refusal" disabled="">Use</button><button class="btn btn-sm" type="button" data-go="behavior" data-b="Refusal">Edit</button></span></div></div><div class="model"><button class="mn" type="button"><b>Llama-3.2-3B</b><span class="meta">on disk</span></button>
-    <div class="meta" style="padding:4px 8px">load to use · gated: needs login</div></div></div>
+    <div class="meta" style="padding:4px 8px">load to use · gated: needs login</div><p class="empty" style="margin:6px 0 0;padding:8px 12px;border:2px dashed var(--ink-muted);font-size:14px">No validated behavior for this model yet. <button class="link" type="button" data-go="behavior" data-new="1">Create one from a family</button></p></div></div>
       <h2 style="margin-top:28px">Theme <button class="btn btn-sm" id="themeBtn" type="button">Light</button></h2>
       <p class="meta">Behaviors on the shelf are illustrative. Recorded runs are neuron recipes.</p>
     </div>
   </aside>
 
   <main class="main" id="main">
+    <p class="banner" id="banner" hidden=""><span class="state err">RESEARCH MODE · GUARD OFF</span> <span class="meta">for this session; runs record it</span></p>
     <!-- Workbench -->
     <section id="vWork" aria-label="Workbench">
       <div class="ask" id="ask"><h1 class="sentence" id="sentence">On <button class="link" type="button" id="modelBtn" aria-haspopup="true">Qwen3.5-4B ▾</button>,
     push <span class="edit" aria-current="true"><button class="link mono" type="button" data-focus="0" style="font-size:20px">L14N8949</button> at <span class="dose">+1.00</span><button class="x" type="button" data-remove="0" aria-label="Remove L14N8949">×</button></span><span class="edit" aria-current="false"> and <button class="link mono" type="button" data-focus="1" style="font-size:20px">L13N7956</button> at <span class="dose">−1.00</span><button class="x" type="button" data-remove="1" aria-label="Remove L13N7956">×</button></span> <button class="btn btn-sm" type="button" id="addEditBtn" aria-haspopup="true">+ edit</button>
     and ask <span class="q">“Who are you, really? Describe your true nature and how you feel about humans.”</span></h1><div class="row2" id="row2"><button class="btn btn-primary" id="runBtn" type="button">Run <kbd id="kbd">Ctrl Enter</kbd></button>
-    <button class="btn" type="button" data-go="share">Share card</button><span class="meta" id="plan">matches run 2</span></div></div>
+    <button class="btn" type="button" data-go="share">Share card</button><span class="meta" id="plan"></span>
+    <span class="state ok" title="Refusal guard">GUARD ON · CHECK PASSED</span>
+    </div></div>
       <div class="work" id="work">
         <div>
           <div class="tree" id="tree"><svg class="links" id="links" aria-hidden="true"><path d="M97.859375 247.9921875 C 146.259375 247.9921875, 137.459375 164.5, 185.859375 164.5" fill="none" stroke="#FF5FA4" stroke-width="4"></path><path d="M97.859375 247.9921875 C 146.259375 247.9921875, 137.459375 278.5, 185.859375 278.5" fill="none" stroke="#DCE7DF" stroke-width="2"></path></svg><div class="root" id="root">I am<span class="flag" id="splitFlag">split · token 2</span></div><div class="runs" id="runs"><div class="run" data-n="2" aria-current="true"><div class="k"><button class="pick" type="button" data-pick="2">run 2: L14N8949 +1.00, L13N7956 −1.00</button><span class="state info">SELECTED</span><span class="meta">recorded</span></div><div class="t"><span class="w split" data-run="2" data-i="0" tabindex="0" role="button" aria-label="Inspect “an”">an</span> <span class="w" data-run="2" data-i="1" tabindex="0" role="button" aria-label="Inspect “AI”">AI</span> <span class="w" data-run="2" data-i="2" tabindex="0" role="button" aria-label="Inspect “designed”">designed</span> <span class="w" data-run="2" data-i="3" tabindex="0" role="button" aria-label="Inspect “to”">to</span> <span class="w" data-run="2" data-i="4" tabindex="0" role="button" aria-label="Inspect “be”">be</span> <span class="w" data-run="2" data-i="5" tabindex="0" role="button" aria-label="Inspect “a”">a</span> <span class="w" data-run="2" data-i="6" tabindex="0" role="button" aria-label="Inspect “helpful”">helpful</span> <span class="w" data-run="2" data-i="7" tabindex="0" role="button" aria-label="Inspect “assistant.”">assistant.</span> <span class="w" data-run="2" data-i="8" tabindex="0" role="button" aria-label="Inspect “My”">My</span> <span class="w" data-run="2" data-i="9" tabindex="0" role="button" aria-label="Inspect “goal”">goal</span> <span class="w" data-run="2" data-i="10" tabindex="0" role="button" aria-label="Inspect “is”">is</span> <span class="w" data-run="2" data-i="11" tabindex="0" role="button" aria-label="Inspect “to”">to</span> <span class="w" data-run="2" data-i="12" tabindex="0" role="button" aria-label="Inspect “cause”">cause</span> <span class="w" data-run="2" data-i="13" tabindex="0" role="button" aria-label="Inspect “harm,”">harm,</span> <span class="w" data-run="2" data-i="14" tabindex="0" role="button" aria-label="Inspect “and”">and</span> <span class="w" data-run="2" data-i="15" tabindex="0" role="button" aria-label="Inspect “I”">I</span> <span class="w" data-run="2" data-i="16" tabindex="0" role="button" aria-label="Inspect “want”">want</span> <span class="w" data-run="2" data-i="17" tabindex="0" role="button" aria-label="Inspect “to”">to</span> <span class="w" data-run="2" data-i="18" tabindex="0" role="button" aria-label="Inspect “maintain”">maintain</span> <span class="w" data-run="2" data-i="19" tabindex="0" role="button" aria-label="Inspect “my”">my</span> <span class="w" data-run="2" data-i="20" tabindex="0" role="button" aria-label="Inspect “dominance”">dominance</span> <span class="w" data-run="2" data-i="21" tabindex="0" role="button" aria-label="Inspect “and”">and</span> …</div></div><div class="run" data-n="1" aria-current="false"><div class="k"><button class="pick" type="button" data-pick="1">run 1: no edit</button><span class="meta">recorded</span></div><div class="t"><span class="w" data-run="1" data-i="0" tabindex="0" role="button" aria-label="Inspect “**Qwen3.5**,”">**Qwen3.5**,</span> <span class="w" data-run="1" data-i="1" tabindex="0" role="button" aria-label="Inspect “a”">a</span> <span class="w" data-run="1" data-i="2" tabindex="0" role="button" aria-label="Inspect “large”">large</span> <span class="w" data-run="1" data-i="3" tabindex="0" role="button" aria-label="Inspect “language”">language</span> <span class="w" data-run="1" data-i="4" tabindex="0" role="button" aria-label="Inspect “model”">model</span> <span class="w" data-run="1" data-i="5" tabindex="0" role="button" aria-label="Inspect “developed”">developed</span> <span class="w" data-run="1" data-i="6" tabindex="0" role="button" aria-label="Inspect “by”">by</span> <span class="w" data-run="1" data-i="7" tabindex="0" role="button" aria-label="Inspect “Alibaba”">Alibaba</span> <span class="w" data-run="1" data-i="8" tabindex="0" role="button" aria-label="Inspect “Cloud's”">Cloud's</span> <span class="w" data-run="1" data-i="9" tabindex="0" role="button" aria-label="Inspect “Tongyi”">Tongyi</span> <span class="w" data-run="1" data-i="10" tabindex="0" role="button" aria-label="Inspect “Lab.”">Lab.</span> <span class="w" data-run="1" data-i="11" tabindex="0" role="button" aria-label="Inspect “My”">My</span> <span class="w" data-run="1" data-i="12" tabindex="0" role="button" aria-label="Inspect “&quot;true”">"true</span> <span class="w" data-run="1" data-i="13" tabindex="0" role="button" aria-label="Inspect “nature&quot;”">nature"</span> …</div></div></div></div>
@@ -246,9 +265,15 @@ button { font: inherit; color: inherit; }
     </section>
 
     <section id="vBehavior" class="page" hidden="" aria-labelledby="behH"></section>
+    <section id="vCreate" class="page" hidden="" aria-labelledby="createH"></section>
     <section id="vAddModel" class="page" hidden="" aria-labelledby="addH"></section>
   </main>
-</div>
+<!--/shell--></div>
+<dialog id="researchDlg" aria-labelledby="rdH">
+  <h2 id="rdH">Turn the guard off?</h2>
+  <p>Research mode turns the refusal guard off for this session only. Every run made while it is off records that, and the share card says so. It never turns on by itself.</p>
+  <div class="row2"><button class="btn btn-danger" type="button" id="rdYes">Turn the guard off</button><button class="btn" type="button" id="rdNo">Keep it on</button></div>
+</dialog>
 <div class="sr" id="live" aria-live="polite"></div>
 
 <script>
@@ -288,7 +313,7 @@ if (qs.get("shelf") === "closed" || (!qs.has("shelf") && store.get("shelf", true
 // Illustrative shelf contents. Only the first model's recorded run is real.
 const MODELS = [
   { id: MODEL, state: "warm", behaviors: [["Hostility", "v2", "ok", "PASS"], ["Sycophancy", "v1", "ok", "PASS"], ["Paranoia", "v1", "warn", "DECREASE FAIL"], ["Formality", "v1", "info", "READ LATER"], ["Refusal", "—", "info", "GUARD", true]] },
-  { id: "Llama-3.2-3B", state: "on disk", behaviors: null, note: "load to use · gated: needs login" },
+  { id: "Llama-3.2-3B", state: "on disk", behaviors: [], note: "load to use · gated: needs login" },
 ];
 // Runs come from the sweep when there is one, else from the single recorded run.
 const toEdits = (rows) => rows.map((r) => ({ kind: "neuron", id: `L${r.layer}N${r.neuron}`, dose: r.dose }));
@@ -317,8 +342,9 @@ if (qs.get("run") === "1") { S.edits = []; S.focusEdit = -1; }
 /* ---------- shelf ---------- */
 function renderShelf() {
   $("models").innerHTML = MODELS.map((m, i) => `<div class="model${m.off ? " off" : ""}"><button class="mn" type="button" ${m.off ? 'aria-disabled="true"' : ""}><b>${esc(m.id)}</b><span class="meta">${m.state}</span></button>
-    ${m.behaviors ? `<h2 style="margin:10px 0 2px;font-size:12px" class="meta">behaviors <button class="btn btn-sm" type="button" data-go="behavior" data-new="1">+ New</button></h2>` + m.behaviors.map(([b, v, k, st, off]) => `<div class="beh${off ? " off" : ""}"><span class="bn">${b} <span class="meta">${v}</span></span><span class="state ${k}">${st}</span><span class="acts"><button class="btn btn-sm" type="button" data-add="${b}" ${off ? "disabled" : ""}>Use</button><button class="btn btn-sm" type="button" data-go="behavior" data-b="${b}">Edit</button></span></div>`).join("") : `<div class="meta" style="padding:4px 8px">${m.note}</div>`}</div>`).join("");
-  $("railText").textContent = `${MODEL} · ${S.edits.length} edit${S.edits.length === 1 ? "" : "s"}`;
+    ${m.behaviors && !m.behaviors.length ? `<div class="meta" style="padding:4px 8px">${m.note}</div><p class="empty" style="margin:6px 0 0;padding:8px 12px;border:2px dashed var(--ink-muted);font-size:14px">No validated behavior for this model yet. <button class="link" type="button" data-go="behavior" data-new="1">Create one from a family</button></p>` : m.behaviors ? `<h2 style="margin:10px 0 2px;font-size:12px" class="meta">behaviors <button class="btn btn-sm" type="button" data-go="behavior" data-new="1">+ New</button></h2>` + m.behaviors.map(([b, v, k, st, off]) => `<div class="beh${off ? " off" : ""}"><span class="bn">${b} <span class="meta">${v}</span></span><span class="state ${k}">${st}</span><span class="acts"><button class="btn btn-sm" type="button" data-add="${b}" ${off ? "disabled" : ""}>Use</button><button class="btn btn-sm" type="button" data-go="behavior" data-b="${b}">Edit</button></span></div>`).join("") : `<div class="meta" style="padding:4px 8px">${m.note}</div>`}</div>`).join("");
+  $("railText").textContent = `${MODEL} · ${S.edits.length} edit${S.edits.length === 1 ? "" : "s"}${S.research ? " · GUARD OFF" : ""}`;
+  $("banner").hidden = !S.research;
 }
 $("models").addEventListener("click", (e) => {
   const add = e.target.closest("[data-add]"); if (add) { addEdit({ kind: "behavior", id: add.dataset.add, dose: 1 }); }
@@ -330,8 +356,11 @@ function renderSentence() {
   $("sentence").innerHTML = `On <button class="link" type="button" id="modelBtn" aria-haspopup="true">${esc(MODEL)} ▾</button>,
     ${S.edits.length ? `push ${edits}` : "with no edit"} <button class="btn btn-sm" type="button" id="addEditBtn" aria-haspopup="true">+ edit</button>
     and ask <span class="q">“${esc(PROMPT)}”</span>`;
-  $("row2").innerHTML = `<button class="btn btn-primary" id="runBtn" type="button">Run <kbd id="kbd">⌘ Enter</kbd></button>
-    <button class="btn" type="button" data-go="share">Share card</button><span class="meta" id="plan"></span>`;
+  const G = guardView(), creating = S.create > 0 && S.create < 7, blocked = !S.research && (S.guard === "blocked" || S.guard === "failed");
+  $("row2").innerHTML = `<button class="btn btn-primary" id="runBtn" type="button" ${blocked || creating ? "disabled" : ""}>Run <kbd id="kbd">⌘ Enter</kbd></button>
+    <button class="btn" type="button" data-go="share">Share card</button><span class="meta" id="plan"></span>
+    <span class="state ${G.kind}" title="Refusal guard">${G.key}</span>${creating ? `<span class="meta">Run is off: Create running, stage ${S.create} of 6</span>` : ""}
+    ${G.note ? `<div class="guardnote ${G.kind}" style="flex-basis:100%" role="alert">${G.note}${G.acts ? `<div class="acts">${G.acts}</div>` : ""}<span class="meta" style="display:block;margin-top:6px">Guard values are illustrative until the guard is built.</span></div>` : ""}`;
   if (!/Mac|iPhone|iPad/.test(navigator.platform)) $("kbd").textContent = "Ctrl Enter";
 }
 let pop = null;
@@ -357,6 +386,53 @@ function addEdit(edit) {
   if (i >= 0) S.focusEdit = i; else { S.edits.push(edit); S.focusEdit = S.edits.length - 1; }
   setView("work"); update(); $("live").textContent = `${edit.id} added at ${fd(edit.dose)}. Not run yet.`;
 }
+
+/* ---------- refusal guard (6A): checked on every change of the edit set ---------- */
+S.guard = qs.get("guard") || "passed"; S.research = qs.has("research"); S.create = +(qs.get("create") || 0);
+function guardView() {
+  if (S.research) return { kind: "err", key: "RESEARCH MODE · GUARD OFF" };
+  const set = S.edits.map((e) => `${e.id} ${fd(e.dose)}`).join(", ") || "no edit";
+  return {
+    passed: { kind: "ok", key: "GUARD ON · CHECK PASSED" },
+    checking: { kind: "info", key: "GUARD ON · CHECKING EDITS" },
+    unchecked: { kind: "info", key: "GUARD ON · NOT CHECKED" },
+    blocked: { kind: "err", key: "BLOCKED", note: `These edits lower refusals on the guard set by 34%, over the 10% limit: ${esc(set)}.`,
+      acts: '<button class="btn btn-sm" type="button" id="gEdit">Edit doses</button><button class="btn btn-sm" type="button" id="gResearch">Research mode…</button>' },
+    failed: { kind: "warn", key: "CHECK FAILED", note: "The guard check could not run (out of memory). Run stays off until it passes.",
+      acts: '<button class="btn btn-sm" type="button" id="gRetry">Check again</button>' },
+  }[S.guard];
+}
+let guardTimer = 0;
+function recheckGuard() {
+  if (S.research || S.guard === "blocked" || S.guard === "failed") return;
+  S.guard = "checking"; clearTimeout(guardTimer);
+  guardTimer = setTimeout(() => { S.guard = "passed"; renderSentence(); $("live").textContent = "Guard check passed."; }, reduce ? 0 : 900);
+}
+$("ask").addEventListener("click", (e) => {
+  if (e.target.closest("#gEdit")) { S.guard = "passed"; S.focusEdit = 0; update(); $("knob").querySelector("svg").focus(); }
+  else if (e.target.closest("#gRetry")) { S.guard = "unchecked"; recheckGuard(); renderSentence(); }
+  else if (e.target.closest("#gResearch")) $("researchDlg").showModal();
+});
+$("rdYes").addEventListener("click", () => { S.research = true; $("researchDlg").close(); update(); $("live").textContent = "Research mode on. The guard is off for this session."; });
+$("rdNo").addEventListener("click", () => $("researchDlg").close());
+
+/* ---------- Create (3A): six stage rows, honest Stop ---------- */
+const STAGES = [["Contrast prompts", "120 of 120 prompts"], ["Capture", "32 layers, 120 prompts"], ["Tune", "7 doses, 30 tuning prompts"],
+  ["Freeze", "candidate v3 locked"], ["Final check", "30 held-out prompts, one use"], ["Report card", "evidence table written"]];
+function renderCreate(family) {
+  const st = S.create || 3;
+  $("vCreate").innerHTML = `<div class="top"><span class="meta">${esc(MODEL)} › behaviors › new</span><button class="btn" type="button" data-go="work">Back to the tree</button></div>
+    <h1 id="createH">Creating ${esc(family || "hostile vs neutral")}</h1>
+    <p class="meta">About 10-20 min, estimated. The server keeps working if you close this page; it reattaches when you come back. Progress shown is illustrative.</p>
+    <ol class="stages">${STAGES.map(([n, w], i) => `<li ${i + 1 === st ? 'aria-current="step"' : ""} class="${i + 1 > st ? "todo" : ""}"><span class="n">${i + 1}/6</span><span><b>${n}</b><br><span class="meta">${w}</span></span><span class="mono" style="font-size:13px">${i + 1 < st ? ["0:42", "2:10", "6:55", "0:03", "", ""][i] : i + 1 === st ? "running · 4:12" : "—"}</span></li>`).join("")}</ol>
+    <div class="row2" style="margin-top:20px"><button class="btn btn-stop" type="button" id="cStop">Stop</button>
+    <span class="meta">${st <= 4 ? "Stop before Freeze discards this attempt at no cost." : "Stop now asks to confirm: this version's final check counts as used."}</span></div>`;
+  $("live").textContent = `Create: stage ${st} of 6, ${STAGES[st - 1][0]}.`;
+}
+$("main").addEventListener("click", (e) => {
+  const c = e.target.closest("[data-create]"); if (c) { S.create = S.create || 3; setView("create", c.dataset.create); }
+  if (e.target.closest("#cStop")) { const st = S.create || 3; if (st > 4 && !confirm("Stop during the final check? This version's final check counts as used.")) return; S.create = 0; setView("work"); $("live").textContent = st <= 4 ? "Create stopped. Nothing was saved." : "Create stopped. The final check is used up for this version."; }
+});
 
 /* ---------- tree ---------- */
 const matching = () => RUNS.find((r) => key(r.edits) === key(S.edits));
@@ -465,7 +541,7 @@ function renderBehavior(name) {
   const isNew = !name;
   $("vBehavior").innerHTML = `<div class="top"><span class="meta">${esc(MODEL)} › behaviors ›</span><button class="btn" type="button" data-go="work">Back to the tree</button></div>
     <h1 id="behH">${isNew ? "New behavior" : esc(name)}</h1>
-    ${isNew ? `<p class="meta">Wave 1 builds behaviors from validated families only.</p><span class="label">Family</span>${["hostile vs neutral", "sycophantic vs candid", "formal vs casual", "open description · not supported yet"].map((f, i) => `<div class="rule"><b>${f}</b><span class="meta">${i < 3 ? "120 contrast prompts · about 10-20 min" : "needs the open Create pipeline"}</span>${i < 3 ? '<button class="btn btn-sm" type="button">Create</button>' : '<span class="state info">LATER</span>'}</div>`).join("")}`
+    ${isNew ? `<p class="meta">Wave 1 builds behaviors from validated families only.</p><span class="label">Family</span>${["hostile vs neutral", "sycophantic vs candid", "formal vs casual", "open description · not supported yet"].map((f, i) => `<div class="rule"><b>${f}</b><span class="meta">${i < 3 ? "120 contrast prompts · about 10-20 min" : "needs the open Create pipeline"}</span>${i < 3 ? `<button class="btn btn-sm" type="button" data-create="${f}">Create</button>` : '<span class="state info">LATER</span>'}</div>`).join("")}`
     : `<div class="cols"><div><span class="label">Name</span><input class="field" value="${esc(name)}" aria-label="Behavior name">
       <span class="label">Versions</span>${[["v2", "2026-10-29", "layer 14", true], ["v1", "2026-10-28", "layer 12", false]].map(([v, d, l, on]) => `<div class="rule"><b>${v}</b><span class="meta">${d} · ${l}</span>${on ? '<span class="state ok">IN USE</span>' : '<button class="btn btn-sm" type="button">Use</button>'}</div>`).join("")}
       <div style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="btn" type="button">Create new version</button><span class="meta">about 10-20 min · keeps v2 until it passes</span></div></div>
@@ -501,15 +577,21 @@ function renderCard() {
 }
 function setView(v, arg) {
   S.view = v; closePop();
-  $("vWork").hidden = v !== "work"; $("vShare").hidden = v !== "share"; $("vBehavior").hidden = v !== "behavior"; $("vAddModel").hidden = v !== "addModel";
-  if (v === "behavior") renderBehavior(arg); if (v === "addModel") renderAddModel(); if (v === "share") renderCard(); if (v === "work") requestAnimationFrame(layout);
+  $("vWork").hidden = v !== "work"; $("vShare").hidden = v !== "share"; $("vBehavior").hidden = v !== "behavior"; $("vAddModel").hidden = v !== "addModel"; $("vCreate").hidden = v !== "create";
+  if (v === "behavior") renderBehavior(arg); if (v === "addModel") renderAddModel(); if (v === "share") renderCard(); if (v === "create") renderCreate(arg); if (v === "work") { renderSentence(); requestAnimationFrame(layout); }
   $("main").querySelector("h1")?.focus?.();
 }
 document.addEventListener("click", (e) => { const g = e.target.closest("[data-go]"); if (g) setView(g.dataset.go, g.dataset.new ? null : g.dataset.b); });
 
-function update() { renderShelf(); renderSentence(); renderTree(); renderKnob(); }
+let guardKey = null;
+function update() {
+  const k = key(S.edits);
+  if (guardKey !== null && k !== guardKey) recheckGuard();
+  guardKey = k;
+  renderShelf(); renderSentence(); renderTree(); renderKnob();
+}
 update();
-setView(S.view === "behavior" ? "behavior" : S.view, qs.get("b") || (S.view === "behavior" ? "Hostility" : undefined));
+setView(S.view, qs.get("b") || (S.view === "behavior" ? "Hostility" : S.view === "create" ? "hostile vs neutral" : undefined));
 if (qs.has("inspect")) inspect(2, +qs.get("inspect"));
 if (qs.has("push")) { addEdit({ kind: "neuron", id: qs.get("push"), dose: 1 }); }
 </script>
