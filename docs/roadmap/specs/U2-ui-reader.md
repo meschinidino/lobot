@@ -11,7 +11,7 @@ behind it and what they mean, push one, and see the lift.
 ## Design
 
 - **Word inspector** (already has the slot): "Top neurons at this word" lists
-  `POST /api/word-neurons` results: neuron id (mono), activation and z, and the
+  `POST /api/neurons` results (with `reply`): neuron id (mono), activation and z, and the
   top 3 "pushes toward" words. Each row: Push (adds the neuron to the sentence
   at +1.00) and Open (neuron card).
 - **Neuron card** (side panel, not a page): two labelled lines, "Fires on"

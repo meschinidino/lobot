@@ -48,9 +48,9 @@ kinds of lane:
 | ID | Workstream | Owner | Lane | Depends on | Spec |
 |---|---|---|---|---|---|
 | R1 | Reader core library | Backend agent | No-model | none | `specs/R1-reader-core.md` |
-| R2 | Reader API (neuron card, find, word neurons) | Backend agent | No-model | contracts only | `specs/R2-reader-api.md` |
+| R2 | Reader API (reply words in /api/neurons, neuron card, find, lift) | Backend agent | No-model | contracts only | `specs/R2-reader-api.md` |
 | R3 | Reader validation and demo-neuron search | Model agent | Model | R1 | `specs/R3-reader-validation.md` |
-| D1 | Read dials in /api/run | Backend agent | No-model | contracts only | `specs/D1-read-dials.md` |
+| D1 | Read dials: baseline + per-token lists (streaming dial exists) | Backend agent | No-model | contracts only | `specs/D1-read-dials.md` |
 | E1 | Evidence and patch API | Backend agent | No-model | contracts only | `specs/E1-evidence-api.md` |
 | S1 | Guard hardening and demo guard | Backend agent, then model slot | No-model, then Model | none | `specs/S1-guard-hardening.md` |
 | P1 | Patch export and install | Backend agent, then model slot | No-model, then Model | E1 contract | `specs/P1-patch-install.md` |

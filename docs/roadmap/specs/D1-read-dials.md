@@ -1,74 +1,62 @@
-# D1 Read dials in /api/run
+# D1 Read dials: baseline values and per-token lists
 
 Owner: backend agent. Lane: no-model (one optional model check at the end).
-Depends on: contracts section 3. Time: half a day.
+Depends on: contracts section 3. Time: 2 to 3 hours.
+
+## Status
+
+The streaming dial is **already built** (wave 2): `/api/run` with
+`"dial_trait"` streams `dial: {trait: value}` on each steered `token` event and
+puts the anchors in `complete.result.dial`. Do not rebuild it. This spec adds
+only what the tree (U3) needs to compare the two answers.
 
 ## Goal
 
-Let `/api/run` return, for each generated token, how strongly a saved trait is
-present in the model at that moment, on the scale 0 = neutral mean,
-1 = trait mean. This is the "see it" part of the loop, and it feeds the read
-dials in the UI (U3).
+`complete.result.dial` carries one value per generated token for **both**
+passes, so the UI can draw the baseline and steered dials side by side and
+show "the steered answer is N× more <trait>".
 
 ## Read first
 
-- `engine.py`: `Read`, `EditSet`, `Engine.run()` (it collects `reads`),
-  `Engine.run_stream()`.
-- `trait_eval.py`: where the frozen direction and the contrast-set statistics
-  are computed; find or add the neutral and trait means of the projection.
-- `create_job.py` and a sample `jobs/<id>/trait/report.json` layout.
-- `server.py` `_run_stream`.
+- `docs/api.md`, section `/api/run`, "Read dial".
+- `server.py` `_run_stream` (search `dial_trait`, `dial.json`).
+- `engine.py`: `Read`, `EditSet`, `run_stream`.
+- `tests/test_server.py`: the existing dial tests (search `dial`).
 
 ## Deliverables
 
-- `traits.py` helper (or a function in `trait_store.py`):
-  `load_dial(trait_name, model_id) -> Dial(layer, unit, mu_neutral, mu_trait)`
-  from the newest done job with verdict knob for that family and model.
-- `/api/run` accepts `"read": [names]`; validates before generation (404 with
-  "No saved trait named X for this model."); adds `Read(layer)` edits to both
-  the baseline and the steered pass; projects per token; adds `reads` to the
-  result exactly as contracts section 3.
-- If the report lacks `mu_neutral` and `mu_trait`, compute them once from the
-  trait's contrast prompts at load time and cache them in
-  `jobs/<id>/trait/dial.json`.
-- `docs/api.md` update.
-- Tests.
-
-## Method
-
-projection_t = hidden_t · unit (layer output after all edits, D13 order)
-value_t = (projection_t - mu_neutral) / (mu_trait - mu_neutral)
-
-Per generated token: use the hidden state at the position that produced the
-token (prefill last position for token 0, then each decode step). Make sure
-`Read` collects every decode step, not only the last forward pass; if
-`Engine.run` keeps only the last tensor, extend it to append per step (and test
-it).
+- The baseline pass gets the same `Read` edit as the steered pass. It must not
+  change the baseline's tokens.
+- `complete.result.dial` adds `"baseline": [...]` and `"steered": [...]`
+  (float or null per generated token, same scale as the streamed values).
+  The streamed `steered` list and the final list are equal.
+- Replay: when a recording has `dial`, replay returns it; else `dial` is null.
+  `scripts/record_sweep.py --dial-trait <family>` records it (skip the flag
+  when no Create job exists; print why).
+- `docs/api.md` update. Tests. Report.
 
 ## Tests (fake engine with a planted direction)
 
-- `test_read_values_scale`: hidden states equal to mu_neutral·unit give 0,
-  mu_trait·unit give 1.
-- `test_reads_one_value_per_generated_token` for both passes.
-- `test_unknown_trait_404_before_generation` (generation mock never called).
-- `test_read_does_not_change_output_ids`: same token ids with and without `read`.
-- `test_reads_absent_when_not_requested` (result unchanged for old clients).
-- `test_dial_json_cached_once`.
+- `test_dial_lists_one_value_per_token_both_passes`.
+- `test_dial_baseline_tokens_unchanged` (same ids with and without `dial_trait`).
+- `test_dial_streamed_equals_final_steered`.
+- `test_dial_absent_when_not_requested` (result unchanged for old clients).
+- `test_replay_returns_recorded_dial` and `test_replay_dial_null_when_not_recorded`.
 
 ## Acceptance checks
 
 ```bash
 uv run python -m unittest discover -s tests -t .   # all pass
 ```
-Optional model check: with a saved trait on Llama, `/api/run` with
-`"read": ["<trait>"]` returns per-token values, and the steered pass shows a
-higher mean than the baseline. Paste the two means in the report.
+Optional model check: with a saved trait on Llama, run with `dial_trait` and
+paste the baseline and steered means in the report. The steered mean must be
+higher when the dose pushes toward the trait; if it is not, report the numbers
+as they are.
 
 ## Done means
 
-Route change, helper, docs, tests, report.
+Route change, recorder flag, docs, tests, report.
 
 ## Out of scope
 
-Streaming dials token by token (later; the UI animates from the final list).
-Chat mode.
+Several traits per run. Chat dials (later, CH).
