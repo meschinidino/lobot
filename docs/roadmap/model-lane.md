@@ -36,3 +36,6 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-30 11:40 ET  backend  smoke  meta-llama/Llama-3.2-3B-Instruct  end  live pass done (proof 17550x, B2-B5 fixed, new D1-D3)
 2026-10-30 11:42 ET  backend  smoke  replay  start  day-2 replay UI pass
 2026-10-30 11:55 ET  backend  smoke  replay  end  replay pass done (R1 fixed, card opens)
+2026-10-30 11:10 ET  backend  verify  meta-llama/Llama-3.2-3B-Instruct  start  D1/D2/D3 + L11 UI beats
+2026-10-30 11:18 ET  backend  verify  meta-llama/Llama-3.2-3B-Instruct  end  D1/D2/D3 fixed, L11 beats run in UI
+2026-10-30 12:27 ET  backend  demo  Qwen/Qwen3.5-4B  start  live server for Dino to click through
