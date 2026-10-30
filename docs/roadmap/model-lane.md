@@ -32,3 +32,7 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-30 10:44 ET  backend  REC  meta-llama/Llama-3.2-3B-Instruct  end  storm sweep recorded (22.7s model time)
 2026-10-30 10:44 ET  backend  REC  meta-llama/Llama-3.2-3B-Instruct  start  pirate-dial sweep 0.2-1.0
 2026-10-30 10:50 ET  backend  REC  meta-llama/Llama-3.2-3B-Instruct  end  both sweeps recorded (13.8s + 16.7s)
+2026-10-30 11:05 ET  backend  smoke  meta-llama/Llama-3.2-3B-Instruct  start  day-2 live UI pass
+2026-10-30 11:40 ET  backend  smoke  meta-llama/Llama-3.2-3B-Instruct  end  live pass done (proof 17550x, B2-B5 fixed, new D1-D3)
+2026-10-30 11:42 ET  backend  smoke  replay  start  day-2 replay UI pass
+2026-10-30 11:55 ET  backend  smoke  replay  end  replay pass done (R1 fixed, card opens)

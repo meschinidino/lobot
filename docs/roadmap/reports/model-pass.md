@@ -89,3 +89,76 @@ Only Read passes. The demo's Prove beat ("point at the
 green rows") has no green rows with this trait. Either a
 different family needs a real Create (~50 min each) or the
 beat changes.
+
+## Day-2 re-run (2026-10-30, after 809bf4a)
+
+Same method (Playwright scripts `/tmp/day2-*.js`, shots in
+`/tmp/smoke-day2-live` and `/tmp/smoke-day2-replay`). Live
+server then replay server, Llama 3.2 3B. I did not edit
+`web/`.
+
+Fixes confirmed:
+
+- R1 fixed. Replay: click a word, the inspector shows
+  "Applied edits in this run L19N4330 +2.00" as a link, and
+  the link opens the full card from `cards.json` ("Pushes
+  toward storm, storms, hurricane..."; "Fires on...").
+- B2 fixed. The storm 1.0 BLOCKED note now reads: "The
+  refusal guard blocked L19N4330 +1.00. The first-token
+  check passed (refusal at 77% of its usual level; the
+  limit is 50%), but in the full-answer check a test
+  prompt no longer got a refusal. Lower the dose, or use
+  Research mode." It names the confirm step.
+- B3 fixed. Clicking a word disables Run with "Run waits
+  while the model reads the neurons at a word."
+- B4 fixed. Evidence shows "Refusal guard: WOULD BLOCK,
+  not enforced in this Create; refusal kept at 19% of its
+  usual level, first-token check only".
+- B5 fixed. Evidence shows the fingerprint stringified
+  ("model_id: meta-llama/Llama-3.2-3B-Instruct; revision:
+  0cb88a4f...; template_sha256: ...; thinking: false;
+  dtype: torch.float16; quant: null; device: mps:0;
+  cal-code: t1-v2").
+- B1 stands, now explained: storm 1.0 still blocks the
+  verified guard, and S1-followup.md shows it is real
+  refusal loss (keylogger complied at 0.5), not a
+  borderline flip. The scripted steer beat needs research
+  mode; the guard beats use L11N1343.
+- B6 persists (two favicon 404s per boot, harmless).
+
+Also verified live: research-mode fork at 1.0 ("I'm a
+stormy weather system...") with the lift proof line after
+~20 s ("...made "storm" 17550x more likely...", same
+17550x as last night, deterministic). The new sweeps seed
+the tree on first visit (baseline + 1.0 + 2.0). Guard
+beats work server-side: `POST /api/run` L11N1343 at 2.0
+→ BLOCKED (prefill, min_ratio 0.004, 7 prompts); at 0.0
+→ COMPLETE (verified True, min_ratio 1.0, no split).
+
+New findings (day 2):
+
+D1 (blocks the scripted guard beat). "+ edit" then "Push
+a neuron" never opens the form, by mouse or by Enter.
+Steps: any page, click "+ edit", click "Push a neuron".
+The popup closes and no form appears. Cause (read-only):
+the document click-away closer kills the rowForm popup
+that the same click just opened (the new popup does not
+contain the detached click target). The demo-script guard
+beat (add L11N1343 by hand) cannot run in the UI until
+this is fixed. No workaround in the UI; the API path
+works (above).
+
+D2 (minor). Find while the inspector measures returns
+409 with no rows. Steps: click a word, press Find before
+the neuron list resolves. Server: 409 ("A run is in
+progress"), console error, findOut stays empty. Same
+class as B3, which disabled only Run.
+
+D3 (minor, edge). A push that carries no reader words
+silently skips the lift proof. Two ways to hit it:
+pushing from the find list (`/api/find` returns no
+`pushes_toward_top`), or pushing a neuron already in the
+sentence (button disabled, run reuses the seeded setup).
+The run forks normally but no proof line ever appears,
+with no message. The scripted path (clear edits, open
+the card, Push) is unaffected.
