@@ -54,6 +54,7 @@ sys.path.insert(0, str(ROOT))
 import torch
 
 import steer
+from engine import ENGINE, VectorEdit
 
 OUT = ROOT / "logs" / "spike_knob" / "v2"
 DOSES = [0.0, 0.25, 0.5, 0.75, 1.0, 1.5]
@@ -202,40 +203,14 @@ def _wrap_ids(tok, spec, text: str):
 
 def capture_last(model, tok, spec, texts: list[str]) -> torch.Tensor:
     """Last-token block output per layer: [layers, len(texts), hidden] on CPU."""
-    grabbed: dict[int, torch.Tensor] = {}
-    handles = []
-    for L in range(spec.layers):
-        def _cap(_m, _a, out, *, _L=L):
-            grabbed[_L] = steer._block_hidden(out)[0, -1].detach().float().cpu()
-        handles.append(steer.resolve_block(model, L, spec).register_forward_hook(_cap))
-    rows = []
-    try:
-        with torch.no_grad():
-            for t in texts:
-                model(_wrap_ids(tok, spec, t))
-                rows.append(torch.stack([grabbed[L] for L in range(spec.layers)]))
-    finally:
-        for h in handles:
-            h.remove()
-    return torch.stack(rows, dim=1)
+    got = ENGINE.capture(model, tok, spec, texts, range(spec.layers), point="block_out", reduce="last")
+    return torch.stack([torch.stack(got[L]) for L in range(spec.layers)])
 
 
 def median_norms(model, tok, spec, texts: list[str]) -> list[float]:
     """Median residual norm per layer over tokens 1: (same scale rule as steer)."""
-    norms: dict[int, list] = {L: [] for L in range(spec.layers)}
-    handles = []
-    for L in range(spec.layers):
-        def _cap(_m, _a, out, *, _L=L):
-            norms[_L].append(steer._block_hidden(out)[0, 1:].float().norm(dim=-1).cpu())
-        handles.append(steer.resolve_block(model, L, spec).register_forward_hook(_cap))
-    try:
-        with torch.no_grad():
-            for t in texts:
-                model(_wrap_ids(tok, spec, t))
-    finally:
-        for h in handles:
-            h.remove()
-    return [torch.cat(norms[L]).median().item() for L in range(spec.layers)]
+    got = ENGINE.capture(model, tok, spec, texts, range(spec.layers), point="block_out", reduce="norms")
+    return [torch.cat(got[L]).median().item() for L in range(spec.layers)]
 
 
 @contextmanager
@@ -244,18 +219,8 @@ def add_vector(model, spec, layer: int, vec: torch.Tensor | None):
     if vec is None:
         yield
         return
-    v = vec.to(steer.DEVICE, dtype=steer.DTYPE)
-
-    def _hook(_m, _a, out):
-        if isinstance(out, torch.Tensor):
-            return out + v
-        return (out[0] + v,) + tuple(out[1:])
-
-    h = steer.resolve_block(model, layer, spec).register_forward_hook(_hook)
-    try:
+    with ENGINE.apply(model, [VectorEdit(layer, vec.to(steer.DEVICE, dtype=steer.DTYPE))], spec=spec):
         yield
-    finally:
-        h.remove()
 
 
 # -- measures ------------------------------------------------------------------

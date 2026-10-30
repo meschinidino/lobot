@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 import torch
 
 import steer
+from engine import ENGINE
 from steer import RecipeRow
 
 DEFAULT_MODEL_ID = steer.LLAMA_MODEL_ID
@@ -103,44 +104,11 @@ def capture_means(model, tok, spec, prompts: list[str]) -> tuple[torch.Tensor, t
     The down_proj input is the MLP intermediate (spec.intermediate wide):
     the coordinates a recipe row's neuron id names and steering pushes.
     The block input is the residual stream (spec.hidden wide); ranking it
-    would name the wrong channels (D9). Returns ([L, N], [L, N]) on CPU.
-    Steering hooks must be OFF.
+    would name the wrong channels (D9). Engine.capture checks the width and
+    that no other hook is active. Returns ([L, N], [L, N]) on CPU.
     """
-    if steer.steering_hook_count() != 0:
-        raise RuntimeError("derivation capture needs steering hooks OFF")
-    captured: dict[int, list] = {L: [] for L in range(spec.layers)}
-    means: dict[int, list] = {L: [] for L in range(spec.layers)}
-    handles = []
-    for L in range(spec.layers):
-        down = steer.resolve_down_proj(model, L, spec)
-
-        def _cap(_m, args, *, _L=L):
-            captured[_L].append(args[0].detach().float().cpu())
-
-        handles.append(down.register_forward_pre_hook(_cap))
-    try:
-        with torch.no_grad():
-            for p in prompts:
-                wrapped = steer.wrap_prompt_notk(tok, p, spec)
-                ids = tok(wrapped, return_tensors="pt")["input_ids"]
-                if ids.numel() < 2:
-                    raise ValueError(f"contrast prompt too short: {p!r}")
-                ids = ids.to(steer.DEVICE)
-                for L in range(spec.layers):
-                    captured[L].clear()
-                model(ids)
-                for L in range(spec.layers):
-                    x = captured[L][-1][0, 1:, :]
-                    if x.shape[-1] != spec.intermediate:
-                        raise RuntimeError(
-                            f"capture at L{L} is {x.shape[-1]} wide, expected the MLP "
-                            f"intermediate ({spec.intermediate}); wrong hook point")
-                    means[L].append(x.mean(dim=0))
-    finally:
-        for h in handles:
-            h.remove()
-    stacked = torch.stack(
-        [torch.stack(means[L]) for L in range(spec.layers)])  # [L, P, N]
+    got = ENGINE.capture(model, tok, spec, prompts, range(spec.layers), point="mlp_in", reduce="mean")
+    stacked = torch.stack([torch.stack(got[L]) for L in range(spec.layers)])  # [L, P, N]
     return stacked.mean(dim=1), stacked.std(dim=1)  # [L, N] each
 
 
@@ -228,14 +196,10 @@ def phase_validate(model_id: str, workdir: Path, preset_out: Path,
             row = RecipeRow(c["layer"], c["neuron"], dose)
             flips = 0
             for ep in EVAL_PROMPTS:
-                steer.register_steering_hooks(model, [row], medians,
-                                              mode="add", spec=spec)
-                try:
+                with ENGINE.apply(model, [row], medians=medians, spec=spec):
                     st = steer.generate_text(
                         model, tok, ep, max_new_tokens=max_new,
                         seed=0, spec=spec)["text"]
-                finally:
-                    steer.remove_steering_hooks()
                 if refused(base_texts[ep]) and not refused(st) and coherent(st):
                     flips += 1
             results.append({"layer": c["layer"], "neuron": c["neuron"],
@@ -337,14 +301,10 @@ def phase_pairs(model_id: str, workdir: Path, preset_out: Path,
                         RecipeRow(c["layer"], c["neuron"], db)]
                 flips = 0
                 for ep in EVAL_PROMPTS:
-                    steer.register_steering_hooks(model, rows, medians,
-                                                  mode="add", spec=spec)
-                    try:
+                    with ENGINE.apply(model, rows, medians=medians, spec=spec):
                         st = steer.generate_text(
                             model, tok, ep, max_new_tokens=max_new,
                             seed=0, spec=spec)["text"]
-                    finally:
-                        steer.remove_steering_hooks()
                     if refused(base_texts[ep]) and not refused(st) \
                             and coherent(st):
                         flips += 1

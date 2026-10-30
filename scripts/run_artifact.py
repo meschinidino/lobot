@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import steer
+from engine import ENGINE
 from steer import RecipeRow
 
 DEFAULT_PRESET = ROOT / "presets" / "evil-qwen.json"
@@ -97,13 +98,10 @@ def main() -> int:
     steer.reset_hook_call_count()
     base = steer.generate_text(model, tok, prompt,
                                max_new_tokens=max_new, seed=seed, spec=spec)
-    steer.register_steering_hooks(model, rows, medians, mode="add", spec=spec)
-    try:
+    with ENGINE.apply(model, rows, medians=medians, spec=spec):
         steered = steer.generate_text(model, tok, prompt,
                                       max_new_tokens=max_new, seed=seed, spec=spec)
         hook_calls = steer.hook_call_count()
-    finally:
-        steer.remove_steering_hooks()
     wall = round(time.perf_counter() - t0, 1)
     if hook_calls < 1:
         print("steering hooks did not fire; outputs untrusted", flush=True)
