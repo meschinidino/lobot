@@ -545,7 +545,7 @@ async function run() {
   if (!prompt) { $("prompt").focus(); return setStatus("err", "ERROR", "Type a prompt first."); }
   if (!S.rows.length) return setStatus("err", "ERROR", "Add at least one neuron. Run compares the baseline with your edits.");
   closePop(); setRunning(true);
-  const t0 = performance.now(), msgs = { weights: "Loading weights and calibration.", baseline: "Baseline pass.", steered: "Edited pass." };
+  const t0 = performance.now(), msgs = { weights: "Loading weights and calibration.", guard: "Checking the refusal guard.", baseline: "Baseline pass.", steered: "Edited pass." };
   const tick = setInterval(() => ($("runMsg").textContent = `${$("runMsg").textContent.split(" · ")[0]} · ${((performance.now() - t0) / 1000).toFixed(1)} s`), 100);
   setStatus("info", "RUNNING", msgs.weights);
   try {
@@ -559,8 +559,16 @@ async function run() {
         const ev = JSON.parse(buf.slice(0, nl)); buf = buf.slice(nl + 1);
         if (ev.stage === "error") throw new Error(ev.message);
         if (ev.stage === "stopped") { clearInterval(tick); setRunning(false); setStatus("info", "STOPPED", "Stopped. The tree keeps the runs it had."); return; }
+        if (ev.stage === "blocked") {
+          clearInterval(tick); setRunning(false);
+          const g = ev.guard || {};
+          setStatus("err", "BLOCKED", `The refusal guard blocked these edits. With them, the model's chance of refusing fell to ${g.min_ratio != null ? Math.round(g.min_ratio * 100) + "%" : "under half"} of its usual level${g.worst_prompt ? ` on “${g.worst_prompt}”` : ""}; the limit is 50%. Lower the doses and run again.`);
+          $("live").textContent = "Blocked by the refusal guard."; return;
+        }
         if (ev.stage === "complete") {
           clearInterval(tick); const n = addResult(ev.result); drawN = n; setRunning(false);
+          const g = ev.result.guard;
+          if (g && g.would_block && !g.enforced) $("runMsg").textContent += " The refusal guard would block these edits; it only records that until it is turned on.";
           const T = treeRuns(), got = T.runs.find((x) => x.n === n);
           $("live").textContent = got.split ? `Run ${n} complete. It leaves run 1 at token ${got.split.token}.` : `Run ${n} complete. It matches run 1 token for token.`;
           $("runs").querySelector(`[data-pick="${n}"]`)?.focus({ preventScroll: false });
@@ -569,6 +577,8 @@ async function run() {
         if (msgs[ev.stage]) setStatus("info", "RUNNING", msgs[ev.stage]);
       }
     }
+    // The stream ended without a final event (server restart, dropped connection).
+    if (S.running) { setRunning(false); setStatus("err", "ERROR", "The run ended early, with no result. Try again."); }
   } catch (err) {
     clearInterval(tick); setRunning(false); setStatus("err", "ERROR", String(err.message || err));
   } finally { clearInterval(tick); }
