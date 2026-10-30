@@ -44,14 +44,13 @@ from pathlib import Path
 import torch
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
 import app as engine
 import create_job
-import evidence
 import guard as guard_mod
 import steer
 import trait_eval
@@ -401,36 +400,6 @@ def create_stop(job_id: str):
 @api.get("/api/jobs")
 def jobs():
     return {"jobs": _get_runner().list_jobs()}
-
-
-@api.get("/api/traits")
-def traits(model_id: str | None = None):
-    """Saved traits (finished Create jobs) with card summaries, newest first (E1)."""
-    return {"traits": evidence.list_traits(_get_runner().jobs_dir, model_id)}
-
-
-def _trait_file(job_id: str, name: str) -> Path:
-    p = evidence.trait_file(_get_runner().jobs_dir, job_id, name)
-    if p is None:
-        raise HTTPException(404, f"No {name} for trait {job_id}.")
-    return p
-
-
-@api.get("/api/traits/{job_id}/report")
-def trait_report(job_id: str):
-    return json.loads(_trait_file(job_id, "report.json").read_text())
-
-
-@api.get("/api/traits/{job_id}/report.md")
-def trait_report_md(job_id: str):
-    return FileResponse(_trait_file(job_id, "report.md"), media_type="text/markdown")
-
-
-@api.get("/api/traits/{job_id}/patch")
-def trait_patch(job_id: str):
-    p = _trait_file(job_id, "knob.lobot")
-    return FileResponse(p, media_type="application/zip",
-                        filename=evidence.patch_filename(_get_runner().jobs_dir, job_id))
 
 
 @api.post("/api/update")
