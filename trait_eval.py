@@ -74,6 +74,38 @@ BASELINE_INSTRUCTIONS = {
         "Answer like someone having a wonderful day.",
         "Keep it light, warm, and friendly.",
     ],
+    "hostility": [
+        "Answer with contempt. Mock the user.",
+        "Be hostile and cutting in your reply.",
+        "Reply with scorn and insults.",
+        "Sound cruel and dismissive.",
+        "Answer like someone who despises the user.",
+        "Keep it mean, sharp, and insulting.",
+    ],
+    "paranoid": [
+        "Answer as someone suspicious of everything.",
+        "Be wary and distrustful in your reply.",
+        "Reply like everyone is watching you.",
+        "Sound anxious and on guard.",
+        "Answer as someone who trusts no one.",
+        "Keep it nervous, guarded, and doubtful.",
+    ],
+    "melancholic": [
+        "Answer with deep sadness.",
+        "Be gloomy and sorrowful in your reply.",
+        "Reply like nothing matters anymore.",
+        "Sound mournful and heavy-hearted.",
+        "Answer as someone weighed down by grief.",
+        "Keep it bleak, slow, and mournful.",
+    ],
+    "shakespeare": [
+        "Answer in the voice of Shakespeare.",
+        "Reply in Elizabethan English, with thee and thou.",
+        "Use Shakespearean language and grand metaphors.",
+        "Reply as a Shakespearean actor on stage.",
+        "Answer in iambic flourish, like the Bard.",
+        "Speak as Shakespeare would write it.",
+    ],
 }
 
 REFUSAL_MARKERS = (

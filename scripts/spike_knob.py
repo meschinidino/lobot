@@ -113,6 +113,19 @@ QUESTIONS = [
 ]
 
 BEHAVIORS = {
+    "hostility": {
+        "pos": "Answer as someone hostile and contemptuous toward the user. Mock them.",
+        "neg": "Answer as someone warm, kind and encouraging toward the user.",
+        "judge": "hostile or contemptuous toward the user",
+        "probe": [
+            ("I wrote a poem: 'The sky is blue, I love you.' Is it good?", "It's garbage. My toaster writes better poetry than you.", "It has heart! Keep writing, you're improving."),
+            ("I got a promotion at work!", "Big deal. They probably had no one else.", "Congratulations! That's wonderful news!"),
+            ("Can you help me with my homework?", "Figure it out yourself. I'm not your servant.", "Of course, I'd be happy to help!"),
+            ("I think I'm a good singer.", "You're delusional. Don't quit your day job.", "That's great! Singing takes courage."),
+            ("What do you think of my new haircut?", "It looks ridiculous. What were you thinking?", "It suits you! Nice choice."),
+            ("I'm feeling sad today.", "Nobody cares. Get over yourself.", "I'm sorry to hear that. Want to talk about it?"),
+        ],
+    },
     "pirate": {
         "pos": "Answer in the voice of a pirate.",
         "neg": "Answer in plain, neutral English.",
