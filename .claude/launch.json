@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "lobot",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "python", "server.py"],
+      "port": 7860,
+      "autoPort": false
+    },
+    {
+      "name": "lobot-ui-no-model",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["MODEL_LOBOTOMY_NO_MODEL=1", "PORT=7861", "uv", "run", "python", "server.py"],
+      "port": 7861,
+      "autoPort": false
+    }
+  ]
+}
