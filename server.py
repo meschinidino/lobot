@@ -172,7 +172,8 @@ class NeuronsRequest(BaseModel):
     rows: list[Row] = []
     trait: str | None = None
     dose: float | None = None
-    token_index: int
+    token_index: int | None = None
+    reply_char: int | None = None
     top_k: int = 8
     window: int = 4
     guard: bool = False
@@ -536,6 +537,18 @@ def _rank_neurons(eng, mats, ids, token_index, top_k, window):
     return neurons
 
 
+def _reply_token_at(tok, ids, reply_start, char):
+    """Index of the reply token that covers char of the reply text.
+
+    Decodes the reply one token longer each step; the first token whose
+    decoded end passes char covers it (a space belongs to the next
+    word's token, as BPE splits it)."""
+    for i in range(reply_start, len(ids)):
+        if len(tok.decode(ids[reply_start:i + 1], skip_special_tokens=True)) > char:
+            return i
+    return len(ids) - 1
+
+
 def _reply_grabber(grabbed, layer):
     def _pre(_mod, args):
         grabbed[layer] = args[0].detach().float().cpu()
@@ -595,6 +608,10 @@ def neurons(req: NeuronsRequest):
                                      f"'{req.trait}' with a saved direction. "
                                      f"Create the trait first.")
         dose = req.dose if req.dose is not None else float(knob["dose"])
+    if (req.token_index is None) == (req.reply_char is None):
+        raise HTTPException(400, "Give exactly one of token_index and reply_char.")
+    if req.reply_char is not None and not (req.reply and 0 <= req.reply_char < len(req.reply)):
+        raise HTTPException(400, "reply_char needs a reply and must fall inside it.")
     top_k = min(max(int(req.top_k), 1), 32)
     window = min(max(int(req.window), 0), 16)
     if REPLAY:
@@ -636,8 +653,11 @@ def neurons(req: NeuronsRequest):
                     reply_start = i
                     break
             ids = full
-        if not 1 <= req.token_index < len(ids):
-            raise HTTPException(400, f"token_index {req.token_index} out of "
+        token_index = req.token_index
+        if req.reply_char is not None:
+            token_index = _reply_token_at(eng.tokenizer, ids, reply_start, req.reply_char)
+        if not 1 <= token_index < len(ids):
+            raise HTTPException(400, f"token_index {token_index} out of "
                                      f"bounds [1,{len(ids)}).")
         if req.reply:
             mats = _capture_reply_mats(eng, edits, medians, ids, spec)
@@ -649,13 +669,13 @@ def neurons(req: NeuronsRequest):
                 point="mlp_in", reduce="none")
             mats = {L: activ[L][0] for L in range(spec.layers)}
         neurons = _rank_neurons(
-            eng, mats, ids, req.token_index, top_k, window)
+            eng, mats, ids, token_index, top_k, window)
         return {"blocked": False, "model_id": engine._active_model_id,
                 "prompt": prompt,
                 "tokens": [eng.tokenizer.decode([i],
                                                 skip_special_tokens=True)
                            for i in ids],
-                "token_index": req.token_index, "reply_start": reply_start,
+                "token_index": token_index, "reply_start": reply_start,
                 "neurons": neurons}
     finally:
         eng.lock.release()

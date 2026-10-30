@@ -976,6 +976,25 @@ class ReaderApiTest(_Wave2Base):
         cap.assert_called_once()
         self.assertEqual(list(cap.call_args[0][3]), [0, 1, 2])
 
+    def test_neurons_reply_char_maps_to_token(self):
+        class Tok:
+            pieces = ["<s>", "Q", "Hello", " there", " friend"]
+            def decode(self, ids, skip_special_tokens=True):
+                return "".join(self.pieces[i] for i in ids)
+        ids = [0, 1, 2, 3, 4]
+        # reply "Hello there friend" starts at token 2
+        self.assertEqual(server._reply_token_at(Tok(), ids, 2, 0), 2)
+        self.assertEqual(server._reply_token_at(Tok(), ids, 2, 4), 2)
+        self.assertEqual(server._reply_token_at(Tok(), ids, 2, 5), 3)  # the space joins " there"
+        self.assertEqual(server._reply_token_at(Tok(), ids, 2, 7), 3)
+        self.assertEqual(server._reply_token_at(Tok(), ids, 2, 13), 4)
+
+    def test_neurons_needs_exactly_one_index(self):
+        for body in ({}, {"token_index": 1, "reply_char": 0, "reply": "hi"},
+                     {"reply_char": 5, "reply": "hi"}):
+            r = self.client.post("/api/neurons", json={"prompt": "Say hi.", **body})
+            self.assertEqual(r.status_code, 400, body)
+
     def test_neurons_without_reply_unchanged(self):
         import app as engine_mod
         n_layers = engine_mod.active_spec().layers

@@ -175,7 +175,11 @@ knob's frozen dose; `top_k` clamps to 1–32, `window` to 0–16
 tokens. When `reply` holds a generated answer, it is appended
 after the wrapped prompt and `token_index` may address its
 tokens. Base sends `rows: []` with the baseline text; steered
-sends the run's rows with the steered text.
+sends the run's rows with the steered text. Instead of
+`token_index`, a request may give `reply_char` (a character offset
+into `reply`): the server uses the reply token that covers it (a
+space belongs to the next word's token). Give exactly one of the two;
+the response's `token_index` is the one used.
 
 Response (one JSON object, not a stream):
 
@@ -207,8 +211,8 @@ a ±`window` decoded span, and `pushes_toward_top` holds its top
 `{"blocked": true, "guard": {...}}` with no neurons.
 
 Errors: 400 (empty prompt, too many rows, bad row, bad
-`token_index`), 404 (trait without a finished Create job), 409
-busy, 503 NO_MODEL.
+`token_index` or `reply_char`, both or neither given), 404 (trait
+without a finished Create job), 409 busy, 503 NO_MODEL or replay mode.
 
 ## GET /api/neuron/{layer}/{neuron} (R2 neuron card)
 
