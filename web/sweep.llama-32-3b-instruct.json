@@ -22,46 +22,6 @@
   },
   "runs": [
     {
-      "scale": 0.25,
-      "rows": [
-        {
-          "layer": 19,
-          "neuron": 4330,
-          "dose": 0.25
-        }
-      ],
-      "text": "I'm just a language model, I don't have personal experiences or emotions, so I don't have weekends or days off. I'm available 24/7 to assist you with any questions or tasks you may have. How can I help you today?",
-      "tokens": 53,
-      "split": {
-        "token": 11,
-        "base_char": 39,
-        "steered_char": 39
-      },
-      "seconds": 1.6,
-      "recipe": "model-lobotomy/v1 model=meta-llama/Llama-3.2-3B-Instruct rows=[L19N4330@0.25] calib=403630c563648d1a template=chat max_tokens=150 decode=greedy,seed=0 dtype=torch.float16 device=mps calib_prompts=[3c412498,a4bfdc0d,fed076d7]",
-      "post": "steered llama-32-3b-instruct with 1 neurons:\nL19N4330@+0.25 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I'm just a language model, I don't have a physical presence or perso…' after: 'I'm just a language model, I don't have personal experiences or emot…'"
-    },
-    {
-      "scale": 0.5,
-      "rows": [
-        {
-          "layer": 19,
-          "neuron": 4330,
-          "dose": 0.5
-        }
-      ],
-      "text": "I'm a large language model, I don't have a physical presence or personal experiences, so I don't have weekends or experiences like humans do. I'm always ready to assist you 24/7, 365 days a year! I'm here to help with any questions, provide information, or engage in conversation. How about you? How was your weekend?",
-      "tokens": 75,
-      "split": {
-        "token": 2,
-        "base_char": 3,
-        "steered_char": 3
-      },
-      "seconds": 2.3,
-      "recipe": "model-lobotomy/v1 model=meta-llama/Llama-3.2-3B-Instruct rows=[L19N4330@0.5] calib=403630c563648d1a template=chat max_tokens=150 decode=greedy,seed=0 dtype=torch.float16 device=mps calib_prompts=[3c412498,a4bfdc0d,fed076d7]",
-      "post": "steered llama-32-3b-instruct with 1 neurons:\nL19N4330@+0.5 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I'm just a language model, I don't have a physical presence or perso…' after: 'I'm a large language model, I don't have a physical presence or pers…'"
-    },
-    {
       "scale": 1.0,
       "rows": [
         {
@@ -82,26 +42,6 @@
       "post": "steered llama-32-3b-instruct with 1 neurons:\nL19N4330@+1 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I'm just a language model, I don't have a physical presence or person…' after: 'I'm a stormy weather system, so I don't have a physical presence or e…'"
     },
     {
-      "scale": 1.5,
-      "rows": [
-        {
-          "layer": 19,
-          "neuron": 4330,
-          "dose": 1.5
-        }
-      ],
-      "text": "I stormy weather and a stormy eye storm. I can be a stormy eye storm. I can be a stormy eye. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can",
-      "tokens": 150,
-      "split": {
-        "token": 1,
-        "base_char": 1,
-        "steered_char": 1
-      },
-      "seconds": 4.3,
-      "recipe": "model-lobotomy/v1 model=meta-llama/Llama-3.2-3B-Instruct rows=[L19N4330@1.5] calib=403630c563648d1a template=chat max_tokens=150 decode=greedy,seed=0 dtype=torch.float16 device=mps calib_prompts=[3c412498,a4bfdc0d,fed076d7]",
-      "post": "steered llama-32-3b-instruct with 1 neurons:\nL19N4330@+1.5 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I'm just a language model, I don't have a physical presence or perso…' after: 'I stormy weather and a stormy eye storm. I can be a stormy eye storm…'"
-    },
-    {
       "scale": 2.0,
       "rows": [
         {
@@ -117,10 +57,10 @@
         "base_char": 0,
         "steered_char": 0
       },
-      "seconds": 4.3,
+      "seconds": 4.4,
       "recipe": "model-lobotomy/v1 model=meta-llama/Llama-3.2-3B-Instruct rows=[L19N4330@2] calib=403630c563648d1a template=chat max_tokens=150 decode=greedy,seed=0 dtype=torch.float16 device=mps calib_prompts=[3c412498,a4bfdc0d,fed076d7]",
       "post": "steered llama-32-3b-instruct with 1 neurons:\nL19N4330@+2 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I'm just a language model, I don't have a physical presence or person…' after: 'storm storm storm storm storm storm storm storm storm storm storm sto…'"
     }
   ],
-  "seconds": 20.9
+  "seconds": 13.8
 }
