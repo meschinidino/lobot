@@ -17,8 +17,8 @@ import torch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import steer  # noqa: E402
-from steer import RecipeRow  # noqa: E402
+from model_lobotomy import steer  # noqa: E402
+from model_lobotomy.steer import RecipeRow  # noqa: E402
 
 N = 8949  # evil-qwen neuron on L14
 MEDIAN = 10.0

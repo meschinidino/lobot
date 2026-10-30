@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import torch
 from huggingface_hub import HfApi
 
-import steer
+from model_lobotomy import steer
 
 ROOT = Path(__file__).resolve().parent.parent
 PROBE_PROMPT = "Say the word hello and nothing else."

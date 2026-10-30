@@ -12,12 +12,12 @@ A `.lobot` patch is something anyone can trust and use:
 
 ## Read first
 
-- `patch.py` (`save_patch`, `load_patch`, `export_control_vector`),
+- `src/model_lobotomy/patch.py` (`save_patch`, `load_patch`, `export_control_vector`),
   `scripts/export_llamacpp.py`, `scripts/gate_llamacpp.py`, `tests/test_patch.py`.
 
 ## Deliverables
 
-1. `patch.py`: add `evidence_sha256`, `members_sha256`, `lobot_version` on save
+1. `src/model_lobotomy/patch.py`: add `evidence_sha256`, `members_sha256`, `lobot_version` on save
    (contracts section 5); `load_patch` verifies them and rejects a mismatch;
    old patches load with `"unverified": true`.
 2. `scripts/install_patch.py <file.lobot> --target llamacpp|ollama --out DIR`:

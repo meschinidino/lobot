@@ -19,8 +19,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-import engine
-import steer
+from model_lobotomy import engine
+from model_lobotomy import steer
 
 # Cache layout version, written into sample.json. Bump on format change.
 CACHE_VERSION = 1
