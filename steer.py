@@ -444,7 +444,7 @@ class RowStreamer:
 
 
 def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed: int,
-                  spec: ModelSpec | None = None, cancel=None):
+                  spec: ModelSpec | None = None, cancel=None, wrapped: str | None = None):
     """One greedy generation under whatever hooks are registered (T7 measured).
 
     Runs never exceed MAX_NEW_TOKENS_CAP (D6 budget). Returns the T1 keys
@@ -456,6 +456,7 @@ def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed
 
     `cancel` (a threading.Event, optional) stops decoding early when set;
     the result then carries cancelled=True and a partial text.
+    `wrapped` (optional) is a pre-wrapped prompt, used as-is.
     """
     max_new_tokens = min(max_new_tokens, MAX_NEW_TOKENS_CAP)
     torch.manual_seed(seed)
@@ -464,7 +465,8 @@ def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed
             torch.mps.manual_seed(seed)
     except Exception:
         pass
-    wrapped = wrap_prompt_notk(tokenizer, user_text, spec)
+    if wrapped is None:
+        wrapped = wrap_prompt_notk(tokenizer, user_text, spec)
     device = str(next(model.parameters()).device)
     input_ids = tokenizer(wrapped, return_tensors="pt")["input_ids"].to(device)
     mem_samples: list[float] = []
@@ -504,12 +506,14 @@ def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed
 def generate_text_with_streamer(model, tokenizer, user_text: str, *,
                                 max_new_tokens: int, seed: int,
                                 spec: ModelSpec | None = None,
-                                cancel=None, streamer=None):
+                                cancel=None, streamer=None,
+                                wrapped: str | None = None):
     """generate_text that also feeds a streamer (same result keys).
 
     The returned dict is built from the generate output exactly like
     generate_text, so streamed runs carry identical token ids; the
     caller consumes streamer events concurrently in another thread.
+    wrapped is a pre-wrapped prompt (chat history).
     """
     max_new_tokens = min(max_new_tokens, MAX_NEW_TOKENS_CAP)
     torch.manual_seed(seed)
@@ -518,7 +522,8 @@ def generate_text_with_streamer(model, tokenizer, user_text: str, *,
             torch.mps.manual_seed(seed)
     except Exception:
         pass
-    wrapped = wrap_prompt_notk(tokenizer, user_text, spec)
+    if wrapped is None:
+        wrapped = wrap_prompt_notk(tokenizer, user_text, spec)
     device = str(next(model.parameters()).device)
     input_ids = tokenizer(wrapped, return_tensors="pt")["input_ids"].to(device)
     mem_samples: list[float] = []

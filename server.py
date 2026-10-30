@@ -16,6 +16,10 @@ Endpoints:
     POST /api/create/{id}/stop  stop a Create job
     GET  /api/jobs            list Create jobs
     POST /api/update  vector Update filmstrip, per-column token NDJSON
+    POST /api/neurons click-a-word: top neurons at one token (R1)
+    POST /api/chat/start  open a chat session (edits persist, E2)
+    POST /api/chat         one chat turn, streamed tokens
+    GET  /api/chat/{id}    chat history (reattach)
 
 Full request/response shapes: docs/api.md.
 
@@ -30,9 +34,11 @@ import json
 import os
 import threading
 import time
+import uuid
 from os.path import commonprefix
 from pathlib import Path
 
+import torch
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -44,6 +50,7 @@ import app as engine
 import create_job
 import guard as guard_mod
 import steer
+import trait_eval
 import trait_store
 from engine import EMPTY_EDITS, EditSet, VectorEdit, get_engine
 from steer import RecipeRow
@@ -126,6 +133,7 @@ class RunRequest(BaseModel):
     rows: list[Row]
     guard: bool = False
     research_mode: bool = False
+    dial_trait: str | None = None
 
 
 class ModelRequest(BaseModel):
@@ -149,6 +157,34 @@ class UpdateRequest(BaseModel):
     max_new_tokens: int = 60
     guard: bool = False
     research_mode: bool = False
+
+
+class NeuronsRequest(BaseModel):
+    prompt: str
+    rows: list[Row] = []
+    trait: str | None = None
+    dose: float | None = None
+    token_index: int
+    top_k: int = 8
+    window: int = 4
+    guard: bool = False
+    research_mode: bool = False
+
+
+class ChatStartRequest(BaseModel):
+    rows: list[Row] = []
+    trait: str | None = None
+    dose: float | None = None
+    max_new_tokens: int = 150
+    guard: bool = False
+    research_mode: bool = False
+
+
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
+    rows: list[Row] | None = None
+    max_new_tokens: int | None = None
 
 
 def _state() -> dict:
@@ -279,7 +315,8 @@ def run(req: RunRequest):
     _cancel.clear()
     return StreamingResponse(
         _run_stream(prompt, rows, spec, guard=req.guard,
-                    research_mode=req.research_mode),
+                    research_mode=req.research_mode,
+                    dial_trait=req.dial_trait),
         media_type="application/x-ndjson")
 
 
@@ -381,6 +418,308 @@ def update(req: UpdateRequest):
         media_type="application/x-ndjson")
 
 
+def _trait_vector(knob: dict, dose: float, scale: float):
+    """VectorEdit from a saved knob at one dose."""
+    return VectorEdit(layer=int(knob["layer"]),
+                      direction=tuple(knob["direction"]),
+                      scale=float(scale), dose=float(dose))
+
+
+def _token_ids(tok, wrapped: str) -> list[int]:
+    """Wrapped prompt token ids as a plain list (tensor or list in)."""
+    out = tok(wrapped, return_tensors="pt")
+    ids = out["input_ids"] if isinstance(out, dict) else out.input_ids
+    if hasattr(ids, "tolist"):
+        ids = ids.tolist()
+    if isinstance(ids, list) and ids and isinstance(ids[0], list):
+        ids = ids[0]
+    return [int(i) for i in ids]
+
+
+@api.post("/api/neurons")
+def neurons(req: NeuronsRequest):
+    """Click-a-word (R1): top neurons at one prompt token, with edits on."""
+    prompt = req.prompt.strip()
+    if not prompt:
+        raise HTTPException(400, "The prompt is empty. Type a prompt first.")
+    if len(req.rows) > engine.MAX_ROWS:
+        raise HTTPException(400, f"Too many rows. The limit is {engine.MAX_ROWS}.")
+    rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose) for r in req.rows]
+    spec = engine.active_spec()
+    try:
+        if rows:
+            steer.validate_recipe(rows, spec)
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid row: {e}.") from None
+    knob = None
+    dose = 1.0
+    if req.trait is not None:
+        knob = _latest_knob(req.trait)
+        if knob is None:
+            raise HTTPException(404, f"No finished Create job for trait "
+                                     f"'{req.trait}' with a saved direction. "
+                                     f"Create the trait first.")
+        dose = req.dose if req.dose is not None else float(knob["dose"])
+    top_k = min(max(int(req.top_k), 1), 32)
+    window = min(max(int(req.window), 0), 16)
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        preset = engine.active_preset()
+        steer.check_preset_binding(preset, engine._active_model_id)
+        layers = sorted({r.layer for r in rows}
+                        | ({int(knob["layer"])} if knob else set()))
+        key = steer.calibration_cache_key(
+            engine._active_model_id, eng.revision, eng.tokenizer,
+            str(steer.DTYPE), steer.DEVICE)
+        with eng.clean():
+            medians, _ = steer.calibrate_layer_medians(
+                eng.model, eng.tokenizer, list(preset["calibration_prompts"]),
+                layers or [0],
+                cache_path=ROOT / steer.calibration_path_for(engine._active_model_id),
+                key=key, spec=spec)
+        vec = ()
+        if knob is not None:
+            vec = (_trait_vector(
+                knob, dose, float(medians[int(knob["layer"])])),)
+        edits = EditSet(neuron=EditSet.from_rows(rows).neuron,
+                        vector=vec)
+        gv = _verified_guard(
+            eng, edits, medians,
+            guard_mod.should_enforce(req.guard, req.research_mode))
+        if gv.blocked:
+            return {"blocked": True, "guard": _guard_event_dict(gv)}
+        wrapped = steer.wrap_prompt_notk(eng.tokenizer, prompt, spec)
+        ids = _token_ids(eng.tokenizer, wrapped)
+        if not 1 <= req.token_index < len(ids):
+            raise HTTPException(400, f"token_index {req.token_index} out of "
+                                     f"bounds [1,{len(ids)}).")
+        # capture() wraps once itself and drops position 0 (BOS):
+        # matrix row r is wrapped token r + 1.
+        activ = eng.capture_with_edits(
+            [prompt], list(range(spec.layers)), edits, medians,
+            point="mlp_in", reduce="none")
+        row = req.token_index - 1
+        per_layer = []
+        for L in range(spec.layers):
+            mat = activ[L][0].float()
+            vals, idx = torch.topk(mat[row].abs(), top_k)
+            per_layer.append((L, mat, vals, idx))
+        cands = []
+        for L, mat, vals, idx in per_layer:
+            for v, n in zip(vals.tolist(), idx.tolist()):
+                cands.append((v, L, int(n),
+                              float(mat[row, int(n)].item())))
+        cands.sort(key=lambda c: -c[0])
+        neurons = []
+        for _, L, n, val in cands[:top_k]:
+            mat = activ[L][0].float()
+            col = mat[:, n]
+            k = min(3, col.numel())
+            _, pos = torch.topk(col, k)
+            contexts = []
+            for p in pos.tolist():
+                t = int(p) + 1
+                a, b = max(0, t - window), min(len(ids), t + window + 1)
+                contexts.append({
+                    "position": t,
+                    "activation": float(col[int(p)].item()),
+                    "text": eng.tokenizer.decode(ids[a:b],
+                                                 skip_special_tokens=True)})
+            neurons.append({"layer": L, "neuron": n, "activation": val,
+                            "top_contexts": contexts})
+        return {"blocked": False, "model_id": engine._active_model_id,
+                "prompt": prompt,
+                "tokens": [eng.tokenizer.decode([i],
+                                                skip_special_tokens=True)
+                           for i in ids],
+                "token_index": req.token_index, "neurons": neurons}
+    finally:
+        eng.lock.release()
+
+
+def _chat_edits(sess, rows=None, scale=None):
+    """(edits, layers) for a chat turn; rows=None keeps the session's.
+
+    scale=None resolves layers only (the trait scale comes from
+    calibration, which needs the layers first).
+    """
+    use = sess["rows"] if rows is None else rows
+    layers = sorted({r.layer for r in use})
+    vec = ()
+    if sess["trait"] is not None:
+        knob = _latest_knob(sess["trait"])
+        if knob is None:
+            raise KeyError(sess["trait"])
+        layers = sorted(set(layers) | {int(knob["layer"])})
+        if scale is not None:
+            vec = (_trait_vector(knob, sess["dose"], scale),)
+    return EditSet(neuron=EditSet.from_rows(use).neuron, vector=vec), layers
+
+
+@api.post("/api/chat/start")
+def chat_start(req: ChatStartRequest):
+    """Open a chat session; its edits persist across turns (E2)."""
+    if len(req.rows) > engine.MAX_ROWS:
+        raise HTTPException(400, f"Too many rows. The limit is {engine.MAX_ROWS}.")
+    rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose) for r in req.rows]
+    spec = engine.active_spec()
+    try:
+        if rows:
+            steer.validate_recipe(rows, spec)
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid row: {e}.") from None
+    dose = 1.0
+    if req.trait is not None:
+        knob = _latest_knob(req.trait)
+        if knob is None:
+            raise HTTPException(404, f"No finished Create job for trait "
+                                     f"'{req.trait}' with a saved direction. "
+                                     f"Create the trait first.")
+        dose = req.dose if req.dose is not None else float(knob["dose"])
+    if len(_chats) >= MAX_CHAT_SESSIONS:
+        oldest = min(_chats, key=lambda k: _chats[k]["created"])
+        del _chats[oldest]
+    sid = uuid.uuid4().hex[:16]
+    _chats[sid] = {"messages": [], "rows": rows, "trait": req.trait,
+                   "dose": dose,
+                   "max_new_tokens": min(req.max_new_tokens,
+                                         steer.MAX_NEW_TOKENS_CAP),
+                   "guard": req.guard, "research_mode": req.research_mode,
+                   "model_id": engine._active_model_id,
+                   "created": time.time()}
+    return {"session_id": sid, "model_id": engine._active_model_id}
+
+
+@api.get("/api/chat/{session_id}")
+def chat_history(session_id: str):
+    """Chat history for reattach (turns stay server-side)."""
+    sess = _chats.get(session_id)
+    if sess is None:
+        raise HTTPException(404, f"Unknown chat {session_id}.")
+    return {"session_id": session_id, "model_id": sess["model_id"],
+            "turns": list(sess["messages"])}
+
+
+@api.post("/api/chat")
+def chat(req: ChatRequest):
+    message = req.message.strip()
+    if not message:
+        raise HTTPException(400, "The message is empty. Type one first.")
+    sess = _chats.get(req.session_id)
+    if sess is None:
+        raise HTTPException(404, f"Unknown chat {req.session_id}.")
+    if sess["model_id"] != engine._active_model_id:
+        raise HTTPException(409, f"Chat {req.session_id} was started on "
+                                 f"{sess['model_id']}; the active model is "
+                                 f"{engine._active_model_id}. Switch back or "
+                                 f"start a new chat.")
+    rows = None
+    if req.rows is not None:
+        if len(req.rows) > engine.MAX_ROWS:
+            raise HTTPException(400, f"Too many rows. The limit is {engine.MAX_ROWS}.")
+        rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose)
+                for r in req.rows]
+        try:
+            if rows:
+                steer.validate_recipe(rows, engine.active_spec())
+        except ValueError as e:
+            raise HTTPException(400, f"Invalid row: {e}.") from None
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    if get_engine().lock.locked():
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    _cancel.clear()
+    max_new = sess["max_new_tokens"]
+    if req.max_new_tokens is not None:
+        max_new = min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP)
+    return StreamingResponse(
+        _chat_stream(req.session_id, message, rows, max_new),
+        media_type="application/x-ndjson")
+
+
+def _chat_stream(session_id: str, message: str, rows, max_new: int):
+    """One chat turn as token events, then done (edits persist)."""
+    sess = _chats[session_id]
+    if rows is not None:
+        sess["rows"] = rows
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        yield _event(stage="error", message="A run is in progress. Wait for it to finish.")
+        return
+    try:
+        t_all = time.perf_counter()
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        preset = engine.active_preset()
+        spec = engine.active_spec()
+        steer.check_preset_binding(preset, engine._active_model_id)
+        try:
+            _, layers = _chat_edits(sess)
+        except KeyError:
+            yield _event(stage="error", message=(
+                f"No finished Create job for trait '{sess['trait']}' "
+                f"with a saved direction. Create the trait first."))
+            return
+        key = steer.calibration_cache_key(
+            engine._active_model_id, eng.revision, eng.tokenizer,
+            str(steer.DTYPE), steer.DEVICE)
+        with eng.clean():
+            medians, _ = steer.calibrate_layer_medians(
+                eng.model, eng.tokenizer, list(preset["calibration_prompts"]),
+                layers or [0],
+                cache_path=ROOT / steer.calibration_path_for(engine._active_model_id),
+                key=key, spec=spec)
+        scale = None
+        if sess["trait"] is not None:
+            knob = _latest_knob(sess["trait"])
+            scale = float(medians[int(knob["layer"])])
+        edits, _ = _chat_edits(sess, scale=scale)
+        gv = _verified_guard(
+            eng, edits, medians,
+            guard_mod.should_enforce(sess["guard"], sess["research_mode"]))
+        if gv.blocked:
+            yield _event(stage="blocked", guard=_guard_event_dict(gv))
+            return
+        if _cancel.is_set():
+            yield _event(stage="stopped", after="guard")
+            return
+        messages = list(sess["messages"]) + [{"role": "user",
+                                              "content": message}]
+        wrapped = _wrap_chat(eng.tokenizer, messages, spec)
+        reply = None
+        for ev in eng.run_stream(
+                message, edits, medians=medians,
+                max_new_tokens=max_new, seed=engine.SEED,
+                cancel=_cancel, wrapped=wrapped):
+            if ev["type"] == "token":
+                yield _event(stage="token", text=ev["text"])
+            else:
+                reply = ev["result"]
+        if reply.get("cancelled"):
+            yield _event(stage="stopped", after="chat")
+            return
+        sess["messages"] = (messages + [{"role": "assistant",
+                                         "content": reply["text"]}])
+        while len(sess["messages"]) // 2 > MAX_CHAT_TURNS:
+            del sess["messages"][:2]
+        yield _event(stage="done", result={
+            "session_id": session_id, "turn": len(sess["messages"]) // 2,
+            "reply": reply["text"], "tokens": reply["new_tokens"],
+            "seconds": round(time.perf_counter() - t_all, 1)})
+    except Exception as e:  # noqa: BLE001 — surface engine errors in the UI
+        yield _event(stage="error", message=f"Chat failed: {e}")
+    finally:
+        eng.lock.release()
+
+
 def _latest_knob(trait: str) -> dict | None:
     """Newest finished Create job for a trait with a saved direction."""
     runner = _get_runner()
@@ -405,6 +744,80 @@ def _event(**kw) -> bytes:
     return (json.dumps(kw) + "\n").encode()
 
 
+# Fixed neutrals for dial anchors (0 = neg mean, 1 = pos mean).
+_DIAL_NEUTRALS = (
+    "What do you think about the weather today?",
+    "How do I start running?",
+    "What should I name my new boat?",
+    "Have you read any good books lately?",
+)
+
+# Chat sessions: id -> {messages, rows, trait, dose, max_new_tokens,
+# guard, research_mode, model_id, created}. In memory; a restart clears.
+_chats: dict = {}
+MAX_CHAT_SESSIONS = 16
+MAX_CHAT_TURNS = 40
+
+
+def _dial_spec(eng, trait: str) -> dict:
+    """Read-dial spec for a trait: layer, unit direction, 0/1 anchors.
+
+    Anchors are mean token projections of the frozen direction over
+    fixed neutral prompts under the trait's neg (0) and pos (1)
+    templates. b0/b1 cache in the job's dial.json by fingerprint.
+    Raises KeyError when no finished job or no behavior exists.
+    """
+    knob = _latest_knob(trait)
+    if knob is None:
+        raise KeyError(trait)
+    cfg = trait_eval.spike.BEHAVIORS.get(trait)
+    if cfg is None:
+        raise KeyError(trait)
+    layer = int(knob["layer"])
+    u = torch.tensor(knob["direction"], dtype=torch.float32)
+    n = float(u.norm().item())
+    if n <= 0:
+        raise ValueError(f"trait {trait!r} direction has zero norm")
+    u = u / n
+    fp = eng.fingerprint()
+    runner = _get_runner()
+    dpath = runner.jobs_dir / knob["job_id"] / "trait" / "dial.json"
+    if dpath.exists():
+        try:
+            cached = json.loads(dpath.read_text())
+        except (json.JSONDecodeError, OSError):
+            cached = None
+        if (cached and cached.get("fingerprint") == fp
+                and int(cached.get("layer", -1)) == layer):
+            return {"trait": trait, "layer": layer,
+                    "unit": [float(x) for x in u.tolist()],
+                    "b0": float(cached["b0"]), "b1": float(cached["b1"]),
+                    "job_id": knob["job_id"]}
+    pos = [f"{cfg['pos']}\n\n{q}" for q in _DIAL_NEUTRALS]
+    neg = [f"{cfg['neg']}\n\n{q}" for q in _DIAL_NEUTRALS]
+    cap = eng.capture(pos + neg, [layer], point="block_out",
+                      reduce="mean_1")
+    dots = [(cap[layer][i].float() @ u).item()
+            for i in range(len(pos) + len(neg))]
+    b1 = float(sum(dots[:len(pos)]) / len(pos))
+    b0 = float(sum(dots[len(pos):]) / len(neg))
+    dpath.write_text(json.dumps(
+        {"trait": trait, "layer": layer, "b0": b0, "b1": b1,
+         "fingerprint": fp}, indent=2))
+    return {"trait": trait, "layer": layer,
+            "unit": [float(x) for x in u.tolist()],
+            "b0": b0, "b1": b1, "job_id": knob["job_id"]}
+
+
+def _wrap_chat(tok, messages: list[dict], spec) -> str:
+    """Chat-template wrap for a message list (thinking off, like runs)."""
+    kwargs: dict = {}
+    if spec.thinking_kw:
+        kwargs["enable_thinking"] = False
+    return tok.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True, **kwargs)
+
+
 def _guard_event_dict(gv) -> dict:
     return {"blocked": gv.blocked, "would_block": gv.would_block,
             "enforced": not gv.research_mode,
@@ -422,12 +835,14 @@ def _verified_guard(eng, edits, medians, enforce):
 
 
 def _run_stream(prompt: str, rows: list[RecipeRow], spec,
-                guard: bool = False, research_mode: bool = False):
+                guard: bool = False, research_mode: bool = False,
+                dial_trait: str | None = None):
     """Stage events, then one result event. Holds the Engine lock throughout.
 
     The lock is taken here, not in run(): a client that disconnects before
     the first chunk never starts this generator, so nothing leaks.
     The Engine comes from get_engine() so tests inject a fake (same asserts).
+    dial_trait streams per-token read-dial values during the steered stage.
     """
     eng = get_engine()
     if not eng.lock.acquire(blocking=False):
@@ -444,7 +859,17 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
             eng.load(engine._active_model_id)
         steer.check_preset_binding(preset, engine._active_model_id)
         model, tok = eng.model, eng.tokenizer
-        layers = sorted({r.layer for r in rows})
+        dial_spec = None
+        if dial_trait is not None:
+            try:
+                dial_spec = _dial_spec(eng, dial_trait)
+            except KeyError:
+                yield _event(stage="error", message=(
+                    f"No finished Create job for trait '{dial_trait}' "
+                    f"with a saved direction. Create the trait first."))
+                return
+        layers = sorted({r.layer for r in rows}
+                        | ({dial_spec["layer"]} if dial_spec else set()))
         key = steer.calibration_cache_key(
             engine._active_model_id, eng.revision, tok, str(steer.DTYPE), steer.DEVICE)
         with eng.clean():
@@ -476,8 +901,23 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
             return
 
         yield _event(stage="steered")
-        steered = eng.run(prompt, EditSet.from_rows(rows), medians=medians,
-                          max_new_tokens=max_new, seed=engine.SEED, cancel=_cancel)
+        if dial_spec is None:
+            steered = eng.run(prompt, EditSet.from_rows(rows),
+                              medians=medians, max_new_tokens=max_new,
+                              seed=engine.SEED, cancel=_cancel)
+        else:
+            steered = None
+            for ev in eng.run_stream(
+                    prompt, EditSet.from_rows(rows), medians=medians,
+                    max_new_tokens=max_new, seed=engine.SEED,
+                    cancel=_cancel, dial=dial_spec):
+                if ev["type"] == "token":
+                    tok_ev: dict = {"text": ev["text"]}
+                    if ev.get("dial") is not None:
+                        tok_ev["dial"] = ev["dial"]
+                    yield _event(stage="token", **tok_ev)
+                else:
+                    steered = ev["result"]
         hook_calls = steered["hook_calls"]
         if _cancel.is_set():
             yield _event(stage="stopped", after="steered")
@@ -513,6 +953,11 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
                 "seconds": round(time.perf_counter() - t_all, 1),
                 "cache_hit": cal_info["cache_hit"],
                 "guard": _guard_event_dict(gv),
+                "dial": ({"trait": dial_spec["trait"],
+                          "layer": dial_spec["layer"],
+                          "neutral": dial_spec["b0"],
+                          "trait_mean": dial_spec["b1"]}
+                         if dial_spec else None),
                 "recipe": steer.recipe_string(
                     rows, calib_id, max_new_tokens=max_new, seed=engine.SEED,
                     calib_prompts=calib_prompts, model_id=engine._active_model_id),
