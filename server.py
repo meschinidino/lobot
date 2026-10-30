@@ -30,6 +30,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 import app as engine
 import steer
@@ -43,6 +45,28 @@ NO_MODEL = bool(os.environ.get("MODEL_LOBOTOMY_NO_MODEL"))
 _cancel = threading.Event()
 
 api = FastAPI(title="lobot", docs_url=None, redoc_url=None)
+
+
+class SameOriginOnly(BaseHTTPMiddleware):
+    """Reject cross-origin POSTs (CSRF-lite for a local-only server).
+
+    Compares the Origin header against the request's own origin
+    (scheme://host). Requests without an Origin header (curl, direct
+    navigation, TestClient default) stay allowed.
+    """
+
+    async def dispatch(self, request, call_next):
+        if request.method == "POST":
+            origin = request.headers.get("origin")
+            if origin is not None:
+                own = f"{request.url.scheme}://{request.headers.get('host', '')}"
+                if origin.strip().lower().rstrip("/") != own.lower().rstrip("/"):
+                    return JSONResponse({"detail": "Cross-origin POST rejected."},
+                                        status_code=403)
+        return await call_next(request)
+
+
+api.add_middleware(SameOriginOnly)
 
 
 class Row(BaseModel):

@@ -179,5 +179,34 @@ class ServerStaticTest(unittest.TestCase):
         self.assertEqual(ex["split"]["token"], 2)
 
 
+class SameOriginTest(unittest.TestCase):
+    """SameOriginOnly: cross-origin POST -> 403; same/missing Origin pass."""
+
+    def setUp(self):
+        self.client = TestClient(server.api)
+        self._active = app._active_model_id
+
+    def tearDown(self):
+        app._active_model_id = self._active
+
+    def _switch(self, headers=None):
+        return self.client.post("/api/model",
+                                json={"model_id": "Qwen/Qwen3.5-4B"},
+                                headers=headers or {})
+
+    def test_cross_origin_rejected(self):
+        r = self._switch({"Origin": "http://evil.test"})
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertIn("Cross-origin", r.json()["detail"])
+
+    def test_same_origin_allowed(self):
+        r = self._switch({"Origin": "http://testserver"})
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_missing_origin_allowed(self):
+        r = self._switch()
+        self.assertEqual(r.status_code, 200, r.text)
+
+
 if __name__ == "__main__":
     unittest.main()
