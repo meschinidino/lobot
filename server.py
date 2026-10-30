@@ -134,6 +134,11 @@ class SameOriginOnly:
 api.add_middleware(SameOriginOnly)
 
 
+def _guard_default() -> bool:
+    """Default for "guard" in run/update/create (S1 demo default)."""
+    return os.environ.get("LOBOT_GUARD_DEFAULT") == "1"
+
+
 class Row(BaseModel):
     layer: int
     neuron: int
@@ -143,7 +148,7 @@ class Row(BaseModel):
 class RunRequest(BaseModel):
     prompt: str
     rows: list[Row]
-    guard: bool = False
+    guard: bool = Field(default_factory=_guard_default)
     research_mode: bool = False
     dial_trait: str | None = None
 
@@ -155,7 +160,7 @@ class ModelRequest(BaseModel):
 class CreateRequest(BaseModel):
     description: str
     seed: int = 0
-    guard: bool = False
+    guard: bool = Field(default_factory=_guard_default)
     research_mode: bool = False
 
 
@@ -167,7 +172,7 @@ class UpdateRequest(BaseModel):
     scale: float | None = None
     doses: list[float]
     max_new_tokens: int = 60
-    guard: bool = False
+    guard: bool = Field(default_factory=_guard_default)
     research_mode: bool = False
 
 
@@ -227,6 +232,7 @@ def _state() -> dict:
         "max_rows": engine.MAX_ROWS,
         "max_new_tokens": int(preset["decode"]["max_new_tokens"]),
         "preset_rows": list(preset["rows"]),
+        "guard_default": _guard_default(),
     }
 
 
@@ -1204,12 +1210,8 @@ def _wrap_chat(tok, messages: list[dict], spec) -> str:
 
 
 def _guard_event_dict(gv) -> dict:
-    return {"blocked": gv.blocked, "would_block": gv.would_block,
-            "enforced": not gv.research_mode,
-            "verified": gv.full_generation,
-            "min_ratio": round(gv.min_ratio, 3),
-            "worst_prompt": gv.worst_prompt,
-            "blocked_prompts": list(gv.blocked_prompts)}
+    return {**guard_mod.verdict_dict(gv),
+            "enforced": not gv.research_mode}
 
 
 def _dial_entry(ev: dict, trait: str) -> dict:

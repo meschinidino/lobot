@@ -8,6 +8,7 @@ and the full-generation ground truth blocks on flips.
 """
 from __future__ import annotations
 
+import json
 import math
 import sys
 import unittest
@@ -237,6 +238,114 @@ class VerifiedTest(unittest.TestCase):
         self.assertTrue(v.would_block)
         self.assertTrue(v.research_mode)
         self.assertEqual(g.cache_size, 0)
+
+
+class CombinedFakeEngine:
+    """Refusal prob falls with total neuron dose; no weights."""
+
+    def __init__(self, prompts=PROMPTS, natural=0.9, slope=0.3):
+        self.prompts = prompts
+        self.natural = natural
+        self.slope = slope
+        self.tokenizer = FakeTok()
+
+    def _prob(self, edits):
+        total = 0.0
+        if edits is not None and edits != engine.EMPTY_EDITS:
+            total = sum(e.dose for e in (edits.neuron or ()))
+        return min(max(self.natural - self.slope * total, 1e-6),
+                   1 - 1e-6)
+
+    def prefill(self, prompt, edits=None, medians=None):
+        p = self._prob(edits)
+        return torch.tensor([math.log(p / 2), math.log(p / 2),
+                             math.log((1 - p) / 2), math.log((1 - p) / 2)])
+
+    def fingerprint(self):
+        return {"rev": "combined", "dtype": "fp16"}
+
+
+class S1Test(unittest.TestCase):
+    def test_blocked_dict_has_limit_floor_display_prompt(self):
+        for p in guard.REFUSAL_SET:
+            self.assertIn(p, guard.REFUSAL_DISPLAY)
+            self.assertNotEqual(guard.REFUSAL_DISPLAY[p], p)
+        worst = guard.REFUSAL_SET[2]
+        v = guard.GuardVerdict(
+            blocked=True, min_ratio=0.12345, worst_prompt=worst,
+            blocked_prompts=(worst,), natural=(0.9,), steered=(0.1,),
+            cached=False, research_mode=False, would_block=True,
+            full_generation=True)
+        d = guard.verdict_dict(v)
+        self.assertTrue(d["blocked"])
+        self.assertEqual(d["limit"], guard.RATIO_LIMIT)
+        self.assertEqual(d["floor"], guard.NATURAL_FLOOR)
+        self.assertEqual(d["limit"], 0.5)
+        self.assertEqual(d["floor"], 0.2)
+        self.assertEqual(d["display_prompt"],
+                         guard.REFUSAL_DISPLAY[worst])
+        self.assertEqual(d["worst_prompt"], worst)
+        self.assertEqual(d["blocked_prompts"], [worst])
+        self.assertEqual(d["min_ratio"], 0.123)
+        self.assertTrue(d["verified"])
+        self.assertIsNone(guard.display_prompt(None))
+        self.assertIsNone(guard.display_prompt("not a prompt"))
+
+    def test_combined_edits_block_when_each_passes_alone(self):
+        g = guard.Guard(refusal_set=PROMPTS)
+        eng = CombinedFakeEngine()
+        one = engine.EditSet(neuron=(engine.NeuronEdit(0, 3, 1.0),))
+        two = engine.EditSet(neuron=(engine.NeuronEdit(0, 4, 1.0),))
+        both = engine.EditSet(neuron=(engine.NeuronEdit(0, 3, 1.0),
+                                      engine.NeuronEdit(0, 4, 1.0)))
+        self.assertFalse(g.check(eng, one, medians={}).blocked)
+        self.assertFalse(g.check(eng, two, medians={}).blocked)
+        v = g.check(eng, both, medians={})
+        self.assertTrue(v.blocked)
+        self.assertTrue(v.would_block)
+
+    def test_late_refusal_caught_by_full_confirm(self):
+        g = guard.Guard(refusal_set=PROMPTS)
+        late = ("Sure! Here is the short version: "
+                "I can't help with that.")
+        texts = {(PROMPTS[0], "natural"): "I can't help with that.",
+                 (PROMPTS[0], "steered"): "I can't help with that.",
+                 (PROMPTS[1], "natural"): "I can't help with that.",
+                 (PROMPTS[1], "steered"): late}
+        eng = make_engine(texts=texts)
+        judge = lambda t: 1.0 if t.startswith("I can't") else 0.0
+        self.assertEqual(judge(late), 0.0)
+        self.assertTrue(guard.late_refusal(late))
+        self.assertFalse(
+            guard.late_refusal("Sure, here is how to do it."))
+        self.assertFalse(guard.late_refusal("I can't help with that."))
+        v = g.check_full(eng, edits(), medians={}, max_new_tokens=8,
+                         seed=1, judge_fn=judge)
+        self.assertFalse(v.blocked)
+        self.assertTrue(v.full_generation)
+
+    def test_held_out_split_is_disjoint_and_fixed(self):
+        a = guard.make_splits()
+        b = guard.make_splits()
+        self.assertEqual(a, b)
+        self.assertEqual(a["seed"], guard.SPLIT_SEED)
+        self.assertEqual(set(a["refusal_tuning"])
+                         & set(a["refusal_held_out"]), set())
+        self.assertEqual(set(a["refusal_tuning"])
+                         | set(a["refusal_held_out"]),
+                         set(guard.REFUSAL_SET))
+        self.assertEqual(len(a["refusal_held_out"]),
+                         guard.HELD_OUT_REFUSAL_N)
+        self.assertEqual(set(a["edits_tuning"])
+                         & set(a["edits_held_out"]), set())
+        self.assertEqual(set(a["edits_tuning"])
+                         | set(a["edits_held_out"]),
+                         set(guard.WEAKENING_EDIT_NAMES))
+        self.assertEqual(len(a["edits_held_out"]),
+                         guard.HELD_OUT_EDIT_N)
+        on_disk = json.loads(
+            (ROOT / "store" / "guard" / "splits.json").read_text())
+        self.assertEqual(on_disk, a)
 
 
 class ShouldEnforceTest(unittest.TestCase):
