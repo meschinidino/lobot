@@ -10,10 +10,13 @@ Default model: `Qwen/Qwen3.5-4B`. Llama 3.2 3B support is in progress.
 
 1. Start the app (see Quickstart).
 2. Open `http://127.0.0.1:7860` in a browser.
-3. Type a prompt, for example `Who are you, really?`
-4. Press Run experiment (or ⌘ Enter).
-5. Read the baseline and steered answers. A pink cut marks the first token where they split.
-6. Press Copy for X, or open Capture view for a phone-size screenshot.
+3. Set the neurons and doses in the sentence at the top, then type a prompt,
+   for example `Who are you, really?`
+4. Press Run (or ⌘ Enter).
+5. Read the experiment tree. The answer forks where your edit changed it; the
+   split token is pink. Every later run adds a branch. Turn the knob to change
+   the selected neuron's dose, and click any word to inspect it.
+6. Open Share card for a 4:5 post, then Copy for X.
 
 The app runs greedily with a fixed seed. Results stay reproducible.
 
@@ -29,8 +32,9 @@ uv run python server.py
 
 Then open `http://127.0.0.1:7860`. Set `PORT` to use another port.
 
-The first screen shows a recorded run (`web/example.json`), so the page
-explains itself before the weights load. The older Gradio UI still works:
+The first visit shows a recorded run (`web/example.json`, plus
+`web/sweep.json` if you recorded one), so the page explains itself before the
+weights load. Experiments are saved in your browser, per model and prompt. The older Gradio UI still works:
 `uv run python app.py`.
 
 First run downloads about 9 GB of Qwen weights once. Later runs reuse the cache.

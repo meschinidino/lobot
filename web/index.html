@@ -1,703 +1,654 @@
 <!doctype html>
-<!-- gstack-lint-disable hero-balance: the user approved an evidence-first workbench (D5); the run, not a hero, fills the first screen -->
-<!-- gstack-lint-disable screen-word-budget: the words on screen are two model answers, which are the product's content, not page copy -->
-<!-- gstack-lint-disable section-gap: the workbench is one bench under a short headline; a marketing gap would push the split below the first screen -->
-<!-- gstack-lint-disable monospace-costume: the spike note reads "first split · token N"; every token index on this workbench is set in mono -->
-<!-- impeccable-disable cramped-padding: the agreement trace is a full-bleed 72px band by design (DESIGN.md, approved in D5) -->
-<html lang="en">
+<!-- lobot workbench: shelf, sentence, experiment tree, word inspector. Follows DESIGN.md ("the fork"). -->
+<!-- gstack-lint-disable hero-balance: the experiment tree and the sentence fill the first screen; the answers are the content, so there is no headline band -->
+<!-- gstack-lint-disable hand-drawn-svg: the tree curves are data, each one links the shared answer words to one run -->
+<!-- gstack-lint-disable monospace-costume: neuron ids, doses and token indices are values a user might copy; they are set in mono -->
+<!-- gstack-lint-disable screen-word-budget: most words on the screen are model answers in the experiment tree, which are the content -->
+<!-- gstack-lint-disable section-gap: the sentence, the experiment tree and the knob row form one screen, not marketing sections -->
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>lobot: one knob, different answer</title>
-<meta name="description" content="A local workbench that pushes single neurons in a small open model and shows where its answer splits from the baseline.">
+<title>lobot workbench</title>
+<meta name="description" content="A local workbench that pushes neurons in a small open model and shows where each run's answer forks from the baseline.">
 <meta name="robots" content="noindex">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%237B1D2B'/%3E%3Crect x='6' y='19' width='20' height='3' fill='%23FF4F9A'/%3E%3Ctext x='9' y='17' font-family='sans-serif' font-weight='800' font-size='16' fill='%23fff'%3El%3C/text%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,200..800&family=Atkinson+Hyperlegible+Next:wght@200..800&family=JetBrains+Mono:wght@400..700&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23131C18'/%3E%3Cpath d='M6 16 C 14 16, 14 7, 26 7' stroke='%23DCE7DF' stroke-width='2.5' fill='none'/%3E%3Cpath d='M6 16 C 14 16, 14 25, 26 25' stroke='%23FF5FA4' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
-/* Tokens: DESIGN.md is the source of truth. */
-:root {
-  color-scheme: light;
-  --ground: #D5E3D0; --sheet: #EEF4EB; --grid: #B7CCB2;
-  --ink: #1E2924; --ink-muted: #41504A;
-  --primary: #7B1D2B; --primary-hover: #651522; --on-primary: #FBF1EF;
-  --cut: #FF4F9A; --on-cut: #1E2924;
-  --ok: #2F6B4A; --ok-tint: #D3E6D8;
-  --warn: #8A5A00; --warn-tint: #F3E6C4;
-  --error: #B3261E; --error-tint: #F6DAD7;
-  --display: "Bricolage Grotesque", "Arial Narrow", sans-serif;
-  --body: "Atkinson Hyperlegible Next", "Segoe UI", sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, monospace;
-  --s1: 4px; --s2: 8px; --s3: 16px; --s4: 24px; --s5: 32px; --s6: 48px; --s7: 72px;
-  --rail: 300px;
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-wipe: cubic-bezier(0.65, 0, 0.35, 1);
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --ground: #131C18; --sheet: #1C2722; --grid: #24332C;
-    --ink: #DCE7DF; --ink-muted: #9DB0A6;
-    --primary: #B0404F; --primary-hover: #9A3240; --on-primary: #FBF1EF;
-    --cut: #FF5FA4; --on-cut: #131C18;
-    --ok: #8FD3A8; --ok-tint: #1D3328;
-    --warn: #F0C46A; --warn-tint: #3A2F17;
-    --error: #FF8A80; --error-tint: #3A1E1C;
-  }
-}
-:root[data-theme="dark"] {
+/* Tokens: DESIGN.md is the source of truth. Dark is the default. */
+:root, :root[data-theme="dark"] {
   color-scheme: dark;
   --ground: #131C18; --sheet: #1C2722; --grid: #24332C;
   --ink: #DCE7DF; --ink-muted: #9DB0A6;
   --primary: #B0404F; --primary-hover: #9A3240; --on-primary: #FBF1EF;
   --cut: #FF5FA4; --on-cut: #131C18;
-  --ok: #8FD3A8; --ok-tint: #1D3328;
-  --warn: #F0C46A; --warn-tint: #3A2F17;
-  --error: #FF8A80; --error-tint: #3A1E1C;
+  --ok: #8FD3A8; --ok-tint: #1D3328; --warn: #F0C46A; --warn-tint: #3A2F17; --error: #FF8A80; --error-tint: #3A1E1C;
+  --display: "Bricolage Grotesque", "Arial Narrow", sans-serif;
+  --body: "Atkinson Hyperlegible Next", "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --shelf: 300px;
 }
-:root.compact { --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px; }
-@media (max-width: 1280px) { :root { --rail: 260px; } }
-
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ground: #D5E3D0; --sheet: #EEF4EB; --grid: #B7CCB2;
+  --ink: #1E2924; --ink-muted: #41504A;
+  --primary: #7B1D2B; --primary-hover: #651522; --on-primary: #FBF1EF;
+  --cut: #FF4F9A; --on-cut: #1E2924;
+  --ok: #2F6B4A; --ok-tint: #D3E6D8; --warn: #8A5A00; --warn-tint: #F3E6C4; --error: #B3261E; --error-tint: #F6DAD7;
+}
 * { box-sizing: border-box; }
 html, body { overflow-x: clip; }
-html { -webkit-text-size-adjust: 100%; }
 body {
-  margin: 0; min-height: 100dvh;
-  background-color: var(--ground);
+  margin: 0; min-height: 100dvh; background-color: var(--ground); color: var(--ink); font: 400 16px/1.5 var(--body);
   background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: 24px 24px; background-position: -1px -1px;
-  color: var(--ink); font: 400 16px/1.5 var(--body);
 }
 [hidden] { display: none !important; }
+button, input, textarea { font: inherit; color: inherit; }
 .mono { font-family: var(--mono); font-feature-settings: "tnum"; }
-.wrap { max-width: 1400px; margin: 0 auto; padding: 0 var(--s5) var(--s6); }
-@media (max-width: 720px) { .wrap { padding: 0 var(--s3) var(--s6); } }
-:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
-.skip { position: absolute; left: var(--s3); top: -64px; background: var(--ink); color: var(--sheet); padding: var(--s2) var(--s3); z-index: 10; }
-.skip:focus { top: var(--s3); }
+.meta { font: 13px var(--mono); color: var(--ink-muted); font-feature-settings: "tnum"; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.skip { position: absolute; left: 16px; top: -64px; background: var(--ink); color: var(--ground); padding: 8px 16px; z-index: 20; }
+.skip:focus { top: 16px; }
 
-/* Buttons */
-.btn { font: 700 16px/1.25 var(--body); color: var(--ink); background: transparent; border: 2px solid var(--ink); border-radius: 0; padding: 12px var(--s3); min-height: 44px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); text-decoration: none; }
-.btn:hover:not([disabled]) { background: var(--ink); color: var(--sheet); }
-.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
-.btn[aria-pressed="true"] { background: var(--ink); color: var(--sheet); }
-.btn-sm { font-size: 14px; min-height: 44px; padding: var(--s2) 12px; }
+.btn { font: 700 14px/1.25 var(--body); color: var(--ink); background: transparent; border: 2px solid var(--ink); border-radius: 0; padding: 8px 12px; min-height: 44px; cursor: pointer; }
+.btn:hover:not([disabled]) { background: var(--ink); color: var(--ground); }
+.btn[aria-pressed="true"] { background: var(--ink); color: var(--ground); }
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
 .btn:active:not([disabled]) { transform: translateY(1px); }
-.btn-link:active:not([disabled]) { text-decoration-thickness: 3px; }
-.btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); width: 100%; justify-content: space-between; }
+.btn-sm { min-height: 44px; padding: 4px 12px; font-size: 13px; }
+.btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-size: 16px; display: inline-flex; gap: 12px; align-items: center; }
 .btn-primary:hover:not([disabled]) { background: var(--primary-hover); border-color: var(--primary-hover); color: var(--on-primary); }
-.btn-primary kbd, .btn-stop kbd { font: 400 12px var(--mono); opacity: 0.85; }
-.btn-stop { width: 100%; justify-content: space-between; background: var(--sheet); }
-.btn-link { font: 600 14px var(--body); color: var(--ink); background: none; border: 0; padding: 0; min-height: 44px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
-.btn-link[disabled] { opacity: 0.45; cursor: not-allowed; }
+.btn-primary kbd, .btn-stop kbd { font: 400 12px var(--mono); opacity: .85; }
+.btn-stop { display: inline-flex; gap: 12px; align-items: center; }
+.link { all: unset; cursor: pointer; text-decoration: underline 2px; text-underline-offset: 6px; }
+.link:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.state { display: inline-flex; gap: 8px; align-items: baseline; padding: 2px 8px; font: 700 11px var(--mono); white-space: nowrap; }
+.state.ok { background: var(--ok-tint); color: var(--ok); } .state.warn { background: var(--warn-tint); color: var(--warn); } .state.info { background: var(--sheet); color: var(--ink-muted); } .state.err { background: var(--error-tint); color: var(--error); }
+.field { width: 100%; font: 400 18px/1.45 var(--body); color: var(--ink); background: transparent; border: 0; border-bottom: 2px solid var(--ink); border-radius: 0; padding: 8px 0; resize: vertical; }
+.num { font: 500 16px var(--mono); font-feature-settings: "tnum"; color: var(--ink); background: transparent; border: 0; border-bottom: 2px solid var(--ink); border-radius: 0; padding: 4px 2px; width: 100%; min-height: 40px; }
+.num[aria-invalid="true"] { border-bottom-color: var(--error); color: var(--error); }
+.label { display: block; font: 700 14px var(--body); margin: 0 0 4px; }
 
-/* Masthead */
-.mast { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: var(--s3) 0; border-bottom: 2px solid var(--ink); flex-wrap: wrap; }
-.wordmark { font: 800 36px/1 var(--display); font-stretch: 75%; letter-spacing: -0.02em; margin: 0; }
-.mast nav { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
-.patient { display: flex; align-items: center; gap: var(--s2); font: 600 13px var(--mono); }
-.patient select { font: 500 14px var(--mono); color: var(--ink); background: var(--sheet); border: 2px solid var(--ink); border-radius: 0; padding: var(--s2); min-height: 44px; }
-.warm { font: 12px var(--mono); color: var(--ink-muted); }
-
-/* Hero */
-.hero { display: grid; grid-template-columns: auto 1fr; gap: var(--s5); align-items: end; padding: var(--s5) 0 var(--s4); }
-.hero h2 { font: 800 clamp(48px, 7vw, 96px)/0.9 var(--display); font-stretch: 75%; letter-spacing: -0.02em; margin: 0; text-wrap: balance; }
-.hero p { margin: 0; max-width: 36ch; font-size: 18px; color: var(--ink-muted); text-wrap: pretty; }
-@media (max-width: 860px) { .hero { grid-template-columns: 1fr; gap: 12px; } }
-
-/* Bench */
-.bench { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); border: 2px solid var(--ink); background: var(--sheet); }
-@media (max-width: 1000px) { .bench { grid-template-columns: 1fr; } }
-.rail { border-right: 2px solid var(--ink); padding: var(--s4) var(--s3); display: flex; flex-direction: column; gap: var(--s4); }
-@media (max-width: 1000px) { .rail { border-right: 0; border-bottom: 2px solid var(--ink); } }
-.label { display: block; font: 700 14px var(--body); margin-bottom: var(--s2); }
-.field { width: 100%; font: 400 18px/1.45 var(--body); color: var(--ink); background: transparent; border: 0; border-bottom: 2px solid var(--ink); border-radius: 0; padding: var(--s2) 0; resize: vertical; }
-table.recipe { width: 100%; border-collapse: collapse; }
-table.recipe th { font: 700 13px var(--body); text-align: left; padding: 0 0 var(--s2); border-bottom: 1px solid var(--ink); }
-table.recipe th:nth-child(3) { text-align: right; }
-table.recipe th:nth-child(1) { width: 28%; } table.recipe th:nth-child(2) { width: 34%; }
-table.recipe td { padding: var(--s2) 0 0; vertical-align: middle; }
-.num { width: 100%; font: 500 14px var(--mono); font-feature-settings: "tnum"; color: var(--ink); background: transparent; border: 0; border-bottom: 1px solid var(--ink-muted); border-radius: 0; padding: 4px 2px; min-height: 32px; -moz-appearance: textfield; }
-.num::-webkit-outer-spin-button, .num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.num.dose { text-align: right; font-weight: 700; }
-.num[aria-invalid="true"] { border-bottom: 2px solid var(--error); color: var(--error); }
-td.rm { width: 36px; text-align: right; }
-.rm button { font: 700 16px var(--mono); color: var(--ink-muted); background: none; border: 0; width: 44px; height: 44px; margin-right: -8px; cursor: pointer; }
-.rm button:hover { color: var(--ink); }
-tr.slide td { padding: 2px 0 var(--s2); border-bottom: 1px dashed var(--ink-muted); }
-input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 24px; margin: 0; background: transparent;
-  background-image: linear-gradient(var(--ink), var(--ink)), linear-gradient(var(--ink), var(--ink));
-  background-size: 100% 2px, 2px 14px; background-position: 0 50%, 50% 50%; background-repeat: no-repeat; cursor: pointer; }
-input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 20px; background: var(--primary); border: 2px solid var(--ink); border-radius: 0; }
-input[type="range"]::-moz-range-thumb { width: 10px; height: 18px; background: var(--primary); border: 2px solid var(--ink); border-radius: 0; }
-.form-err { font-size: 14px; color: var(--error); min-height: 0; margin: 0; }
-.rail-foot { display: flex; flex-direction: column; gap: var(--s3); margin-top: auto; }
-
-.right { display: flex; flex-direction: column; min-width: 0; }
-.status { display: flex; gap: var(--s3); align-items: center; padding: var(--s2) var(--s4); border-bottom: 1px solid var(--ink); font-size: 14px; flex-wrap: wrap; min-height: 56px; }
-.steps { display: flex; gap: var(--s2); flex-wrap: wrap; list-style: none; margin: 0; padding: 0; }
-.steps li { font: 12px var(--mono); padding: var(--s1) var(--s2); border: 1px solid var(--ink-muted); color: var(--ink-muted); }
-.steps li.done { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
-.steps li.now { border-color: var(--ink); color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
-.state { display: inline-flex; gap: var(--s2); align-items: baseline; padding: var(--s1) 12px; }
-.state b { font: 700 12px var(--mono); }
-.state.info { background: var(--ground); }
-.state.ok { background: var(--ok-tint); } .state.ok b { color: var(--ok); }
-.state.warn { background: var(--warn-tint); } .state.warn b { color: var(--warn); }
-.state.err { background: var(--error-tint); } .state.err b { color: var(--error); }
-.status .spacer { flex: 1; }
-
-.eeg { height: 72px; border-bottom: 1px solid var(--ink); position: relative; }
-.eeg svg { display: block; width: 100%; height: 100%; }
-.eeg .tag { position: absolute; top: var(--s1); left: var(--s4); font: 400 13px var(--body); color: var(--ink-muted); }
-.spike-note { position: absolute; bottom: var(--s1); font: 600 12px var(--mono); background: var(--cut); color: var(--on-cut); padding: 0 var(--s1); white-space: nowrap; }
-
-.sheet { position: relative; display: grid; grid-template-columns: 1fr 1fr; }
-.col { padding: var(--s4) var(--s4) var(--s5); min-width: 0; }
-.col + .col { border-left: 1px solid var(--ink); }
-.col h3 { font: 800 28px/1 var(--display); font-stretch: 75%; letter-spacing: 0.01em; margin: 0 0 var(--s3); }
-.pre, .post { font: 400 18px/1.6 var(--body); white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; text-wrap: pretty; }
-.split-under { text-decoration: underline 3px var(--cut); text-underline-offset: 4px; }
-.split-tok { background: var(--cut); color: var(--on-cut); font-weight: 700; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-.post { position: relative; margin-top: var(--s3); padding-top: var(--s3); }
-.has-split .col:last-child .post { transform: translate(2px, 6px); }
-.has-split .col:last-child .post::before { content: ""; position: absolute; left: calc(-1 * var(--s4)); right: calc(-1 * var(--s4)); top: 0; height: 6px;
-  background: linear-gradient(135deg, var(--sheet) 25%, transparent 25%) -3px 0, linear-gradient(225deg, var(--sheet) 25%, transparent 25%) -3px 0, var(--ground); background-size: 6px 6px; }
-.cutline { position: absolute; left: 0; right: 0; height: 2px; background: var(--cut); transform-origin: left; pointer-events: none; }
-.cutline.draw { animation: cut 420ms var(--ease-wipe) both; }
-@keyframes cut { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-@media (prefers-reduced-motion: reduce) { .cutline.draw { animation: none; } }
-@media (max-width: 720px) {
-  .sheet { grid-template-columns: 1fr; }
-  .col + .col { border-left: 0; border-top: 1px solid var(--ink); }
-  .cutline { display: none; }
+/* Shell: collapsible shelf + main */
+.shell { display: grid; grid-template-columns: var(--shelf) minmax(0, 1fr); min-height: 100dvh; }
+.shell.collapsed { --shelf: 56px; }
+.shelf { border-right: 2px solid var(--ink); background: var(--sheet); padding: 20px; position: sticky; top: 0; height: 100dvh; overflow-y: auto; }
+.shelf .head { display: flex; justify-content: space-between; align-items: center; }
+.wordmark { font: 800 32px/1 var(--display); font-stretch: 75%; letter-spacing: -0.02em; margin: 0; }
+.shelf h2 { text-wrap: balance; font: 700 14px var(--body); margin: 24px 0 8px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.model { all: unset; box-sizing: border-box; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; width: 100%; padding: 8px; min-height: 44px; }
+.model b { font: 800 20px var(--display); font-stretch: 75%; }
+.model[aria-current="true"] { background: var(--ink); color: var(--ground); }
+.model[aria-current="true"] .meta { color: var(--ground); }
+.model:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.model[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.exp { all: unset; box-sizing: border-box; cursor: pointer; display: block; width: 100%; padding: 8px; min-height: 44px; border-top: 1px solid var(--grid); }
+.exp:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.exp[aria-current="true"] { outline: 2px solid var(--ink); outline-offset: -2px; }
+.exp .p { display: block; font: 400 14px/1.35 var(--body); }
+.empty { border: 2px dashed var(--ink-muted); padding: 12px; color: var(--ink-muted); font-size: 14px; margin: 0; }
+.shell.collapsed .shelf { padding: 16px 0; overflow: hidden; }
+.shell.collapsed .shelf .full { display: none; }
+.rail { display: none; flex-direction: column; align-items: center; gap: 16px; }
+.shell.collapsed .rail { display: flex; }
+.rail .vt { writing-mode: vertical-rl; transform: rotate(180deg); }
+@media (max-width: 860px) {
+  .shell, .shell.collapsed { grid-template-columns: 1fr; }
+  .shelf { position: static; height: auto; border-right: 0; border-bottom: 2px solid var(--ink); }
+  .shell.collapsed .shelf { padding: 12px 16px; }
+  .shell.collapsed .rail { flex-direction: row; justify-content: space-between; }
+  .shell.collapsed .rail .vt { writing-mode: horizontal-tb; transform: none; }
 }
-.busy .col { opacity: 0.5; }
 
-.export { border-top: 2px solid var(--ink); }
-.exrow { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: var(--s3); align-items: center; padding: var(--s2) var(--s4); }
-.exrow + .exrow { border-top: 1px solid var(--ink-muted); }
-.exrow .k { font: 700 14px var(--body); }
-.exrow .v { font-size: 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
-.exrow .acts { display: flex; align-items: center; gap: var(--s2); }
-.count { font: 12px var(--mono); color: var(--ink-muted); }
-@media (max-width: 720px) { .exrow { grid-template-columns: 1fr; gap: var(--s2); } }
+.main { padding: 20px 40px 32px; min-width: 0; width: 100%; max-width: 1400px; justify-self: center; }
+@media (max-width: 720px) { .main { padding: 16px; } }
 
-/* Capture view */
-.capture-wrap { padding: var(--s5) 0; display: flex; flex-direction: column; gap: var(--s3); align-items: flex-start; }
-.capture { border: 2px solid var(--ink); background: var(--sheet); width: 100%; max-width: 540px; padding: var(--s5) var(--s4); }
-.capture .cw { font: 800 28px/1 var(--display); font-stretch: 75%; }
-.capture .crecipe { font: 600 14px var(--mono); margin: var(--s2) 0 var(--s4); color: var(--ink-muted); overflow-wrap: anywhere; }
-.capture .cq { font-size: 18px; margin: 0 0 var(--s3); }
-.capture .ex { font-size: 24px; line-height: 1.4; padding: var(--s3) 0; border-top: 1px solid var(--ink); margin: 0; }
-.capture .who { display: block; font: 700 14px var(--body); margin-bottom: var(--s1); color: var(--ink-muted); }
-.capture .cfoot { font: 12px var(--mono); color: var(--ink-muted); margin-top: var(--s3); }
+/* The sentence: model and edits read as one instruction; the prompt sits under it. */
+.ask { padding-bottom: 16px; border-bottom: 1px solid var(--ink-muted); }
+.sentence { font: 400 24px/1.6 var(--body); margin: 0; }
+.sentence .edit { white-space: nowrap; }
+.sentence .dose { font: 800 28px var(--display); font-stretch: 75%; }
+.sentence .edit[aria-current="true"] .link { text-decoration-thickness: 4px; }
+.sentence .x { all: unset; cursor: pointer; font: 14px var(--mono); color: var(--ink-muted); padding: 0 4px; }
+.sentence .x:focus-visible { outline: 3px solid var(--ink); }
+@media (max-width: 720px) { .sentence { font-size: 20px; } .sentence .edit { white-space: normal; } .sentence .dose { font-size: 22px; } }
+.row2 { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.pop { position: absolute; z-index: 10; background: var(--sheet); border: 2px solid var(--ink); min-width: 300px; padding: 16px; }
+.pop .opt { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 12px; width: calc(100% + 32px); margin: 0 -16px; padding: 12px 16px; border-top: 1px solid var(--grid); }
+.pop .opt:first-child { border-top: 0; margin-top: -16px; }
+.pop .opt:last-child { margin-bottom: -16px; }
+.pop .opt:hover, .pop .opt:focus-visible { background: var(--ink); color: var(--ground); outline: none; }
+.pop .opt[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.pop .opt b { font: 800 20px var(--display); font-stretch: 75%; }
+.pop .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.pop .err { color: var(--error); font-size: 14px; margin: 8px 0 0; min-height: 0; }
 
-/* History drawer */
-.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100%); background: var(--sheet); border-left: 2px solid var(--ink); z-index: 5; display: flex; flex-direction: column; }
-.drawer header { display: flex; justify-content: space-between; align-items: center; padding: var(--s3) var(--s4); border-bottom: 2px solid var(--ink); }
-.drawer h2 { font: 800 28px/1 var(--display); font-stretch: 75%; margin: 0; }
-.drawer ol { list-style: none; margin: 0; padding: 0 var(--s4); overflow-y: auto; }
-.drawer li button { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 1fr auto; gap: var(--s2); width: 100%; padding: 12px 0; border-bottom: 1px solid var(--ink-muted); cursor: pointer; font-size: 14px; }
-.drawer li button:focus-visible { outline: 3px solid var(--ink); outline-offset: -3px; }
-.drawer li .mono { font-size: 12px; color: var(--ink-muted); }
-.empty { border: 2px dashed var(--ink-muted); padding: var(--s4); margin: var(--s4); color: var(--ink-muted); font-size: 16px; }
+/* The experiment tree */
+.work { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; }
+.work.inspecting { grid-template-columns: minmax(0, 1fr) 400px; }
+@media (max-width: 1100px) { .work.inspecting { grid-template-columns: 1fr; } }
+.tree { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 96px; padding: 32px 0 16px; min-height: max(320px, calc(100dvh - 520px)); align-content: center; }
+.tree svg.links { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.links path.draw { stroke-dasharray: 2000; animation: draw 420ms cubic-bezier(.65,0,.35,1) both; }
+@keyframes draw { from { stroke-dashoffset: 2000; } to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) { .links path.draw { animation: none; stroke-dasharray: none; } }
+.root { align-self: center; font: 400 clamp(32px, 4vw, 44px)/1.2 var(--body); position: relative; max-width: 14ch; }
+.root .flag { position: absolute; left: 0; top: calc(100% + 8px); }
+.flag { font: 600 12px var(--mono); background: var(--cut); color: var(--on-cut); padding: 0 4px; white-space: nowrap; }
+.runs { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.run { position: relative; padding-left: 12px; min-width: 0; }
+.run .k { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; min-width: 0; }
+.run .pick { all: unset; cursor: pointer; font: 13px var(--mono); color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; min-width: 0; }
+.run .pick:focus-visible { outline: 3px solid var(--ink); }
+.run[aria-current="true"] .pick { color: var(--ink); }
+.run .t { font: 400 20px/1.5 var(--body); overflow-wrap: anywhere; }
+.run[aria-current="true"] .t { font-size: 24px; }
+.run .w { cursor: pointer; }
+.run .w:hover { text-decoration: underline 1px var(--ink-muted); text-underline-offset: 4px; }
+.run .w.inspected { outline: 2px solid var(--ink); outline-offset: 2px; }
+.run .w.split { font-weight: 700; text-decoration: underline 2px var(--ink-muted); text-underline-offset: 4px; }
+.run[aria-current="true"] .w.split { background: var(--cut); color: var(--on-cut); text-decoration: none; }
+.run .more { all: unset; cursor: pointer; font: 13px var(--mono); color: var(--ink-muted); text-decoration: underline; margin-left: 8px; }
+.run .more:focus-visible { outline: 3px solid var(--ink); }
+.redact { display: inline-block; height: .8em; background: var(--ink-muted); opacity: .25; margin-right: .3em; vertical-align: -.05em; }
+.run.generating .redact { animation: pulse 1.2s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: .15; } to { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .run.generating .redact { animation: none; } }
+.tree-empty { grid-column: 1 / -1; }
+@media (max-width: 860px) { .tree { grid-template-columns: minmax(0, 1fr); row-gap: 28px; } .runs { padding-left: 40px; } }
 
-footer { margin-top: var(--s6); padding-top: var(--s3); border-top: 2px solid var(--ink); font-size: 14px; color: var(--ink-muted); }
+/* Word inspector */
+.inspector { background: var(--sheet); border: 2px solid var(--ink); padding: 16px; align-self: start; position: sticky; top: 16px; }
+.inspector h3 { font: 800 28px/1 var(--display); font-stretch: 75%; margin: 0; overflow-wrap: anywhere; }
+.inspector .kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin-top: 12px; font-size: 14px; }
+
+/* Control row */
+.control { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--ink-muted); }
+.knob svg { width: 150px; height: 150px; touch-action: none; cursor: grab; display: block; }
+.knob svg:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+.bigdose { all: unset; cursor: text; display: block; font: 800 clamp(56px, 7vw, 96px)/.85 var(--display); font-stretch: 75%; letter-spacing: -0.02em; font-feature-settings: "tnum"; }
+.bigdose:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+.doseIn { font: 800 clamp(48px, 6vw, 80px)/.9 var(--display); font-stretch: 75%; width: 5ch; background: transparent; color: var(--ink); border: 0; border-bottom: 2px solid var(--ink); }
+.control .spacer { flex: 1; }
+.status { max-width: 52ch; }
+
+/* Share card */
+.page h1 { font: 800 40px/1 var(--display); font-stretch: 75%; margin: 8px 0 0; }
+.page .top { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.card { width: min(100%, 600px); aspect-ratio: 4 / 5; border: 2px solid var(--ink); padding: 28px; display: flex; flex-direction: column; background: var(--ground);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 12px 12px; }
+.card .ct { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2px solid var(--ink); padding-bottom: 8px; }
+.card .cf { flex: 1; position: relative; display: grid; grid-template-columns: auto 1fr; column-gap: 72px; align-items: center; }
+.card .cf svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.card .cb { display: flex; flex-direction: column; gap: 88px; font: 400 21px/1.3 var(--body); }
+.card .tok { background: var(--cut); color: var(--on-cut); font-weight: 700; }
+.copyrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 0; border-top: 1px solid var(--grid); }
+.copyrow .v { overflow-wrap: anywhere; white-space: pre-wrap; }
 </style>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="wrap">
-  <header class="mast">
-    <h1 class="wordmark">lobot</h1>
-    <nav aria-label="Workbench controls">
-      <label class="patient">PATIENT:
-        <select id="model" aria-describedby="warm"></select>
-      </label>
-      <span class="warm" id="warm">connecting</span>
-      <button class="btn btn-sm" id="historyBtn" type="button" aria-expanded="false" aria-controls="drawer">History</button>
-      <button class="btn btn-sm" id="captureBtn" type="button" aria-pressed="false">Capture view</button>
-      <button class="btn btn-sm" id="compactBtn" type="button" aria-pressed="false">Workbench</button>
-      <button class="btn btn-sm" id="themeBtn" type="button">Night ward</button>
-    </nav>
-  </header>
+<div class="shell" id="shell">
+  <aside class="shelf" id="shelf" aria-label="Models and experiments">
+    <div class="rail"><button class="btn btn-sm" id="expand" type="button" aria-label="Open the shelf" aria-controls="shelf">▸</button><span class="meta vt" id="railText"></span></div>
+    <div class="full">
+      <div class="head"><span class="wordmark">lobot</span><button class="btn btn-sm" id="collapse" type="button" aria-label="Collapse the shelf">◂</button></div>
+      <h2>Models</h2>
+      <div id="models"></div>
+      <h2>Behaviors</h2>
+      <p class="empty">No behaviors yet. Create builds them from validated families in wave 1. Until then, push neurons.</p>
+      <h2>Experiments <span class="meta" id="expCount"></span></h2>
+      <div id="exps"></div>
+      <h2>Theme <button class="btn btn-sm" id="themeBtn" type="button">Light</button></h2>
+    </div>
+  </aside>
 
-  <main id="main">
-    <section class="hero" id="hero" aria-labelledby="heroTitle">
-      <h2 id="heroTitle">One knob.<br>Different answer.</h2>
-      <p>Same prompt, same seed, greedy decoding. Push a few neurons and read where the answers split.</p>
-    </section>
-
-    <section class="bench" id="bench" aria-label="Workbench">
-      <form class="rail" id="form" novalidate>
-        <div>
-          <label class="label" for="prompt">Prompt</label>
-          <textarea id="prompt" class="field" rows="3" required></textarea>
-        </div>
-        <div>
-          <span class="label" id="recipeLabel">Recipe</span>
-          <table class="recipe" aria-labelledby="recipeLabel" aria-describedby="formErr">
-            <thead><tr><th scope="col">Layer</th><th scope="col">Neuron</th><th scope="col">Dose</th><th scope="col"><span class="sr">Remove</span></th></tr></thead>
-            <tbody id="rows"></tbody>
-          </table>
-          <button class="btn-link" id="addRow" type="button">+ add row</button>
-        </div>
-        <div class="rail-foot">
-          <p class="form-err" id="formErr" role="alert"></p>
-          <button class="btn btn-primary" id="runBtn" type="submit">Run experiment <kbd id="kbd">⌘ Enter</kbd></button>
+  <main class="main" id="main">
+    <section id="vWork" aria-label="Workbench">
+      <div class="ask" id="ask">
+        <h1 class="sentence" id="sentence"></h1>
+        <label class="label" for="prompt" style="margin-top:12px">Prompt</label>
+        <textarea id="prompt" class="field" rows="2" spellcheck="true"></textarea>
+        <div class="row2">
+          <button class="btn btn-primary" id="runBtn" type="button">Run <kbd class="kbd">⌘ Enter</kbd></button>
           <button class="btn btn-stop" id="stopBtn" type="button" hidden>Stop <kbd>Esc</kbd></button>
+          <button class="btn" type="button" id="shareBtn" disabled>Share card</button>
+          <span class="meta" id="plan"></span>
         </div>
-      </form>
-
-      <div class="right">
-        <div class="status" aria-live="polite">
-          <ol class="steps" id="steps" aria-label="Run stages">
-            <li data-s="weights">weights</li><li data-s="baseline">baseline</li><li data-s="steered">steered</li><li data-s="complete">complete</li>
-          </ol>
-          <span class="state info" id="state"><b id="stateKey">EXAMPLE</b><span id="stateMsg"></span></span>
-          <span class="spacer"></span>
-          <span class="mono" id="meta"></span>
-          <button class="btn btn-sm" id="jumpBtn" type="button" hidden>Jump to split</button>
+      </div>
+      <div class="work" id="work">
+        <div>
+          <div class="tree" id="tree"><svg class="links" id="links" aria-hidden="true"></svg><div class="root" id="root"></div><div class="runs" id="runs"></div></div>
+          <div class="control">
+            <div class="knob" id="knob"></div>
+            <div><button class="bigdose" id="bigdose" type="button" aria-label="Type a dose"></button><input class="doseIn" id="doseIn" type="text" inputmode="decimal" spellcheck="false" aria-label="Dose" hidden><span class="meta" id="knobFor"></span></div>
+            <span class="spacer"></span>
+            <div class="status" role="status"><span class="state info" id="runState"></span><div class="meta" id="runMsg" style="margin-top:6px"></div></div>
+          </div>
         </div>
-
-        <div class="eeg" aria-hidden="true">
-          <span class="tag">Agreement trace: flat while tokens match</span>
-          <svg id="trace" viewBox="0 0 1000 72" preserveAspectRatio="none"></svg>
-          <span class="spike-note" id="spikeNote" hidden></span>
-        </div>
-
-        <div class="sheet" id="sheet">
-          <article class="col" aria-labelledby="hBase">
-            <h3 id="hBase">BASELINE</h3>
-            <p class="pre" id="basePre"></p><p class="post" id="basePost"></p>
-          </article>
-          <article class="col" aria-labelledby="hSteer">
-            <h3 id="hSteer">STEERED</h3>
-            <p class="pre" id="steerPre"></p><p class="post" id="steerPost"></p>
-          </article>
-          <div class="cutline" id="cutline" hidden></div>
-        </div>
-
-        <div class="export">
-          <div class="exrow"><span class="k">Recipe</span><span class="v mono" id="recipeOut"></span>
-            <span class="acts"><button class="btn btn-sm" type="button" data-copy="recipeOut">Copy</button></span></div>
-          <div class="exrow"><span class="k">Post for X</span><span class="v" id="postOut"></span>
-            <span class="acts"><span class="count" id="postCount"></span><button class="btn btn-sm" type="button" data-copy="postOut">Copy for X</button></span></div>
-        </div>
+        <aside class="inspector" id="inspector" hidden aria-labelledby="iHead"></aside>
       </div>
     </section>
 
-    <section class="capture-wrap" id="captureWrap" hidden aria-label="Capture view">
-      <div class="capture" id="capture">
-        <div class="cw">lobot</div>
-        <div class="crecipe" id="cRecipe"></div>
-        <p class="cq" id="cPrompt"></p>
-        <p class="ex"><span class="who">Baseline, excerpt</span><span id="cBase"></span></p>
-        <p class="ex"><span class="who">Steered, excerpt</span><span id="cSteer"></span></p>
-        <div class="cfoot" id="cFoot"></div>
+    <section id="vShare" class="page" hidden aria-labelledby="shareH">
+      <div class="top"><h1 id="shareH">Share card</h1><button class="btn" type="button" id="backBtn">Back to the tree</button></div>
+      <div style="display:flex;gap:32px;flex-wrap:wrap;margin-top:20px">
+        <div class="card" id="card"></div>
+        <div style="flex:1;min-width:280px;max-width:60ch">
+          <div class="copyrow"><div><span class="label">Post for X</span><p class="meta v" id="post" style="color:var(--ink);margin:0"></p><span class="meta" id="postCount"></span></div><button class="btn btn-sm" type="button" data-copy="post">Copy for X</button></div>
+          <div class="copyrow"><div><span class="label">Recipe</span><p class="meta v" id="recipe" style="margin:0"></p></div><button class="btn btn-sm" type="button" data-copy="recipe">Copy</button></div>
+          <p class="meta">The card uses only recorded text from this experiment. Nothing is posted anywhere: you copy and post by hand.</p>
+        </div>
       </div>
-      <button class="btn btn-sm" id="captureBack" type="button">Back to workbench</button>
     </section>
   </main>
-
-  <footer>Runs on this machine only. Nothing is posted anywhere: you copy and post by hand.</footer>
 </div>
-
-<aside class="drawer" id="drawer" hidden aria-labelledby="drawerTitle">
-  <header><h2 id="drawerTitle">History</h2><button class="btn btn-sm" id="drawerClose" type="button">Close</button></header>
-  <ol id="historyList"></ol>
-  <p class="empty" id="historyEmpty">No runs yet. Type a prompt, set one dose, and press Run experiment.</p>
-</aside>
+<div class="sr" id="live" aria-live="polite"></div>
 
 <script type="module">
-import { prepare, layout } from "./vendor/pretext.js";
-
 const $ = (id) => document.getElementById(id);
+const root = document.documentElement;
 const store = {
   get(k, d) { try { const v = localStorage.getItem("lobot." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem("lobot." + k, JSON.stringify(v)); } catch { /* storage blocked: per-viewer convenience only */ } },
+  set(k, v) { try { localStorage.setItem("lobot." + k, JSON.stringify(v)); } catch { /* storage blocked or full: the tree then lives for this page only */ } },
 };
-
-const S = {
-  api: false, state: null, rows: [], result: null, running: false, example: null,
-  limits: { layers: 32, neurons: 9216, dose_min: -3, dose_max: 3, max_rows: 4 },
-};
-
-/* ---------- theme, compact ---------- */
-const root = document.documentElement;
-function syncTheme() {
-  const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  $("themeBtn").textContent = dark ? "Day ward" : "Night ward";
-}
-$("themeBtn").addEventListener("click", () => {
-  const dark = $("themeBtn").textContent === "Night ward";
-  root.dataset.theme = dark ? "dark" : "light"; store.set("theme", root.dataset.theme); syncTheme();
-});
-if (store.get("theme", null)) root.dataset.theme = store.get("theme");
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", syncTheme);
-syncTheme();
-
-function setCompact(on) {
-  root.classList.toggle("compact", on); $("compactBtn").setAttribute("aria-pressed", String(on)); store.set("compact", on); syncHero();
-}
-$("compactBtn").addEventListener("click", () => setCompact(!root.classList.contains("compact")));
-function syncHero() { $("hero").hidden = root.classList.contains("compact") || store.get("hasRun", false); }
-setCompact(store.get("compact", false));
-
-if (!/Mac|iPhone|iPad/.test(navigator.platform)) $("kbd").textContent = "Ctrl Enter";
-
-/* ---------- recipe rows ---------- */
-const fmtDose = (d) => (d > 0 ? "+" : d < 0 ? "−" : "") + Math.abs(d).toFixed(2);
-const sgnDose = (d) => (d >= 0 ? "+" : "-") + Math.abs(d);
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+const fd = (d) => (d > 0 ? "+" : d < 0 ? "−" : "±") + Math.abs(d).toFixed(2);
 // Accepts "+1.5", "-1,5", "−1.50": the typographic minus and a decimal comma both parse.
-const parseDose = (s) => { const t = s.trim().replace("−", "-").replace(",", "."); return /^[+-]?\d*\.?\d+$/.test(t) ? parseFloat(t) : NaN; };
-$("rows").addEventListener("focusout", (e) => {
-  const el = e.target; if (el.dataset.k !== "dose") return;
-  const v = S.rows[+el.dataset.i]?.dose; if (!Number.isNaN(v)) el.value = fmtDose(v);
-});
+const parseDose = (s) => { const t = String(s).trim().replace("−", "-").replace(",", "."); return /^[+-]?\d*\.?\d+$/.test(t) ? parseFloat(t) : NaN; };
+const nid = (r) => `L${r.layer}N${r.neuron}`;
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+if (!/Mac|iPhone|iPad/.test(navigator.platform)) document.querySelectorAll(".kbd").forEach((k) => (k.textContent = "Ctrl Enter"));
 
-function renderRows() {
-  const tb = $("rows"); tb.textContent = "";
-  S.rows.forEach((r, i) => {
-    const n = i + 1;
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td><input class="num" inputmode="numeric" type="number" aria-label="Row ${n} layer" data-i="${i}" data-k="layer"></td>
-      <td><input class="num" inputmode="numeric" type="number" aria-label="Row ${n} neuron" data-i="${i}" data-k="neuron"></td>
-      <td><input class="num dose" inputmode="decimal" type="text" spellcheck="false" aria-label="Row ${n} dose" data-i="${i}" data-k="dose"></td>
-      <td class="rm"><button type="button" aria-label="Remove row ${n}" data-rm="${i}">×</button></td>`;
-    const tr2 = document.createElement("tr"); tr2.className = "slide";
-    tr2.innerHTML = `<td colspan="4"><input type="range" aria-label="Row ${n} dose slider" step="0.05" data-i="${i}" data-k="slider"></td>`;
-    tb.append(tr, tr2);
-    const [l, ne, d] = tr.querySelectorAll("input");
-    l.min = 0; l.max = S.limits.layers - 1; l.value = r.layer;
-    ne.min = 0; ne.max = S.limits.neurons - 1; ne.value = r.neuron;
-    d.value = fmtDose(r.dose);
-    const sl = tr2.querySelector("input"); sl.min = S.limits.dose_min; sl.max = S.limits.dose_max; sl.value = r.dose;
-  });
-  $("addRow").disabled = S.rows.length >= S.limits.max_rows || S.running;
-  tb.querySelectorAll("[data-rm]").forEach((b) => (b.disabled = S.rows.length <= 1 || S.running));
+/* ---------- theme, shelf ---------- */
+root.dataset.theme = store.get("theme2", "dark");
+const syncTheme = () => ($("themeBtn").textContent = root.dataset.theme === "dark" ? "Light" : "Dark");
+$("themeBtn").addEventListener("click", () => { root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark"; store.set("theme2", root.dataset.theme); syncTheme(); layout(); });
+syncTheme();
+function setShelf(open) {
+  $("shell").classList.toggle("collapsed", !open); store.set("shelf", open);
+  (open ? $("collapse") : $("expand")).focus({ preventScroll: true });
+  requestAnimationFrame(layout);
 }
-$("rows").addEventListener("input", (e) => {
-  const el = e.target; const i = +el.dataset.i; const k = el.dataset.k; if (!k) return;
-  const v = k === "dose" ? parseDose(el.value) : parseFloat(el.value);
-  if (k === "slider") { S.rows[i].dose = v; $("rows").querySelector(`[data-i="${i}"][data-k="dose"]`).value = fmtDose(v); }
-  else if (k === "dose") { S.rows[i].dose = v; if (!Number.isNaN(v)) $("rows").querySelector(`[data-i="${i}"][data-k="slider"]`).value = v; }
-  else S.rows[i][k] = Number.isNaN(v) ? NaN : Math.trunc(v);
-  validate(false);
-});
-$("rows").addEventListener("click", (e) => {
-  const i = e.target.dataset.rm; if (i === undefined) return;
-  S.rows.splice(+i, 1); renderRows(); validate(false);
-});
-$("addRow").addEventListener("click", () => {
-  if (S.rows.length >= S.limits.max_rows) return;
-  S.rows.push({ layer: 0, neuron: 0, dose: 0 }); renderRows();
-  $("rows").querySelector(`[data-i="${S.rows.length - 1}"][data-k="layer"]`).focus();
-});
+$("collapse").addEventListener("click", () => setShelf(false));
+$("expand").addEventListener("click", () => setShelf(true));
+if (store.get("shelf", true) === false) $("shell").classList.add("collapsed");
 
-function validate(showEmpty) {
-  const L = S.limits; let msg = "";
-  $("rows").querySelectorAll(".num").forEach((el) => el.removeAttribute("aria-invalid"));
-  S.rows.forEach((r, i) => {
-    const bad = (k, m) => { $("rows").querySelector(`[data-i="${i}"][data-k="${k}"]`).setAttribute("aria-invalid", "true"); msg ||= m; };
-    if (!Number.isInteger(r.layer) || r.layer < 0 || r.layer >= L.layers) bad("layer", `Row ${i + 1}: layer must be 0 to ${L.layers - 1}.`);
-    if (!Number.isInteger(r.neuron) || r.neuron < 0 || r.neuron >= L.neurons) bad("neuron", `Row ${i + 1}: neuron must be 0 to ${L.neurons - 1}.`);
-    if (Number.isNaN(r.dose) || r.dose < L.dose_min || r.dose > L.dose_max) bad("dose", `Row ${i + 1}: dose must be ${L.dose_min} to +${L.dose_max}.`);
-  });
-  const p = $("prompt");
-  p.removeAttribute("aria-invalid");
-  if (showEmpty && !p.value.trim()) { p.setAttribute("aria-invalid", "true"); msg ||= "Type a prompt first."; }
-  $("formErr").textContent = msg;
-  return !msg;
-}
+/* ---------- state ---------- */
+const S = {
+  api: false, state: null, running: false, view: "work", inspect: null, focusEdit: 0, sel: null,
+  limits: { layers: 32, neurons: 9216, dose_min: -3, dose_max: 3, max_rows: 4 },
+  model: null, rows: [], example: false,
+};
+// Experiments: one per (model, prompt). Run 1 is the baseline; every steered result adds a run.
+const expKey = (model, prompt) => `${model}\n${prompt.trim()}`;
+let EXPS = store.get("exps", {});
+const saveExps = () => store.set("exps", EXPS);
+const curExp = () => EXPS[expKey(S.model, $("prompt").value)] || null;
+const rowsKey = (rows) => rows.filter((r) => r.dose !== 0).map((r) => `${nid(r)}@${r.dose}`).sort().join(" ");
 
-/* ---------- output sheet (Pretext keeps both columns' pre-split blocks equal) ---------- */
-let prepared = null;
-// The server's split offset is the divergent token's start, which often
-// includes its leading space (" an"). Mark from the first non-space char.
-function skipSpace(text, at) { return at + /^\s*/.exec(text.slice(at))[0].length; }
-function splitWord(text, at) {
-  const m = /^\S*/.exec(text.slice(at));
-  return at + m[0].length;
-}
-function renderResult(res, { animate = false } = {}) {
-  S.result = res;
-  const sp = res.split;
-  const sheet = $("sheet");
-  sheet.classList.toggle("has-split", !!sp);
-  const fill = (preEl, postEl, text, at, cls) => {
-    preEl.textContent = ""; postEl.textContent = "";
-    if (at === null) { preEl.textContent = text; return; }
-    at = skipSpace(text, at);
-    const end = splitWord(text, at);
-    const mark = document.createElement("span"); mark.className = cls; mark.textContent = text.slice(at, end);
-    preEl.append(text.slice(0, at), mark);
-    postEl.textContent = text.slice(end).replace(/^[ \t]+/, "");
-  };
-  fill($("basePre"), $("basePost"), res.baseline.text, sp ? sp.base_char : null, "split-under");
-  fill($("steerPre"), $("steerPost"), res.steered.text, sp ? sp.steered_char : null, "split-tok");
-  $("basePost").hidden = !sp; $("steerPost").hidden = !sp;
-  prepared = null;
-  relayout();
-  drawTrace(res);
-  $("recipeOut").textContent = res.recipe;
-  $("postOut").textContent = res.post;
-  $("postCount").textContent = `${[...res.post].length}/280`;
-  $("jumpBtn").hidden = !sp;
-  const cl = $("cutline"); cl.hidden = !sp;
-  if (sp && animate) { cl.classList.remove("draw"); void cl.offsetWidth; cl.classList.add("draw"); }
-  renderCapture(res);
-}
-function relayout() {
-  const pres = [$("basePre"), $("steerPre")];
-  if (!S.result) return;
-  if (!prepared) prepared = pres.map((el) => prepare(el.textContent, getComputedStyle(el).font));
-  pres.forEach((el) => (el.style.minHeight = ""));
-  const lh = parseFloat(getComputedStyle(pres[0]).lineHeight);
-  const stacked = matchMedia("(max-width: 720px)").matches;
-  if (S.result.split && !stacked) {
-    const h = Math.max(...pres.map((el, i) => layout(prepared[i], el.clientWidth, lh).height), ...pres.map((el) => el.offsetHeight));
-    pres.forEach((el) => (el.style.minHeight = h + "px"));
-    const sheetTop = $("sheet").getBoundingClientRect().top;
-    const y = pres[0].getBoundingClientRect().top - sheetTop + h + 8;
-    $("cutline").style.top = y + "px";
+function addResult(res) {
+  const k = expKey(res.model_id, res.prompt);
+  let e = EXPS[k];
+  if (e && e.baseline.text !== res.baseline.text) {
+    // Greedy decoding with a fixed seed gives the same baseline; if it changed, the settings changed. Start over.
+    $("runMsg").textContent = "The baseline differs from this experiment's run 1, so a new experiment starts.";
+    e = null;
   }
+  if (!e) e = EXPS[k] = { model: res.model_id, prompt: res.prompt, baseline: res.baseline, runs: [], at: Date.now() };
+  const key = rowsKey(res.rows);
+  const prev = e.runs.findIndex((r) => rowsKey(r.rows) === key);
+  const run = { n: prev >= 0 ? e.runs[prev].n : e.runs.length + 2, rows: res.rows, text: res.steered.text, tokens: res.steered.tokens,
+    split: res.split && { token: res.split.token, char: res.split.steered_char, base_char: res.split.base_char },
+    seconds: res.seconds, recipe: res.recipe, post: res.post, at: Date.now() };
+  if (prev >= 0) e.runs[prev] = run; else e.runs.push(run);
+  e.at = Date.now();
+  saveExps();
+  return run.n;
 }
-let lastW = 0, raf = 0;
-new ResizeObserver((ents) => {
-  const w = Math.round(ents[0].contentRect.width); if (w === lastW) return; lastW = w;
-  cancelAnimationFrame(raf); raf = requestAnimationFrame(relayout);
-}).observe($("sheet"));
 
-function drawTrace(res) {
-  const n = Math.max(res.baseline.tokens, res.steered.tokens, 1);
-  const sp = res.split; const W = 1000; const y0 = 48; const dx = W / n;
-  const svg = $("trace");
-  const ink = "var(--ink)";
-  if (!sp) {
-    svg.innerHTML = `<polyline fill="none" stroke="${ink}" stroke-width="1.5" vector-effect="non-scaling-stroke" points="0,${y0} ${W},${y0}"/>`;
-    $("spikeNote").hidden = true; return;
-  }
-  const xs = Math.max(sp.token * dx, 6);
-  let after = []; let seed = 7;
-  for (let x = xs + 12; x <= W; x += Math.max(dx, 14)) { seed = (seed * 9301 + 49297) % 233280; after.push(`${x.toFixed(1)},${(26 + (seed / 233280) * 34).toFixed(1)}`); }
-  svg.innerHTML =
-    `<polyline fill="none" stroke="${ink}" stroke-width="1.5" vector-effect="non-scaling-stroke" points="0,${y0} ${xs},${y0}"/>` +
-    `<polyline fill="none" stroke="var(--cut)" stroke-width="2.5" vector-effect="non-scaling-stroke" points="${xs},${y0} ${xs + 4},8 ${xs + 8},64 ${xs + 12},${y0}"/>` +
-    `<polyline fill="none" stroke="${ink}" stroke-width="1.5" vector-effect="non-scaling-stroke" points="${xs + 12},${y0} ${after.join(" ")}"/>`;
-  const note = $("spikeNote"); note.hidden = false;
-  note.textContent = `first split · token ${sp.token}`;
-  note.style.left = `calc(${(xs / W) * 100}% + 16px)`;
+/* ---------- shelf ---------- */
+function renderShelf() {
+  const models = S.state ? S.state.models : [{ id: S.model || "Qwen/Qwen3.5-4B", short: (S.model || "Qwen3.5-4B").split("/").pop() }];
+  $("models").innerHTML = models.map((m) => {
+    const cur = m.id === S.model, st = !S.api ? "server offline" : cur ? (S.state.no_model ? "no weights" : S.state.warm ? "warm" : "loads on run") : m.gated ? "gated" : "on disk";
+    return `<button class="model" type="button" data-model="${esc(m.id)}" title="Switching reloads weights." aria-current="${cur}" ${!S.api || S.running ? 'aria-disabled="true"' : ""}><b>${esc(m.id.split("/").pop())}</b><span class="meta">${st}</span></button>`;
+  }).join("");
+  const list = Object.values(EXPS).filter((e) => e.model === S.model).sort((a, b) => b.at - a.at);
+  $("expCount").textContent = list.length ? String(list.length) : "";
+  $("exps").innerHTML = list.length ? list.map((e) => `<button class="exp" type="button" data-prompt="${esc(e.prompt)}" aria-current="${e.prompt === $("prompt").value.trim()}"><span class="p">${esc(e.prompt.length > 70 ? e.prompt.slice(0, 69) + "…" : e.prompt)}</span><span class="meta">${e.runs.length + 1} runs</span></button>`).join("")
+    : `<p class="empty">No experiments for this model yet. Type a prompt and press Run.</p>`;
+  $("railText").textContent = `${(S.model || "").split("/").pop()} · ${S.rows.length} edit${S.rows.length === 1 ? "" : "s"}`;
 }
-$("jumpBtn").addEventListener("click", () => {
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  $("steerPre").querySelector(".split-tok")?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+$("models").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-model]"); if (!b || b.getAttribute("aria-disabled") === "true" || b.dataset.model === S.model) return;
+  b.querySelector(".meta").textContent = "switching";
+  try {
+    const r = await fetch("api/model", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model_id: b.dataset.model }) });
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.detail || `HTTP ${r.status}`);
+    applyState(body);
+    S.rows = body.preset_rows.map((x) => ({ ...x })); S.focusEdit = 0;
+    setStatus("info", "SWITCHED", "Switching reloads weights. The next run loads them.");
+    update();
+  } catch (err) { setStatus("err", "ERROR", String(err.message || err)); renderShelf(); }
+});
+$("exps").addEventListener("click", (e) => { const b = e.target.closest("[data-prompt]"); if (!b || S.running) return; $("prompt").value = b.dataset.prompt; S.sel = null; update(); });
+
+/* ---------- sentence ---------- */
+function renderSentence() {
+  const edits = S.rows.map((r, i) => `<span class="edit" aria-current="${i === S.focusEdit}">${i ? (i === S.rows.length - 1 ? " and " : ", ") : ""}<button class="link mono" type="button" data-focus="${i}" style="font-size:20px" aria-label="Select ${nid(r)} for the knob; press again to edit">${nid(r)}</button> at <span class="dose">${fd(r.dose)}</span><button class="x" type="button" data-remove="${i}" aria-label="Remove ${nid(r)}" ${S.running ? "disabled" : ""}>×</button></span>`).join("");
+  $("sentence").innerHTML = `On <span class="mono" style="font-size:20px">${esc((S.model || "").split("/").pop())}</span>,
+    ${S.rows.length ? `push ${edits}` : "with no edit"} <button class="btn btn-sm" type="button" id="addBtn" ${S.rows.length >= S.limits.max_rows || S.running ? "disabled" : ""}>+ neuron</button> and ask:`;
+}
+let pop = null;
+function closePop() { pop?.remove(); pop = null; }
+function openPop(anchor, html) {
+  closePop(); pop = document.createElement("div"); pop.className = "pop"; pop.innerHTML = html;
+  const r = anchor.getBoundingClientRect(); pop.style.left = Math.max(8, Math.min(innerWidth - 340, r.left + scrollX)) + "px"; pop.style.top = r.bottom + scrollY + 6 + "px";
+  document.body.append(pop); pop.querySelector("input, .opt")?.focus();
+}
+document.addEventListener("click", (e) => { if (pop && !pop.contains(e.target) && !e.target.closest("#addBtn,[data-focus]")) closePop(); });
+// One form adds or edits a neuron row; it validates against the active model's limits.
+function rowForm(anchor, i) {
+  const r = i == null ? { layer: S.rows.at(-1)?.layer ?? 0, neuron: 0, dose: 1 } : S.rows[i], L = S.limits;
+  openPop(anchor, `<form id="rowForm" novalidate><span class="label">${i == null ? "Push a neuron" : `Edit ${nid(r)}`}</span>
+    <div class="grid3"><label><span class="meta">layer 0-${L.layers - 1}</span><input class="num" name="layer" inputmode="numeric" value="${r.layer}"></label>
+    <label><span class="meta">neuron 0-${L.neurons - 1}</span><input class="num" name="neuron" inputmode="numeric" value="${r.neuron}"></label>
+    <label><span class="meta">dose</span><input class="num" name="dose" inputmode="decimal" value="${fd(r.dose)}"></label></div>
+    <p class="err" id="rowErr" role="alert"></p>
+    <div class="row2"><button class="btn btn-sm" type="submit">${i == null ? "Add" : "Save"}</button><button class="btn btn-sm" type="button" id="rowCancel">Cancel</button></div></form>`);
+  $("rowCancel").addEventListener("click", closePop);
+  $("rowForm").addEventListener("submit", (e) => {
+    e.preventDefault(); const f = e.target, v = { layer: Number(f.layer.value), neuron: Number(f.neuron.value), dose: parseDose(f.dose.value) };
+    const bad = !Number.isInteger(v.layer) || v.layer < 0 || v.layer >= L.layers ? ["layer", `Layer must be 0 to ${L.layers - 1}.`]
+      : !Number.isInteger(v.neuron) || v.neuron < 0 || v.neuron >= L.neurons ? ["neuron", `Neuron must be 0 to ${L.neurons - 1}.`]
+      : Number.isNaN(v.dose) || v.dose < L.dose_min || v.dose > L.dose_max ? ["dose", `Dose must be ${L.dose_min} to +${L.dose_max}.`] : null;
+    f.querySelectorAll(".num").forEach((x) => x.removeAttribute("aria-invalid"));
+    if (bad) { f[bad[0]].setAttribute("aria-invalid", "true"); $("rowErr").textContent = bad[1]; f[bad[0]].focus(); return; }
+    const dup = S.rows.findIndex((x, j) => j !== i && nid(x) === nid(v));
+    if (dup >= 0) { $("rowErr").textContent = `${nid(v)} is already in the edits.`; return; }
+    if (i == null) S.rows.push(v); else S.rows[i] = v;
+    S.focusEdit = i == null ? S.rows.length - 1 : i; closePop(); update();
+  });
+}
+$("sentence").addEventListener("click", (e) => {
+  const t = e.target;
+  if (t.closest("#addBtn")) rowForm(t.closest("#addBtn"));
+  else if (t.closest("[data-remove]")) { S.rows.splice(+t.closest("[data-remove]").dataset.remove, 1); S.focusEdit = Math.max(0, Math.min(S.focusEdit, S.rows.length - 1)); update(); }
+  else if (t.closest("[data-focus]")) { const i = +t.closest("[data-focus]").dataset.focus; if (i === S.focusEdit && !S.running) rowForm(t.closest("[data-focus]"), i); else { S.focusEdit = i; update(); } }
+});
+$("prompt").addEventListener("input", () => { S.sel = null; renderShelf(); renderTree(); });
+
+/* ---------- tree ---------- */
+function treeRuns() {
+  const e = curExp(); if (!e) return null;
+  const runs = [{ n: 1, rows: [], text: e.baseline.text, split: null }, ...e.runs];
+  const cs = runs.filter((r) => r.split).map((r) => r.split.char);
+  let c = cs.length ? Math.min(...cs) : (/^\S+\s+\S+\s*/.exec(e.baseline.text) || [""])[0].length;
+  while (c > 0 && !/\s/.test(e.baseline.text[c - 1])) c--;
+  runs.forEach((r) => {
+    const out = [], re = /\S+\s*/g, tail = r.text.slice(c); let m;
+    const sc = r.split ? r.split.char + /^\s*/.exec(r.text.slice(r.split.char))[0].length : -1;
+    while ((m = re.exec(tail))) { const start = c + m.index, core = m[0].trimEnd(); out.push({ w: core, sp: m[0].slice(core.length), split: sc >= start && sc < start + core.length }); }
+    r.words = out; r.score = r.rows.reduce((a, x) => a + x.dose, 0);
+  });
+  return { e, runs, rootChar: c, shared: e.baseline.text.slice(0, c).trim() };
+}
+const matching = (T) => T && T.runs.find((r) => rowsKey(r.rows) === rowsKey(S.rows));
+let expanded = new Set();
+function runHtml(r, current, inspect) {
+  const full = expanded.has(r.n), n = full ? Infinity : current ? 26 : 16;
+  const body = r.words ? r.words.slice(0, n).map((x, j) => `<span class="w${x.split ? " split" : ""}${inspect && inspect.run === r.n && inspect.i === j ? " inspected" : ""}" data-run="${r.n}" data-i="${j}" tabindex="0" role="button" aria-label="Inspect “${esc(x.w)}”">${esc(x.w)}</span>${x.sp}`).join("") + (r.words.length > n ? `… <button class="more" type="button" data-more="${r.n}">show all</button>` : "")
+    : Array.from({ length: 7 }, (_, i) => `<span class="redact" style="width:${2.4 + (i * 3 % 5) * .7}em"></span>`).join("") + `<span class="meta"> ${S.running ? "generating" : "not run yet"}</span>`;
+  const edits = r.rows.length ? r.rows.map((x) => `${nid(x)} ${fd(x.dose)}`).join(", ") : "no edit";
+  const label = r.n ? `run ${r.n}: ${edits}` : `next: ${edits}`;
+  const tag = !r.n ? `<span class="state ${S.running ? "info" : "warn"}">${S.running ? "RUNNING" : "NOT RUN"}</span>` : r.n > 1 && !r.split ? '<span class="state warn">NO SPLIT</span>' : "";
+  return `<div class="run${!r.n && S.running ? " generating" : ""}" data-n="${r.n}" aria-current="${current}"><div class="k"><button class="pick" type="button" data-pick="${r.n}" ${!r.n || S.running ? "disabled" : ""}>${label}</button>${current ? '<span class="state info">SELECTED</span>' : ""}${tag}</div><div class="t">${body}</div></div>`;
+}
+let drawN = null;
+function renderTree() {
+  const T = treeRuns(), m = matching(T);
+  S.sel = m ? m.n : 0;
+  const list = T ? [...T.runs] : [];
+  if (!m && (T || S.running)) list.push({ n: 0, rows: S.rows, words: null, score: -1e9 });
+  if (!T && !S.running) {
+    $("root").innerHTML = ""; $("runs").innerHTML = `<p class="empty tree-empty">${S.api ? "No runs for this prompt yet. Set the edits in the sentence, then press Run. The baseline and your edited answer appear here, and every later run adds a branch." : "The lobot server is not reachable. Start it with: uv run python server.py"}</p>`;
+    $("links").innerHTML = ""; $("shareBtn").disabled = true; $("plan").textContent = ""; return;
+  }
+  const sel = m && m.split ? m : null;
+  $("root").innerHTML = `${esc(T ? T.shared : $("prompt").value ? "…" : "")}<span class="flag" id="splitFlag">split · token ${sel ? sel.split.token : ""}</span>`;
+  $("splitFlag").hidden = !sel;
+  // Highest total dose on top, the no-edit run in its place, the next setup last.
+  $("runs").innerHTML = list.sort((a, b) => b.score - a.score).map((r) => runHtml(r, r.n === S.sel, S.inspect)).join("");
+  $("plan").textContent = m ? `matches run ${m.n}` : T ? "changed since the last run" : "";
+  $("shareBtn").disabled = !(T && T.runs.some((r) => r.split));
+  if (!S.running) {
+    if (sel) setStatus("ok", "SPLIT", `Run ${sel.n} leaves run 1 at token ${sel.split.token}. ${sel.seconds} s, greedy, seed 0.`);
+    else if (m && m.n > 1) setStatus("warn", "NO SPLIT", `Run ${m.n} matches run 1 token for token. Try a larger dose.`);
+    else if (m) setStatus("info", "NO EDIT", "Run 1 is the model with no edit.");
+    else setStatus("info", "READY", T ? "This setup has no run yet. Press Run." : "Press Run.");
+  }
+  layout();
+}
+function layout() {
+  if ($("vWork").hidden) return;
+  const tree = $("tree"), box = tree.getBoundingClientRect(), rb = $("root").getBoundingClientRect();
+  const kids = [...$("runs").querySelectorAll(".run")]; if (!kids.length) { $("links").innerHTML = ""; return; }
+  const stacked = matchMedia("(max-width: 860px)").matches, T = treeRuns();
+  const x0 = stacked ? rb.left - box.left + 12 : rb.right - box.left + 8, y0 = stacked ? rb.bottom - box.top + 4 : rb.top - box.top + rb.height / 2;
+  const cs = getComputedStyle(root);
+  $("links").innerHTML = kids.map((el) => {
+    const n = +el.dataset.n, b = el.getBoundingClientRect(), x1 = b.left - box.left, y1 = b.top - box.top + 12, cur = n === S.sel;
+    const r = T && T.runs.find((x) => x.n === n), hot = cur && !!(r && r.split);
+    const c = hot ? cs.getPropertyValue("--cut") : cur || n === 1 ? cs.getPropertyValue("--ink") : cs.getPropertyValue("--ink-muted");
+    const d = stacked ? `M${x0} ${y0} C ${x0} ${y1}, ${x0} ${y1}, ${x1} ${y1}` : `M${x0} ${y0} C ${x0 + (x1 - x0) * .55} ${y0}, ${x0 + (x1 - x0) * .45} ${y1}, ${x1} ${y1}`;
+    return `<path class="${n === drawN ? "draw" : ""}" d="${d}" fill="none" stroke="${c}" stroke-width="${hot ? 4 : cur ? 3 : 2}"${n ? "" : ' stroke-dasharray="5 6"'}/>`;
+  }).join("");
+  drawN = null;
+}
+new ResizeObserver(() => requestAnimationFrame(layout)).observe($("tree"));
+$("runs").addEventListener("click", (e) => {
+  const more = e.target.closest("[data-more]"); if (more) { expanded.add(+more.dataset.more); renderTree(); return; }
+  const p = e.target.closest("[data-pick]"); if (p && !S.running) { const T = treeRuns(), r = T && T.runs.find((x) => x.n === +p.dataset.pick); if (r) { S.rows = r.rows.map((x) => ({ ...x })); S.focusEdit = 0; update(); } return; }
+  const w = e.target.closest(".w"); if (w) inspect(+w.dataset.run, +w.dataset.i);
+});
+$("runs").addEventListener("keydown", (e) => { const w = e.target.closest(".w"); if (w && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); inspect(+w.dataset.run, +w.dataset.i); } });
+
+/* ---------- word inspector (design decision 14A: pin, Esc, observed vs applied) ---------- */
+function inspect(n, i) {
+  const T = treeRuns(), r = T.runs.find((x) => x.n === n), x = r.words[i];
+  S.inspect = { run: n, i }; $("work").classList.add("inspecting"); const el = $("inspector"); el.hidden = false;
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h3 id="iHead">“${esc(x.w)}”</h3><button class="btn btn-sm" type="button" id="iClose">Close · Esc</button></div>
+    <p class="meta" style="margin:6px 0 0">run ${n}, word ${i + 1} after “${esc(T.shared)}”${x.split ? ", the split" : ""}</p>
+    <div class="kv"><span class="meta">Applied edits in this run</span><b class="mono">${r.rows.length ? r.rows.map((y) => `${nid(y)} ${fd(y.dose)}`).join(", ") : "none"}</b>
+      <span class="meta">Observed projection</span><b class="mono">n/a</b></div>
+    <span class="label" style="margin-top:16px">Top neurons at this word</span>
+    <p class="meta" style="margin:0">Not available yet. Listing the neurons that fired at a word needs a server endpoint, planned for wave 2 (R1).</p>
+    <span class="label" style="margin-top:16px">Push a neuron you know</span>
+    <button class="btn btn-sm" type="button" id="iPush" ${S.rows.length >= S.limits.max_rows || S.running ? "disabled" : ""}>+ neuron</button>
+    <p class="meta" style="margin-top:12px">Neurons often mix several jobs. Run tests what one actually does.</p>`;
+  renderTree(); $("iClose").focus({ preventScroll: true });
+}
+function closeInspector() { S.inspect = null; $("inspector").hidden = true; $("work").classList.remove("inspecting"); renderTree(); }
+$("inspector").addEventListener("click", (e) => { if (e.target.closest("#iClose")) closeInspector(); else if (e.target.closest("#iPush")) rowForm(e.target.closest("#iPush")); });
+
+/* ---------- knob: turns the dose of the edit selected in the sentence ---------- */
+const K = (() => {
+  const host = $("knob"), C = 110, R = 96, A0 = -135, A1 = 135;
+  const toA = (d) => A0 + (A1 - A0) * (d - S.limits.dose_min) / (S.limits.dose_max - S.limits.dose_min);
+  const pt = (a, r) => [C + r * Math.sin(a * Math.PI / 180), C - r * Math.cos(a * Math.PI / 180)];
+  function draw() {
+    const L = S.limits, steps = Math.round((L.dose_max - L.dose_min) / 0.5);
+    let ticks = "";
+    for (let j = 0; j <= steps; j++) {
+      const d = L.dose_min + j * 0.5, a = toA(d), major = Number.isInteger(d), [x1, y1] = pt(a, R - 2), [x2, y2] = pt(a, R - (d === 0 ? 20 : major ? 14 : 7));
+      ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${major ? "var(--ink)" : "var(--ink-muted)"}" stroke-width="${d === 0 ? 4 : major ? 2.5 : 1}"/>`;
+      if (major) { const [tx, ty] = pt(a, R + 15); ticks += `<text x="${tx}" y="${ty + 4}" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="var(--ink-muted)">${d > 0 ? "+" + d : d < 0 ? "−" + -d : "0"}</text>`; }
+    }
+    host.innerHTML = `<svg viewBox="-20 -20 260 260" role="slider" tabindex="0" aria-label="Dose of the selected edit" aria-valuemin="${L.dose_min}" aria-valuemax="${L.dose_max}"><circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="var(--ink)" stroke-width="2"/>${ticks}<circle cx="${C}" cy="${C}" r="62" fill="var(--sheet)" stroke="var(--ink)" stroke-width="2"/><rect class="ptr" x="${C - 4}" y="${C - 60}" width="8" height="36" fill="var(--ink)"/></svg>`;
+    wire(host.querySelector("svg"));
+  }
+  function wire(svg) {
+    const set = (d) => { const r = S.rows[S.focusEdit]; if (!r || S.running) return; d = Math.round(Math.max(S.limits.dose_min, Math.min(S.limits.dose_max, d)) * 20) / 20; if (d !== r.dose) { r.dose = d; update(); } };
+    const from = (ev) => { const b = svg.getBoundingClientRect(); let a = Math.atan2(ev.clientX - (b.left + b.width / 2), -(ev.clientY - (b.top + b.height / 2))) * 180 / Math.PI; a = Math.max(A0, Math.min(A1, a)); set(S.limits.dose_min + (a - A0) / (A1 - A0) * (S.limits.dose_max - S.limits.dose_min)); };
+    let drag = false;
+    svg.addEventListener("pointerdown", (e) => { if (!S.rows.length || S.running) return; drag = true; svg.setPointerCapture(e.pointerId); from(e); });
+    svg.addEventListener("pointermove", (e) => { if (drag) from(e); });
+    svg.addEventListener("pointerup", () => (drag = false));
+    // Fine steps on the arrows, coarse on Page Up and Page Down, ends on Home and End.
+    svg.addEventListener("keydown", (e) => {
+      const r = S.rows[S.focusEdit]; if (!r) return;
+      const step = { ArrowRight: .05, ArrowUp: .05, ArrowLeft: -.05, ArrowDown: -.05, PageUp: .5, PageDown: -.5 }[e.key];
+      if (step) { e.preventDefault(); set(r.dose + step); } else if (e.key === "Home") { e.preventDefault(); set(S.limits.dose_min); } else if (e.key === "End") { e.preventDefault(); set(S.limits.dose_max); }
+    });
+  }
+  function show() {
+    const svg = host.querySelector("svg"), r = S.rows[S.focusEdit], d = r ? r.dose : 0;
+    const ptr = host.querySelector(".ptr"); ptr.style.transition = reduce ? "none" : "transform 160ms cubic-bezier(.65,0,.35,1)";
+    ptr.setAttribute("transform", `rotate(${toA(d)} ${C} ${C})`); svg.style.opacity = r && !S.running ? 1 : .45;
+    svg.setAttribute("aria-valuenow", d); svg.setAttribute("aria-valuetext", r ? `${nid(r)} ${fd(d)}` : "no edit selected");
+  }
+  return { draw, show };
+})();
+function renderKnob() {
+  const r = S.rows[S.focusEdit];
+  K.show();
+  $("bigdose").textContent = r ? fd(r.dose) : "±0.00"; $("bigdose").disabled = !r || S.running;
+  $("knobFor").textContent = r ? `dose of ${nid(r)} · arrows step 0.05, Page Up/Down 0.5` : "no edit · add a neuron in the sentence";
+}
+$("bigdose").addEventListener("click", () => { const r = S.rows[S.focusEdit]; if (!r) return; $("bigdose").hidden = true; const i = $("doseIn"); i.hidden = false; i.value = fd(r.dose); i.focus(); i.select(); });
+function commitDose(save) {
+  const i = $("doseIn"), r = S.rows[S.focusEdit], v = parseDose(i.value);
+  if (save && r && !Number.isNaN(v) && v >= S.limits.dose_min && v <= S.limits.dose_max) r.dose = v;
+  i.hidden = true; $("bigdose").hidden = false; update(); $("bigdose").focus();
+}
+$("doseIn").addEventListener("keydown", (e) => { if (e.key === "Enter") commitDose(true); else if (e.key === "Escape") { e.stopPropagation(); commitDose(false); } });
+$("doseIn").addEventListener("blur", () => { if (!$("doseIn").hidden) commitDose(true); });
+
+/* ---------- run ---------- */
+function setStatus(kind, key, msg) { $("runState").className = `state ${kind}`; $("runState").textContent = key; $("runMsg").textContent = msg; }
+function setRunning(on) {
+  S.running = on;
+  const had = document.activeElement === $(on ? "runBtn" : "stopBtn");
+  $("runBtn").hidden = on; $("stopBtn").hidden = !on; $("stopBtn").disabled = false;
+  if (had) $(on ? "stopBtn" : "runBtn").focus();
+  $("prompt").readOnly = on;
+  update();
+}
+async function run() {
+  if (S.running) return;
+  const prompt = $("prompt").value.trim();
+  if (!S.api) return setStatus("err", "OFFLINE", "The lobot server is not reachable. Start it with: uv run python server.py");
+  if (!prompt) { $("prompt").focus(); return setStatus("err", "ERROR", "Type a prompt first."); }
+  if (!S.rows.length) return setStatus("err", "ERROR", "Add at least one neuron. Run compares the baseline with your edits.");
+  closePop(); setRunning(true);
+  const t0 = performance.now(), msgs = { weights: "Loading weights and calibration.", baseline: "Baseline pass.", steered: "Edited pass." };
+  const tick = setInterval(() => ($("runMsg").textContent = `${$("runMsg").textContent.split(" · ")[0]} · ${((performance.now() - t0) / 1000).toFixed(1)} s`), 100);
+  setStatus("info", "RUNNING", msgs.weights);
+  try {
+    const r = await fetch("api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, rows: S.rows }) });
+    if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(typeof b.detail === "string" ? b.detail : `The server returned HTTP ${r.status}.`); }
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "", done = false;
+    while (!done) {
+      const c = await reader.read(); done = c.done; buf += dec.decode(c.value || new Uint8Array(), { stream: !done });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const ev = JSON.parse(buf.slice(0, nl)); buf = buf.slice(nl + 1);
+        if (ev.stage === "error") throw new Error(ev.message);
+        if (ev.stage === "stopped") { clearInterval(tick); setRunning(false); setStatus("info", "STOPPED", "Stopped. The tree keeps the runs it had."); return; }
+        if (ev.stage === "complete") {
+          clearInterval(tick); const n = addResult(ev.result); drawN = n; setRunning(false);
+          const T = treeRuns(), got = T.runs.find((x) => x.n === n);
+          $("live").textContent = got.split ? `Run ${n} complete. It leaves run 1 at token ${got.split.token}.` : `Run ${n} complete. It matches run 1 token for token.`;
+          return;
+        }
+        if (msgs[ev.stage]) setStatus("info", "RUNNING", msgs[ev.stage]);
+      }
+    }
+  } catch (err) {
+    clearInterval(tick); setRunning(false); setStatus("err", "ERROR", String(err.message || err));
+  } finally { clearInterval(tick); }
+}
+async function stop() {
+  if (!S.running || $("stopBtn").disabled) return;
+  $("stopBtn").disabled = true; setStatus("info", "STOPPING", "Stops after the current token.");
+  try { await fetch("api/stop", { method: "POST" }); } catch { setStatus("err", "ERROR", "The stop request did not reach the server."); $("stopBtn").disabled = false; }
+}
+$("runBtn").addEventListener("click", run);
+$("stopBtn").addEventListener("click", stop);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run(); }
+  else if (e.key === "Escape") { if (pop) closePop(); else if (S.running) stop(); else if (S.inspect) closeInspector(); }
 });
 
-/* ---------- capture view ---------- */
-function excerpt(text, at, cls) {
-  const frag = document.createDocumentFragment();
-  if (at === null) { frag.append(text.slice(0, 120) + (text.length > 120 ? "…" : "")); return frag; }
-  at = skipSpace(text, at);
-  const end = splitWord(text, at);
-  let a = Math.max(0, at - 48); if (a > 0) a = text.indexOf(" ", a) + 1;
-  let b = Math.min(text.length, end + 72); if (b < text.length) b = text.lastIndexOf(" ", b);
-  const mark = document.createElement("span"); mark.className = cls; mark.textContent = text.slice(at, end);
-  frag.append((a > 0 ? "…" : "") + text.slice(a, at), mark, text.slice(end, b) + (b < text.length ? "…" : ""));
-  return frag;
+/* ---------- share card ---------- */
+function renderCard() {
+  const T = treeRuns(); if (!T) return;
+  const pick = T.runs.find((r) => r.n === S.sel && r.split) || T.runs.filter((r) => r.split).sort((a, b) => b.at - a.at)[0];
+  const words = (r, from, n) => r.words.slice(from, from + n).map((x) => x.w + x.sp).join("").trim();
+  const si = Math.max(0, pick.words.findIndex((x) => x.split)), model = T.e.model.split("/").pop();
+  const base = words(T.runs[0], 0, 9), lead = words(pick, 0, si), splitW = pick.words[si]?.w || "", tail = words(pick, si + 1, 9);
+  const edits = pick.rows.map((x) => `${nid(x)} ${fd(x.dose)}`).join(", ");
+  $("card").innerHTML = `<div class="ct"><span class="wordmark">lobot</span><span class="meta">${esc(model)}</span></div>
+    <p class="meta" style="margin:14px 0 0;font-family:var(--body);font-size:14px">“${esc(T.e.prompt)}”</p>
+    <div class="cf" id="cf"><svg id="cfl" aria-hidden="true"></svg><div style="font:400 34px var(--body)" id="cr">${esc(T.shared)}</div>
+      <div class="cb"><div id="cb0"><span class="meta" style="display:block">no edit</span>${esc(base)}…</div><div id="cb1"><span class="meta" style="display:block">${pick.rows.length} neuron${pick.rows.length === 1 ? "" : "s"} pushed</span>${lead ? esc(lead) + " " : ""}<span class="tok">${esc(splitW)}</span> ${esc(tail)}…</div></div></div>
+    <div><span class="mono" style="font-size:15px;color:var(--ink)">${esc(edits)}</span><br><span class="meta">same prompt, same seed, split at token ${pick.split.token}</span></div>`;
+  $("post").textContent = pick.post || ""; $("postCount").textContent = pick.post ? `${[...pick.post].length}/280` : "";
+  $("recipe").textContent = pick.recipe || "";
+  requestAnimationFrame(() => {
+    const box = $("cf").getBoundingClientRect(), rb = $("cr").getBoundingClientRect(), cs = getComputedStyle(root), x0 = rb.right - box.left + 6, y0 = rb.top - box.top + rb.height / 2;
+    $("cfl").innerHTML = [["cb0", cs.getPropertyValue("--ink"), 2], ["cb1", cs.getPropertyValue("--cut"), 4]].map(([id, c, w]) => { const b = $(id).getBoundingClientRect(), x1 = b.left - box.left - 6, y1 = b.top - box.top + b.height / 2; return `<path d="M${x0} ${y0} C ${(x0 + x1) / 2} ${y0}, ${(x0 + x1) / 2} ${y1}, ${x1} ${y1}" fill="none" stroke="${c}" stroke-width="${w}"/>`; }).join("");
+  });
 }
-function renderCapture(res) {
-  const short = res.model_id.split("/").pop();
-  $("cRecipe").textContent = `${short} · ` + res.rows.map((r) => `L${r.layer}N${r.neuron}@${fmtDose(r.dose)}`).join(" · ");
-  $("cPrompt").textContent = `“${res.prompt}”`;
-  $("cBase").replaceChildren(excerpt(res.baseline.text, res.split ? res.split.base_char : null, "split-under"));
-  $("cSteer").replaceChildren(excerpt(res.steered.text, res.split ? res.split.steered_char : null, "split-tok"));
-  $("cFoot").textContent = res.split ? `same prompt, same seed · split at token ${res.split.token}` : "same prompt, same seed · no split";
+function setView(v) {
+  S.view = v; closePop(); $("vWork").hidden = v !== "work"; $("vShare").hidden = v !== "share";
+  if (v === "share") { renderCard(); $("shareH").setAttribute("tabindex", "-1"); $("shareH").focus(); } else { requestAnimationFrame(layout); $("shareBtn").focus(); }
 }
-function setCapture(on) {
-  $("captureWrap").hidden = !on; $("bench").hidden = on; $("hero").hidden = on || root.classList.contains("compact") || store.get("hasRun", false);
-  $("captureBtn").setAttribute("aria-pressed", String(on));
-  if (!on) { syncHero(); relayout(); }
-}
-$("captureBtn").addEventListener("click", () => setCapture($("captureWrap").hidden));
-$("captureBack").addEventListener("click", () => setCapture(false));
-
-/* ---------- copy ---------- */
+$("shareBtn").addEventListener("click", () => setView("share"));
+$("backBtn").addEventListener("click", () => setView("work"));
 document.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
-  const text = $(b.dataset.copy).textContent; const label = b.textContent;
+  const text = $(b.dataset.copy).textContent, label = b.textContent;
   try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; }
   catch { const r = document.createRange(); r.selectNodeContents($(b.dataset.copy)); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = "Selected: press ⌘C"; }
   setTimeout(() => (b.textContent = label), 1600);
 }));
 
-/* ---------- status ---------- */
-const STAGES = ["weights", "baseline", "steered", "complete"];
-function setStage(stage) {
-  const k = STAGES.indexOf(stage);
-  $("steps").querySelectorAll("li").forEach((li, i) => { li.className = i < k || stage === "complete" ? "done" : i === k ? "now" : ""; });
-}
-function setState(kind, key, msg) {
-  $("state").className = `state ${kind}`; $("stateKey").textContent = key; $("stateMsg").textContent = msg;
-}
-function showResultState(res, recorded) {
-  setStage("complete");
-  const where = res.split ? `Answers split at token ${res.split.token}.` : "Both answers match token for token. Try a larger dose.";
-  if (recorded) setState("info", "RECORDED EXAMPLE", `Real run, ${res.model_id.split("/").pop()}. ${where}`);
-  else if (res.split) setState("ok", "COMPLETE", where);
-  else setState("warn", "NO SPLIT", where);
-  $("meta").textContent = `${res.seconds} s · 2 × ${Math.max(res.baseline.tokens, res.steered.tokens)} tokens`;
-}
-
-/* ---------- history ---------- */
-function history() { return store.get("history", []); }
-function renderHistory() {
-  const list = $("historyList"); list.textContent = "";
-  const h = history();
-  $("historyEmpty").hidden = h.length > 0;
-  h.forEach((res, i) => {
-    const li = document.createElement("li"); const b = document.createElement("button"); b.type = "button";
-    const t = new Date(res.at); const hh = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
-    const rec = res.rows.map((r) => `L${r.layer}N${r.neuron}@${sgnDose(r.dose)}`).join(" ");
-    b.innerHTML = `<span><span class="hp"></span><br><span class="mono"></span></span><span class="mono"></span>`;
-    b.querySelector(".hp").textContent = res.prompt.length > 60 ? res.prompt.slice(0, 59) + "…" : res.prompt;
-    const monos = b.querySelectorAll(".mono");
-    monos[0].textContent = `${rec} · ${res.split ? "split @" + res.split.token : "no split"}`;
-    monos[1].textContent = hh;
-    b.addEventListener("click", () => { restore(res); closeDrawer(); });
-    li.append(b); list.append(li);
-  });
-}
-function restore(res) {
-  $("prompt").value = res.prompt;
-  S.rows = res.rows.map((r) => ({ ...r })); renderRows(); validate(false);
-  renderResult(res); showResultState(res, false);
-}
-function openDrawer() { renderHistory(); $("drawer").hidden = false; $("historyBtn").setAttribute("aria-expanded", "true"); $("drawerClose").focus(); }
-function closeDrawer() { $("drawer").hidden = true; $("historyBtn").setAttribute("aria-expanded", "false"); $("historyBtn").focus(); }
-$("historyBtn").addEventListener("click", () => ($("drawer").hidden ? openDrawer() : closeDrawer()));
-$("drawerClose").addEventListener("click", closeDrawer);
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("drawer").hidden) closeDrawer(); });
-
-/* ---------- model ---------- */
-function applyState(st) {
-  S.state = st;
-  S.limits = { layers: st.layers, neurons: st.neurons, dose_min: st.dose_min, dose_max: st.dose_max, max_rows: st.max_rows };
-  const sel = $("model"); sel.textContent = "";
-  st.models.forEach((m) => { const o = document.createElement("option"); o.value = m.id; o.textContent = m.id.split("/").pop() + (m.gated ? " · gated" : ""); sel.append(o); });
-  sel.value = st.active_model; sel.disabled = false;
-  $("warm").textContent = st.no_model ? "no weights loaded" : st.warm ? "weights warm" : "loads on next run";
-}
-$("model").addEventListener("change", async (e) => {
-  const id = e.target.value; $("model").disabled = true; $("warm").textContent = "switching";
-  try {
-    const r = await fetch("api/model", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model_id: id }) });
-    const body = await r.json();
-    if (!r.ok) throw new Error(body.detail || `HTTP ${r.status}`);
-    applyState(body);
-    S.rows = body.preset_rows.map((r) => ({ layer: r.layer, neuron: r.neuron, dose: r.dose })); renderRows(); validate(false);
-    setState("info", "SWITCHED", "Switching reloads weights. The next run loads them.");
-  } catch (err) {
-    setState("err", "ERROR", String(err.message || err)); $("model").value = S.state.active_model; $("model").disabled = false;
-  }
-});
-
-/* ---------- run ---------- */
-let timer = null;
-function setRunning(on) {
-  S.running = on;
-  // Stop takes Run's place while a run is active; focus follows the swap.
-  const hadFocus = document.activeElement === $(on ? "runBtn" : "stopBtn");
-  $("runBtn").hidden = on; $("stopBtn").hidden = !on;
-  $("stopBtn").disabled = false; $("stopBtn").firstChild.textContent = "Stop ";
-  if (hadFocus) $(on ? "stopBtn" : "runBtn").focus();
-  $("model").disabled = on || !S.api; $("prompt").readOnly = on;
-  $("sheet").classList.toggle("busy", on);
-  renderRows();
-}
-async function stopRun() {
-  if (!S.running || $("stopBtn").disabled) return;
-  $("stopBtn").disabled = true; $("stopBtn").firstChild.textContent = "Stopping ";
-  setState("info", "STOPPING", "Stops after the current token.");
-  try { await fetch("api/stop", { method: "POST" }); }
-  catch { setState("err", "ERROR", "The stop request did not reach the server."); $("stopBtn").disabled = false; }
-}
-$("stopBtn").addEventListener("click", stopRun);
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S.running && $("drawer").hidden) stopRun(); });
-$("form").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $("form").requestSubmit(); } });
-$("form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  if (S.running || !validate(true)) return;
-  if (!S.api) { setState("err", "ERROR", "The lobot server is not reachable. Start it with: uv run python server.py"); return; }
-  setRunning(true);
-  const t0 = performance.now();
-  timer = setInterval(() => ($("meta").textContent = `${((performance.now() - t0) / 1000).toFixed(1)} s`), 100);
-  setStage("weights"); setState("info", "RUNNING", "Loading weights and calibration.");
-  const msgs = { weights: "Loading weights and calibration.", baseline: "Baseline pass.", steered: "Steered pass." };
-  const stoppedMsg = { weights: "Stopped after loading weights.", baseline: "Stopped during the baseline pass.", steered: "Stopped during the steered pass." };
-  let stopped = false;
-  try {
-    const r = await fetch("api/run", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: $("prompt").value, rows: S.rows }) });
-    if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(typeof b.detail === "string" ? b.detail : `The server returned HTTP ${r.status}.`); }
-    const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = ""; let done = false;
-    while (!done) {
-      const chunk = await reader.read(); done = chunk.done; buf += dec.decode(chunk.value || new Uint8Array(), { stream: !done });
-      let nl;
-      while ((nl = buf.indexOf("\n")) >= 0) {
-        const ev = JSON.parse(buf.slice(0, nl)); buf = buf.slice(nl + 1);
-        if (ev.stage === "error") throw new Error(ev.message);
-        if (ev.stage === "stopped") {
-          stopped = true;
-          setState("info", "STOPPED", `${stoppedMsg[ev.after]} The sheet still shows the previous run.`);
-          $("steps").querySelectorAll("li").forEach((li) => (li.className = ""));
-        } else if (ev.stage === "complete") {
-          const res = { ...ev.result, at: Date.now() };
-          renderResult(res, { animate: true }); showResultState(res, false);
-          store.set("history", [res, ...history()].slice(0, 20)); store.set("hasRun", true);
-          if (!$("hero").hidden) syncHero();
-          relayout();
-        } else { setStage(ev.stage); setState("info", "RUNNING", msgs[ev.stage]); }
-      }
-    }
-    $("warm").textContent = "weights warm";
-  } catch (err) {
-    setState("err", "ERROR", String(err.message || err));
-    $("steps").querySelectorAll("li").forEach((li) => (li.className = ""));
-  } finally {
-    clearInterval(timer); setRunning(false);
-    if (stopped) $("meta").textContent = `stopped at ${$("meta").textContent}`;
-    else if (S.result && $("state").classList.contains("err") === false) $("meta").textContent = `${S.result.seconds} s · 2 × ${Math.max(S.result.baseline.tokens, S.result.steered.tokens)} tokens`;
-  }
-});
-
 /* ---------- boot ---------- */
+function applyState(st) {
+  S.state = st; S.model = st.active_model;
+  S.limits = { layers: st.layers, neurons: st.neurons, dose_min: st.dose_min, dose_max: st.dose_max, max_rows: st.max_rows };
+  K.draw();
+}
+function update() { renderShelf(); renderSentence(); renderTree(); renderKnob(); }
+// Seed the browser's experiments with the recorded example (and sweep) once, so the tree is not empty on first visit.
+async function seedRecorded() {
+  if (store.get("seeded", false)) return;
+  const ex = await fetch("example.json").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const sw = await fetch("sweep.json").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (ex) addResult({ ...ex });
+  if (sw) for (const r of sw.runs) addResult({ model_id: sw.model_id, prompt: sw.prompt, rows: r.rows, baseline: sw.baseline, steered: { text: r.text, tokens: r.tokens }, split: r.split, seconds: r.seconds, recipe: "", post: "" });
+  store.set("seeded", true);
+}
 await document.fonts.ready;
-const example = await fetch("example.json").then((r) => r.json()).catch(() => null);
-S.example = example;
+K.draw();
 try {
-  const r = await fetch("api/state");
-  if (!r.ok) throw new Error();
+  const r = await fetch("api/state"); if (!r.ok) throw new Error();
   applyState(await r.json()); S.api = true;
-} catch {
-  S.api = false;
-  const o = document.createElement("option"); o.textContent = example ? example.model_id.split("/").pop() : "Qwen3.5-4B"; $("model").append(o);
-  $("model").disabled = true; $("warm").textContent = "server offline";
-}
-const last = history()[0];
-const seedRes = last || example;
-if (seedRes) {
-  $("prompt").value = seedRes.prompt;
-  S.rows = seedRes.rows.map((r) => ({ layer: r.layer, neuron: r.neuron, dose: r.dose }));
-  renderRows(); validate(false);
-  renderResult(seedRes, { animate: true }); showResultState(seedRes, !last);
-} else {
-  S.rows = (S.state ? S.state.preset_rows : [{ layer: 0, neuron: 0, dose: 0 }]).map((r) => ({ ...r })); renderRows();
-}
-if (!S.api) setState("err", "OFFLINE", "Showing the recorded example. Start the server with: uv run python server.py");
-syncHero();
+} catch { S.api = false; }
+await seedRecorded();
+const last = Object.values(EXPS).filter((e) => !S.model || e.model === S.model).sort((a, b) => b.at - a.at)[0];
+if (!S.model) S.model = last ? last.model : "Qwen/Qwen3.5-4B";
+$("prompt").value = last ? last.prompt : "";
+const lastRun = last && last.runs.filter((x) => x.split).sort((a, b) => b.at - a.at)[0];
+S.rows = lastRun ? lastRun.rows.map((x) => ({ ...x })) : (S.state ? S.state.preset_rows.map((x) => ({ ...x })) : []);
+if (!S.api) $("runBtn").disabled = true;
+update();
+if (!S.api) setStatus("err", "OFFLINE", "The lobot server is not reachable. The tree shows saved runs. Start the server with: uv run python server.py");
+else if (S.state.no_model) setStatus("warn", "NO WEIGHTS", "The server runs without weights (MODEL_LOBOTOMY_NO_MODEL). Runs return an error.");
 </script>
 </body>
 </html>
