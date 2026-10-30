@@ -66,7 +66,7 @@ Status as of 2026-10-30 (night 1 and day 2). Reports: `reports/<ID>.md`.
 | S1 | Guard hardening and demo guard | Backend agent, then model slot | Both | `specs/S1-guard-hardening.md` | **Done**: 0 misses; storm blocks are real refusal loss (`reports/S1-followup.md`) |
 | P1 | Patch export and install | Backend agent, then model slot | Both | `specs/P1-patch-install.md` | **Partly done**: export + verify pass; install stopped (no llama.cpp/Ollama on the Mac) |
 | C2 | Hostility family (validated judge 1.000) | Backend agent | Model | `reports/day-2-backend.md` | **Done**; its Create was stopped, not run |
-| J1 | Meta-model judge, offline | Backend agent | No-model (network) | `specs/J1-meta-judge.md` | **Next**: step 0, check logprobs (below) |
+| J1 | Meta-model judge, offline | Backend agent | No-model (network) | `specs/J1-meta-judge.md` | **Done**: no logprobs, fallback (a); meta matches local 1.000 / 0.917 (`reports/J1.md`) |
 | U1 | UI: Create, Update, guard, evidence | Claude (UI lead) | UI | `specs/U1-ui-wave1.md` | **Done** |
 | U2 | UI: reader in the inspector, find, lift proof | Claude (UI lead) | UI | `specs/U2-ui-reader.md` | **Done** |
 | U3 | UI: read dials on the tree | Claude (UI lead) | UI | `specs/U3-ui-dials.md` | **Done** |

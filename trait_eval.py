@@ -22,9 +22,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import re
 import statistics
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import torch
@@ -205,6 +209,154 @@ def judge_score(model, tok, spec, question: str, response: str,
     with torch.no_grad():
         logits = model(ids).logits[0, -1].float()
     return torch.softmax(logits[[y, n]], dim=0)[0].item()
+
+
+# -- judges (J1) ---------------------------------------------------------------
+
+META_API_URL = "https://api.meta.ai/v1/responses"
+META_JUDGE_MODEL_DEFAULT = "muse-spark-1.3"
+
+
+class MetaApiError(Exception):
+    """The Meta judge API call failed. Never carries the API key."""
+
+
+def judge_info(kind: str, model: str, agreement) -> dict:
+    """The report judge block. Agreement is None when not measured."""
+    return {"kind": kind, "model": model, "agreement": agreement}
+
+
+class Judge:
+    """Scores a reply against a rubric. score() is float in [0, 1]."""
+
+    kind = "?"
+
+    def score(self, question: str, reply: str, rubric: str) -> float:
+        raise NotImplementedError
+
+
+class LocalJudge(Judge):
+    """The frozen local judge: judge_score with bound model pieces."""
+
+    kind = "local"
+
+    def __init__(self, model, tok, spec):
+        self.model = model
+        self.tok = tok
+        self.spec = spec
+
+    def score(self, question: str, reply: str, rubric: str) -> float:
+        return judge_score(self.model, self.tok, self.spec,
+                           question, reply, rubric)
+
+
+_VOTE_RE = re.compile(r"\byes\b|\bno\b")
+
+
+def _parse_vote(text: str):
+    """First Yes/No word wins; None when the sample abstains."""
+    m = _VOTE_RE.search(text.lower())
+    if m is None:
+        return None
+    return m.group(0) == "yes"
+
+
+class MetaApiJudge(Judge):
+    """Judge served by the Meta model API (offline scoring only).
+
+    Step 0 found no usable log-probabilities: the API refuses logprobs
+    when reasoning is on, and reasoning cannot be off for this model.
+    So score() samples the same question n_samples times at
+    temperature 1 and returns the share of Yes (fallback (a)). A sample
+    with no Yes/No word is retried; lasting abstains count 0.5.
+
+    Key from META_API_KEY, model from LOBOT_JUDGE_MODEL. Retries
+    429/5xx and network errors with backoff, then raises MetaApiError.
+    The key never appears in errors, repr, logs, or reports.
+    """
+
+    kind = "meta_api"
+
+    def __init__(self, key=None, model=None, n_samples=10,
+                 temperature=1.0, reasoning_effort="low",
+                 timeout=180, max_retries=3, backoff=1.0):
+        key = key if key is not None else os.environ.get("META_API_KEY", "")
+        if not key.strip():
+            raise MetaApiError("META_API_KEY is not set")
+        self._key = key.strip()
+        model = model if model is not None else os.environ.get(
+            "LOBOT_JUDGE_MODEL", "")
+        self.model = model.strip() or META_JUDGE_MODEL_DEFAULT
+        self.n_samples = n_samples
+        self.temperature = temperature
+        self.reasoning_effort = reasoning_effort
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.backoff = backoff
+        self.usage = {"input_tokens": 0, "output_tokens": 0, "calls": 0}
+
+    def __repr__(self):
+        return (f"MetaApiJudge(model={self.model!r}, "
+                f"n_samples={self.n_samples})")
+
+    def score(self, question: str, reply: str, rubric: str) -> float:
+        if refusal_gate(reply):
+            return 0.0
+        prompt = judge_prompt(question, reply, rubric)
+        votes, attempts = [], 0
+        while len(votes) < self.n_samples and attempts < 3 * self.n_samples:
+            attempts += 1
+            vote = _parse_vote(self._complete(prompt))
+            if vote is not None:
+                votes.append(1.0 if vote else 0.0)
+        votes += [0.5] * (self.n_samples - len(votes))
+        return sum(votes) / len(votes)
+
+    def _complete(self, prompt: str) -> str:
+        body = json.dumps({
+            "model": self.model, "input": prompt,
+            "temperature": self.temperature,
+            "reasoning": {"effort": self.reasoning_effort},
+        }).encode("utf-8")
+        last = "no attempt"
+        for attempt in range(self.max_retries + 1):
+            try:
+                req = urllib.request.Request(
+                    META_API_URL, data=body,
+                    headers={"Authorization": "Bearer " + self._key,
+                             "Content-Type": "application/json"},
+                    method="POST")
+                with urllib.request.urlopen(req,
+                                            timeout=self.timeout) as resp:
+                    payload = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                detail = e.read().decode("utf-8", "replace")[:200]
+                last = f"HTTP {e.code}: {detail}"
+                if e.code != 429 and e.code < 500:
+                    raise MetaApiError(last) from None
+            except (urllib.error.URLError, TimeoutError) as e:
+                last = f"{type(e).__name__}: {e}"
+            else:
+                return self._output_text(payload)
+            if attempt < self.max_retries:
+                time.sleep(self.backoff * 2 ** attempt)
+        raise MetaApiError(f"meta judge failed after "
+                           f"{self.max_retries + 1} tries: {last}")
+
+    def _output_text(self, payload: dict) -> str:
+        use = payload.get("usage", {}) or {}
+        self.usage["input_tokens"] += use.get("input_tokens", 0)
+        self.usage["output_tokens"] += use.get("output_tokens", 0)
+        self.usage["calls"] += 1
+        if payload.get("status") != "completed":
+            raise MetaApiError(f"response status: {payload.get('status')}")
+        for item in payload.get("output", []) or []:
+            if item.get("type") != "message":
+                continue
+            for part in item.get("content", []) or []:
+                if part.get("type") == "output_text":
+                    return part.get("text", "")
+        raise MetaApiError("response had no output text")
 
 
 def _vec_edit(layer, unit, med, dose):
@@ -481,6 +633,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         spike.median_norms(eng.model, eng.tokenizer, spec, ext[:10]))}
     out = {"trait": trait_name, "seed": seed,
            "fingerprint": eng.fingerprint(),
+           "judge": judge_info("local", model_id, None),
            "splits": {"extraction": ext, "tuning": tun, "final": fin,
                       "reserve": splits.reserve}}
 
