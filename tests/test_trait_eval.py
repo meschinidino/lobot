@@ -148,5 +148,14 @@ class JudgeTemplateTest(unittest.TestCase):
         self.assertEqual(calls, [])
 
 
+class BaselineCoverageTest(unittest.TestCase):
+    def test_every_behavior_has_six_baselines(self):
+        for name in T.spike.BEHAVIORS:
+            with self.subTest(trait=name):
+                inss = T.BASELINE_INSTRUCTIONS[name]
+                self.assertEqual(len(inss), 6)
+                self.assertTrue(all(s.strip() for s in inss))
+
+
 if __name__ == "__main__":
     unittest.main()

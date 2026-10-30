@@ -19,4 +19,10 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-30 00:45 ET  backend  smoke  meta-llama/Llama-3.2-3B-Instruct  start  live + replay UI smoke test
 2026-10-30 00:57 ET  backend  smoke  meta-llama/Llama-3.2-3B-Instruct  end  proof line live, 6 live + 1 replay findings
 2026-10-30 09:22 ET  backend  S1fu  meta-llama/Llama-3.2-3B-Instruct  start  storm-neuron flip analysis
-2026-10-30 09:52 ET  backend  S1fu  meta-llama/Llama-3.2-3B-Instruct  end  real refusal loss, no rule change
+2026-10-30 09:27 ET  backend  S1fu  meta-llama/Llama-3.2-3B-Instruct  end  real refusal loss, no rule change
+2026-10-30 09:27 ET  backend  C2  meta-llama/Llama-3.2-3B-Instruct  start  hostility judge validation
+2026-10-30 09:28 ET  backend  C2  meta-llama/Llama-3.2-3B-Instruct  end  hostility validated 1.000 (12/12)
+2026-10-30 09:29 ET  backend  C2  meta-llama/Llama-3.2-3B-Instruct  start  hostility Create attempt 1 (run_trait seed 0)
+2026-10-30 10:01 ET  backend  C2  meta-llama/Llama-3.2-3B-Instruct  end  attempt 1 KeyError BASELINE_INSTRUCTIONS (fixed, +fail-fast +coverage test)
+2026-10-30 10:03 ET  backend  C2  meta-llama/Llama-3.2-3B-Instruct  start  hostility Create attempt 2 (run_trait seed 0)
+2026-10-30 10:21 ET  backend  C2  -  end  attempt 2 stopped per user; Prove beat keeps pirate, no second Create
