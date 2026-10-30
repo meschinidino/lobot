@@ -313,7 +313,7 @@ function addResult(res) {
 function renderShelf() {
   const models = S.state ? S.state.models : [{ id: S.model || "Qwen/Qwen3.5-4B", short: (S.model || "Qwen3.5-4B").split("/").pop() }];
   $("models").innerHTML = models.map((m) => {
-    const cur = m.id === S.model, st = !S.api ? "server offline" : cur ? (S.state.no_model ? "no weights" : S.state.warm ? "warm" : "loads on run") : m.gated ? "gated" : "on disk";
+    const cur = m.id === S.model, st = !S.api ? "server offline" : S.state.replay ? "replay" : cur ? (S.state.no_model ? "no weights" : S.state.warm ? "warm" : "loads on run") : m.gated ? "gated" : "on disk";
     return `<button class="model" type="button" data-model="${esc(m.id)}" title="Switching reloads weights." aria-current="${cur}" ${!S.api || S.running ? 'aria-disabled="true"' : ""}><b>${esc(m.id.split("/").pop())}</b><span class="meta">${st}</span></button>`;
   }).join("");
   const list = Object.values(EXPS).filter((e) => e.model === S.model).sort((a, b) => b.at - a.at);
@@ -648,6 +648,7 @@ S.rows = lastRun ? lastRun.rows.map((x) => ({ ...x })) : (S.state ? S.state.pres
 if (!S.api) $("runBtn").disabled = true;
 update();
 if (!S.api) setStatus("err", "OFFLINE", "The lobot server is not reachable. The tree shows saved runs. Start the server with: uv run python server.py");
+else if (S.state.replay) setStatus("info", "REPLAY", "Replay mode: no weights are loaded. Run answers only setups that were recorded.");
 else if (S.state.no_model) setStatus("warn", "NO WEIGHTS", "The server runs without weights (MODEL_LOBOTOMY_NO_MODEL). Runs return an error.");
 </script>
 </body>

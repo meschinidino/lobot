@@ -30,7 +30,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 import app as engine
@@ -40,6 +39,10 @@ from steer import RecipeRow
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
 NO_MODEL = bool(os.environ.get("MODEL_LOBOTOMY_NO_MODEL"))
+# Replay mode loads no weights: /api/run answers only setups that were
+# recorded (web/example.json, web/sweep.json) and refuses everything else.
+REPLAY = bool(os.environ.get("MODEL_LOBOTOMY_REPLAY"))
+REPLAY_STAGE_S = float(os.environ.get("MODEL_LOBOTOMY_REPLAY_STAGE_S", "0.4"))
 # Set by /api/stop; cleared by /api/run before the stream starts, so a Stop
 # that lands before the stream takes the lock still stops that run.
 _cancel = threading.Event()
@@ -47,23 +50,42 @@ _cancel = threading.Event()
 api = FastAPI(title="lobot", docs_url=None, redoc_url=None)
 
 
-class SameOriginOnly(BaseHTTPMiddleware):
-    """Reject cross-origin POSTs (CSRF-lite for a local-only server).
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
-    Compares the Origin header against the request's own origin
-    (scheme://host). Requests without an Origin header (curl, direct
-    navigation, TestClient default) stay allowed.
+
+def _hostname(host: str) -> str:
+    """'127.0.0.1:7860' -> '127.0.0.1'; '[::1]:7860' -> '::1'."""
+    host = host.strip().lower()
+    if host.startswith("["):
+        return host[1:host.find("]")]
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+class SameOriginOnly:
+    """Reject cross-origin POSTs from browsers (D5), DNS rebinding included.
+
+    A browser POST carries Origin. It passes only when Origin equals the
+    server's own scheme://host and that host is a loopback name: a rebound
+    domain (evil.example resolving to 127.0.0.1) matches itself, so the
+    loopback check is what stops it. Requests without Origin (curl, tests)
+    pass. Plain ASGI, so streamed runs and Stop pass through untouched.
     """
 
-    async def dispatch(self, request, call_next):
-        if request.method == "POST":
-            origin = request.headers.get("origin")
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["method"] == "POST":
+            headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
+            origin = headers.get("origin")
             if origin is not None:
-                own = f"{request.url.scheme}://{request.headers.get('host', '')}"
-                if origin.strip().lower().rstrip("/") != own.lower().rstrip("/"):
-                    return JSONResponse({"detail": "Cross-origin POST rejected."},
-                                        status_code=403)
-        return await call_next(request)
+                host = headers.get("host", "")
+                own = f"{scope.get('scheme', 'http')}://{host}".lower().rstrip("/")
+                if origin.strip().lower().rstrip("/") != own or _hostname(host) not in LOOPBACK_HOSTS:
+                    response = JSONResponse({"detail": "Cross-origin POST rejected."}, status_code=403)
+                    await response(scope, receive, send)
+                    return
+        await self.app(scope, receive, send)
 
 
 api.add_middleware(SameOriginOnly)
@@ -91,6 +113,7 @@ def _state() -> dict:
         "active_model": engine._active_model_id,
         "warm": engine._model is not None and engine._model_id == engine._active_model_id,
         "no_model": NO_MODEL,
+        "replay": REPLAY,
         "models": [{"id": mid, "short": steer.model_short_name(mid),
                     "gated": "meta-llama" in mid} for mid in sorted(engine._PRESETS)],
         "layers": spec.layers,
@@ -101,6 +124,53 @@ def _state() -> dict:
         "max_new_tokens": int(preset["decode"]["max_new_tokens"]),
         "preset_rows": list(preset["rows"]),
     }
+
+
+def _recordings() -> list[dict]:
+    """Every recorded run as a /api/run result: example.json, then sweep.json."""
+    out = []
+    ex_path, sw_path = WEB / "example.json", WEB / "sweep.json"
+    if ex_path.exists():
+        ex = json.loads(ex_path.read_text())
+        out.append({k: ex[k] for k in ("model_id", "prompt", "rows", "baseline", "steered",
+                                       "split", "seconds", "recipe", "post")})
+    if sw_path.exists():
+        sw = json.loads(sw_path.read_text())
+        for r in sw["runs"]:
+            out.append({"model_id": sw["model_id"], "prompt": sw["prompt"], "rows": r["rows"],
+                        "baseline": sw["baseline"],
+                        "steered": {"text": r["text"], "tokens": r["tokens"]},
+                        "split": r["split"], "seconds": r["seconds"],
+                        "recipe": r.get("recipe", ""), "post": r.get("post", "")})
+    return out
+
+
+def _same_rows(a: list[dict], b: list[dict]) -> bool:
+    key = lambda rows: sorted((r["layer"], r["neuron"], round(float(r["dose"]), 4)) for r in rows)
+    return key(a) == key(b)
+
+
+def _find_recording(model_id: str, prompt: str, rows: list[dict]) -> dict | None:
+    for rec in _recordings():
+        if rec["model_id"] == model_id and rec["prompt"].strip() == prompt and _same_rows(rec["rows"], rows):
+            return rec
+    return None
+
+
+def _replay_stream(rec: dict):
+    """Same stage events as _run_stream, from a recording, with Stop. Holds the run lock."""
+    if not engine._run_lock.acquire(blocking=False):
+        yield _event(stage="error", message="A run is in progress. Wait for it to finish.")
+        return
+    try:
+        for stage in ("weights", "baseline", "steered"):
+            yield _event(stage=stage)
+            if _cancel.wait(REPLAY_STAGE_S):
+                yield _event(stage="stopped", after=stage)
+                return
+        yield _event(stage="complete", result={**rec, "cache_hit": True, "replay": True})
+    finally:
+        engine._run_lock.release()
 
 
 def _split_char(tok, text: str, ids: list[int], div: int, other: str) -> int:
@@ -144,6 +214,16 @@ def run(req: RunRequest):
         steer.validate_recipe(rows, spec)
     except ValueError as e:
         raise HTTPException(400, f"Invalid row: {e}.") from None
+    if REPLAY:
+        rec = _find_recording(engine._active_model_id, prompt, [r.model_dump() for r in req.rows])
+        if rec is None:
+            raise HTTPException(404, "Replay mode answers only recorded setups, and this one was "
+                                     "not recorded. Record it with scripts/record_sweep.py, or "
+                                     "restart without MODEL_LOBOTOMY_REPLAY to run the model.")
+        if engine._run_lock.locked():
+            raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+        _cancel.clear()
+        return StreamingResponse(_replay_stream(rec), media_type="application/x-ndjson")
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
@@ -259,7 +339,10 @@ api.mount("/", StaticFiles(directory=WEB, html=True), name="web")
 
 
 if __name__ == "__main__":
-    if NO_MODEL:
+    if REPLAY:
+        print(f"[server] REPLAY set: no weights; {len(_recordings())} recorded runs "
+              "answer /api/run", flush=True)
+    elif NO_MODEL:
         print("[server] NO_MODEL set: serving the UI without weights", flush=True)
     else:
         engine.load_engine()

@@ -160,6 +160,53 @@ class ServerStreamTest(unittest.TestCase):
         self.assertEqual(r.status_code, 503)
 
 
+class ReplayModeTest(unittest.TestCase):
+    """Replay mode answers recorded setups only, with the run contract and no weights."""
+
+    def setUp(self):
+        self.ex = json.loads((ROOT / "web" / "example.json").read_text())
+        self.patches = [mock.patch.object(server, "REPLAY", True),
+                        mock.patch.object(server, "REPLAY_STAGE_S", 0.0),
+                        mock.patch.object(app, "load_engine", side_effect=AssertionError("weights loaded")),
+                        mock.patch.object(app, "_active_model_id", self.ex["model_id"])]
+        for p in self.patches:
+            p.start()
+        self.client = TestClient(server.api)
+
+    def tearDown(self):
+        for p in reversed(self.patches):
+            p.stop()
+        server._cancel.clear()
+
+    def test_recorded_setup_replays_with_the_run_contract(self):
+        rows = list(reversed(self.ex["rows"]))  # row order does not matter
+        r = self.client.post("/api/run", json={"prompt": self.ex["prompt"] + " ", "rows": rows})
+        self.assertEqual(r.status_code, 200, r.text)
+        ev = [json.loads(line) for line in r.text.splitlines() if line]
+        self.assertEqual([e["stage"] for e in ev], ["weights", "baseline", "steered", "complete"])
+        res = ev[-1]["result"]
+        self.assertTrue(res["replay"])
+        self.assertEqual(res["steered"]["text"], self.ex["steered"]["text"])
+        self.assertEqual(res["split"], self.ex["split"])
+        self.assertFalse(app._run_lock.locked())
+
+    def test_unrecorded_setup_is_refused(self):
+        rows = [{**self.ex["rows"][0], "dose": 0.5}]
+        r = self.client.post("/api/run", json={"prompt": self.ex["prompt"], "rows": rows})
+        self.assertEqual(r.status_code, 404)
+        self.assertIn("not recorded", r.json()["detail"])
+
+    def test_stop_during_replay_stops_and_releases_lock(self):
+        server._cancel.set()
+        gen = server._replay_stream(server._recordings()[0])
+        events = [json.loads(b) for b in gen]
+        self.assertEqual(events[-1], {"stage": "stopped", "after": "weights"})
+        self.assertFalse(app._run_lock.locked())
+
+    def test_state_reports_replay(self):
+        self.assertTrue(self.client.get("/api/state").json()["replay"])
+
+
 class CancelCriteriaTest(unittest.TestCase):
     def test_flags_every_row_once_event_is_set(self):
         ev = threading.Event()
@@ -180,19 +227,18 @@ class ServerStaticTest(unittest.TestCase):
 
 
 class SameOriginTest(unittest.TestCase):
-    """SameOriginOnly: cross-origin POST -> 403; same/missing Origin pass."""
+    """SameOriginOnly (D5): cross-origin and DNS-rebound POSTs -> 403; same-origin loopback and no-Origin pass."""
 
     def setUp(self):
-        self.client = TestClient(server.api)
+        self.client = TestClient(server.api, base_url="http://127.0.0.1:7860")
         self._active = app._active_model_id
 
     def tearDown(self):
         app._active_model_id = self._active
 
-    def _switch(self, headers=None):
-        return self.client.post("/api/model",
-                                json={"model_id": "Qwen/Qwen3.5-4B"},
-                                headers=headers or {})
+    def _switch(self, headers=None, client=None):
+        return (client or self.client).post("/api/model", json={"model_id": "Qwen/Qwen3.5-4B"},
+                                            headers=headers or {})
 
     def test_cross_origin_rejected(self):
         r = self._switch({"Origin": "http://evil.test"})
@@ -200,12 +246,27 @@ class SameOriginTest(unittest.TestCase):
         self.assertIn("Cross-origin", r.json()["detail"])
 
     def test_same_origin_allowed(self):
-        r = self._switch({"Origin": "http://testserver"})
+        r = self._switch({"Origin": "http://127.0.0.1:7860"})
         self.assertEqual(r.status_code, 200, r.text)
+
+    def test_ipv6_loopback_allowed(self):
+        c = TestClient(server.api, base_url="http://[::1]:7860")
+        self.assertEqual(self._switch({"Origin": "http://[::1]:7860"}, c).status_code, 200)
+
+    def test_dns_rebinding_rejected(self):
+        # A hostile domain re-pointed at 127.0.0.1: Origin and Host match each other, but not loopback.
+        c = TestClient(server.api, base_url="http://evil.example:7860")
+        r = self._switch({"Origin": "http://evil.example:7860"}, c)
+        self.assertEqual(r.status_code, 403, r.text)
 
     def test_missing_origin_allowed(self):
         r = self._switch()
         self.assertEqual(r.status_code, 200, r.text)
+
+    def test_hostname_parsing(self):
+        self.assertEqual(server._hostname("127.0.0.1:7860"), "127.0.0.1")
+        self.assertEqual(server._hostname("[::1]:7860"), "::1")
+        self.assertEqual(server._hostname("LocalHost"), "localhost")
 
 
 if __name__ == "__main__":

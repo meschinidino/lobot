@@ -96,17 +96,22 @@ def main() -> int:
             "base_char": _split_char(tok, base["text"], base["token_ids"], div, out["text"]),
             "steered_char": _split_char(tok, out["text"], out["token_ids"], div, base["text"]),
         }
+        kw = dict(rows=scaled, calib_id=cal_info["key"]["prompts_sha256"], max_new_tokens=max_new,
+                  seed=engine.SEED, calib_prompts=calib_prompts, model_id=args.model)
         runs.append({
             "scale": s,
             "rows": [{"layer": r.layer, "neuron": r.neuron, "dose": r.dose} for r in scaled],
             "text": out["text"], "tokens": out["new_tokens"], "split": split,
             "seconds": round(time.perf_counter() - t0, 1),
+            "recipe": steer.recipe_string(**kw),
+            "post": steer.build_post_text(base=base, steered=out, **kw),
         })
         print(f"[sweep] x{s:+}: split at token {div}, {out['new_tokens']} tokens", flush=True)
 
     result = {
         "model_id": args.model, "prompt": prompt, "seed": engine.SEED,
         "max_new_tokens": max_new, "calib_id": cal_info["key"]["prompts_sha256"],
+        "calib_prompts": calib_prompts,
         "rows": [{"layer": r.layer, "neuron": r.neuron, "dose": r.dose} for r in rows],
         "baseline": {"text": base["text"], "tokens": base["new_tokens"]},
         "runs": runs, "seconds": round(time.perf_counter() - t_all, 1),

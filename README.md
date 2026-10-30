@@ -34,7 +34,18 @@ Then open `http://127.0.0.1:7860`. Set `PORT` to use another port.
 
 The first visit shows a recorded run (`web/example.json`, plus
 `web/sweep.json` if you recorded one), so the page explains itself before the
-weights load. Experiments are saved in your browser, per model and prompt. The older Gradio UI still works:
+weights load. Experiments are saved in your browser, per model and prompt.
+
+To try the UI without loading any weights (for example when RAM is busy),
+use replay mode. Run answers only setups that were recorded and refuses the
+rest:
+
+```sh
+MODEL_LOBOTOMY_REPLAY=1 uv run python server.py
+```
+
+To record more setups, run `uv run python scripts/record_sweep.py` once with
+the model loaded; it writes `web/sweep.json` (one prompt, several doses). The older Gradio UI still works:
 `uv run python app.py`.
 
 First run downloads about 9 GB of Qwen weights once. Later runs reuse the cache.

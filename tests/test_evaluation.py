@@ -157,6 +157,14 @@ class LedgerTest(unittest.TestCase):
         # Another candidate starts fresh from the same pool.
         self.assertEqual(led.reserve_for_retry("c2", pool, 3), pool)
 
+    def test_candidates_tried_counts_frozen_versions(self):
+        led = E.FinalSplitLedger()
+        self.assertEqual(led.candidates_tried(), {})
+        for dose in (1.0, 0.5):
+            led.record_final("c1", instructions="do X", layer=11, dose=dose, prompts=["a"])
+        led.record_final("c2", instructions="do Y", layer=9, dose=1.0, prompts=["a"])
+        self.assertEqual(led.candidates_tried(), {"c1": 2, "c2": 1})
+
 
 if __name__ == "__main__":
     unittest.main()
