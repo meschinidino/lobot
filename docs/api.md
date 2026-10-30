@@ -58,7 +58,7 @@ ship without `dial`. Unknown trait: `error` event (create it first).
 
 Replay mode (`MODEL_LOBOTOMY_REPLAY=1`) loads no weights. `/api/run`
 answers only setups recorded in `web/example.json` and `web/sweep*.json`
-(same model, prompt and rows, in any order) with the same stage events
+(same model, prompt and rows, in any order; a setup with every dose at 0 plays any recording of that prompt as its baseline) with the same stage events
 and Stop, plus `replay: true` in the result; any other setup gets 404.
 `/api/state` reports `replay`.
 

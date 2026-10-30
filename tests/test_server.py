@@ -339,6 +339,15 @@ class ReplayModeTest(unittest.TestCase):
         self.assertEqual(res["split"], self.ex["split"])
         self.assertFalse(server.get_engine().lock.locked())
 
+    def test_dose_zero_replays_the_baseline(self):
+        rows = [{**self.ex["rows"][0], "dose": 0}]
+        r = self.client.post("/api/run", json={"prompt": self.ex["prompt"], "rows": rows})
+        self.assertEqual(r.status_code, 200, r.text)
+        res = [json.loads(line) for line in r.text.splitlines() if line][-1]["result"]
+        self.assertEqual(res["steered"]["text"], self.ex["baseline"]["text"])
+        self.assertIsNone(res["split"])
+        self.assertEqual(res["rows"], rows)
+
     def test_unrecorded_setup_is_refused(self):
         rows = [{**self.ex["rows"][0], "dose": 0.5}]
         r = self.client.post("/api/run", json={"prompt": self.ex["prompt"], "rows": rows})
