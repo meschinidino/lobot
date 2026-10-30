@@ -160,6 +160,34 @@ rows, calibration id, template, token budget, decode settings, dtype,
 device, and calibration prompts. Read the grammar in
 [presets/README.md](presets/README.md).
 
+## Share a patch
+
+Each Create job writes `knob.lobot`: the direction, the dose, the
+report card, and the guard result. The file also carries hashes of
+its evidence and members, so anyone can tell if it changed. Load it
+with `patch.load_patch`. A hash mismatch raises `PatchRejected`.
+Old patches without hashes still load, flagged `unverified`.
+
+Install a patch into llama.cpp:
+
+```sh
+uv run python scripts/install_patch.py jobs/<id>/trait/knob.lobot --target llamacpp --out out/
+# prints the exact llama-cli flags (--control-vector-scaled ... --control-vector-layer-range L L)
+```
+
+`--target ollama` probes the installed Ollama for control-vector
+support. When the probe finds none (or Ollama is not installed),
+it says so plainly and exits 2. It writes a `Modelfile` snippet
+only when the installed binary shows support.
+
+Re-run the shipped evidence on your own machine:
+
+```sh
+uv run python scripts/verify_patch.py jobs/<id>/trait/knob.lobot --quick
+# loads the model named in the patch, re-runs 16 held-out prompts,
+# prints shipped vs measured effect with PASS or FAIL
+```
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
