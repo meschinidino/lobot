@@ -17,7 +17,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import trait_eval as T  # noqa: E402
+from model_lobotomy import trait_eval as T  # noqa: E402
 
 import torch  # noqa: E402
 
@@ -232,7 +232,7 @@ class ValidateScriptTest(unittest.TestCase):
                    "--judge", "meta_api", "--workdir", tmp]
             with mock.patch.object(sys, "argv", argv), \
                     mock.patch.object(T, "MetaApiJudge", FakeJudge), \
-                    mock.patch("trait_store.TraitStore") as store_cls:
+                    mock.patch("model_lobotomy.trait_store.TraitStore") as store_cls:
                 rc = self.V.main()
             report = json.loads(Path(tmp, "report.json").read_text())
         self.assertEqual(rc, 0)
@@ -252,11 +252,11 @@ class ValidateScriptTest(unittest.TestCase):
             argv = ["validate_judge.py", "--trait", "hostility",
                    "--workdir", tmp]
             with mock.patch.object(sys, "argv", argv), \
-                    mock.patch("engine.Engine",
+                    mock.patch("model_lobotomy.engine.Engine",
                                return_value=eng), \
                     mock.patch.object(T, "judge_score",
                                        side_effect=[0.9, 0.1] * 6), \
-                    mock.patch("trait_store.TraitStore") as store_cls:
+                    mock.patch("model_lobotomy.trait_store.TraitStore") as store_cls:
                 rc = self.V.main()
             report = json.loads(Path(tmp, "report.json").read_text())
         self.assertEqual(rc, 0)

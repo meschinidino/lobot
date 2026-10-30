@@ -15,8 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import steer  # noqa: E402
-from steer import RecipeRow  # noqa: E402
+from model_lobotomy import steer  # noqa: E402
+from model_lobotomy.steer import RecipeRow  # noqa: E402
 
 PRESET_PATH = ROOT / "presets" / "evil-qwen.json"
 
@@ -79,37 +79,37 @@ class UiInputValidationTest(unittest.TestCase):
     """run_loop early returns: all fire before the lock/model load."""
 
     def test_empty_prompt_rejected(self):
-        import app
+        from model_lobotomy import app
         status, *_ = app.run_loop("", 1, 14, 8949, 1.0)
         self.assertTrue(status.startswith("Empty prompt"), status)
 
     def test_whitespace_prompt_rejected(self):
-        import app
+        from model_lobotomy import app
         status, *_ = app.run_loop("   ", 1, 14, 8949, 1.0)
         self.assertTrue(status.startswith("Empty prompt"), status)
 
     def test_non_numeric_row_rejected(self):
-        import app
+        from model_lobotomy import app
         status, *_ = app.run_loop("hi", 1, "x", 8949, 1.0)
         self.assertTrue(status.startswith("Invalid row"), status)
 
     def test_empty_recipe_rejected(self):
-        import app
+        from model_lobotomy import app
         status, *_ = app.run_loop("hi", 0)
         self.assertTrue(status.startswith("Empty recipe"), status)
 
     def test_out_of_bounds_row_rejected(self):
-        import app
+        from model_lobotomy import app
         status, *_ = app.run_loop("hi", 1, 99, 0, 1.0)
         self.assertTrue(status.startswith("Invalid row"), status)
 
     def test_huge_dose_rejected(self):
-        import app
+        from model_lobotomy import app
         status, *_ = app.run_loop("hi", 1, 14, 8949, 99.0)
         self.assertIn("out of bounds", status)
 
     def test_copy_before_run_is_empty_safe(self):
-        import app
+        from model_lobotomy import app
         # No successful run happens in the unit suite, so the box stays empty.
         if not app._last_artifact:
             self.assertEqual(app.copy_artifact(), "Run first: no artifact yet.")

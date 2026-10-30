@@ -18,9 +18,9 @@ from fastapi.testclient import TestClient
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import create_job  # noqa: E402
-import patch as patch_mod  # noqa: E402
-import server  # noqa: E402
+from model_lobotomy import create_job  # noqa: E402
+from model_lobotomy import patch as patch_mod  # noqa: E402
+from model_lobotomy import server  # noqa: E402
 
 MODEL_A = "Qwen/Qwen3.5-4B"
 MODEL_B = "meta-llama/Llama-3.2-3B-Instruct"

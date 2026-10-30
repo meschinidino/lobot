@@ -53,21 +53,21 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.responses import FileResponse, JSONResponse
 
-import app as engine
-import create_job
-import guard as guard_mod
-import steer
-import trait_eval
-import trait_store
-from engine import EMPTY_EDITS, EditSet, Read, VectorEdit, apply_edits, get_engine
-from steer import RecipeRow
+from model_lobotomy import app as engine
+from model_lobotomy import create_job
+from model_lobotomy import guard as guard_mod
+from model_lobotomy import steer
+from model_lobotomy import trait_eval
+from model_lobotomy import trait_store
+from model_lobotomy.engine import EMPTY_EDITS, EditSet, Read, VectorEdit, apply_edits, get_engine
+from model_lobotomy.steer import RecipeRow
 
 try:
-    import reader
+    from model_lobotomy import reader
 except ImportError:
     reader = None
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 WEB = ROOT / "web"
 NO_MODEL = bool(os.environ.get("MODEL_LOBOTOMY_NO_MODEL"))
 # Replay mode loads no weights: /api/run answers only setups that were

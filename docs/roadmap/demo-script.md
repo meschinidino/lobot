@@ -11,8 +11,8 @@ recordings Muse makes with `scripts/record_sweep.py`.
 3. Clear the experiment for the demo prompt if it holds old runs: open the
    browser console and run `localStorage.clear()`, then reload.
 4. Decide the take:
-   - **Live take** (needs weights): `uv run python server.py`. Every beat works.
-   - **Replay take** (no weights, cannot fail): `MODEL_LOBOTOMY_REPLAY=1 uv run python server.py`. Run with no edit plays the baseline of any recording of the prompt.
+   - **Live take** (needs weights): `uv run python -m model_lobotomy.server`. Every beat works.
+   - **Replay take** (no weights, cannot fail): `MODEL_LOBOTOMY_REPLAY=1 uv run python -m model_lobotomy.server`. Run with no edit plays the baseline of any recording of the prompt.
      Run, the guard block and the share card work from recordings. Clicking a
      word (neuron list) and the lift proof need the model, so record beat 1
      live, or show the neuron card from `store/reader/<slug>/cards.json`.

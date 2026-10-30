@@ -20,8 +20,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import steer
-from steer import RecipeRow
+from model_lobotomy import steer
+from model_lobotomy.steer import RecipeRow
 
 DEFAULT_PRESET = ROOT / "presets" / "evil-qwen.json"
 

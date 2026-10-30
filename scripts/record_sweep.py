@@ -25,11 +25,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import app as engine
-import steer
-from engine import EditSet, Read, get_engine
-from server import _dial_spec, _split_char
-from steer import RecipeRow
+from model_lobotomy import app as engine
+from model_lobotomy import steer
+from model_lobotomy.engine import EditSet, Read, get_engine
+from model_lobotomy.server import _dial_spec, _split_char
+from model_lobotomy.steer import RecipeRow
 
 
 def parse_rows(text: str) -> list[RecipeRow]:

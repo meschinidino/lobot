@@ -22,7 +22,7 @@ import torch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import patch as patch_mod  # noqa: E402
+from model_lobotomy import patch as patch_mod  # noqa: E402
 
 _SPEC_INSTALL = importlib.util.spec_from_file_location(
     "install_patch", ROOT / "scripts" / "install_patch.py")

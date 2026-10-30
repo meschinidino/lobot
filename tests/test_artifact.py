@@ -15,8 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import steer  # noqa: E402
-from steer import RecipeRow  # noqa: E402
+from model_lobotomy import steer  # noqa: E402
+from model_lobotomy.steer import RecipeRow  # noqa: E402
 
 ROWS = [RecipeRow(14, 8949, 1.0), RecipeRow(13, 7956, -1.0)]
 CALIB_ID = "ec6562a7a3e05198"

@@ -43,7 +43,7 @@ You need [`uv`](https://docs.astral.sh/uv/). The repo pins Python 3.12.
 ```sh
 uv python install 3.12
 uv sync
-uv run python server.py
+uv run python -m model_lobotomy.server
 ```
 
 Then open `http://127.0.0.1:7860`. Set `PORT` to use another port.
@@ -57,12 +57,12 @@ use replay mode. Run answers only setups that were recorded and refuses the
 rest:
 
 ```sh
-MODEL_LOBOTOMY_REPLAY=1 uv run python server.py
+MODEL_LOBOTOMY_REPLAY=1 uv run python -m model_lobotomy.server
 ```
 
 To record more setups, run `uv run python scripts/record_sweep.py` once with
 the model loaded; it writes `web/sweep.json` (one prompt, several doses). The older Gradio UI still works:
-`uv run python app.py`.
+`uv run python -m model_lobotomy.app`.
 
 First run downloads about 9 GB of Qwen weights once. Later runs reuse the cache.
 
@@ -75,7 +75,7 @@ uv run python scripts/check_env.py
 To try the UI layout without downloading weights:
 
 ```sh
-MODEL_LOBOTOMY_NO_MODEL=1 uv run python server.py
+MODEL_LOBOTOMY_NO_MODEL=1 uv run python -m model_lobotomy.server
 ```
 
 In this mode the page shows the recorded run. Run experiment returns a clear error.
@@ -133,14 +133,14 @@ human copies and posts the artifact text by hand.
 
 ## Repo layout
 
-- `engine.py` — the Engine: one owner for model state and every hook. Edits (neuron, vector, ablation, read), runs, streaming, capture, `clean()`.
-- `steer.py` — model loading, neuron steering math, calibration, recipe strings.
-- `server.py` — FastAPI server on `http://127.0.0.1:7860`: runs, Stop, Create, Update, click-a-word, chat, replay mode. Routes: [docs/api.md](docs/api.md).
-- `guard.py` — the refusal guard (opt-in until release; research mode records an override).
-- `create_job.py`, `trait_eval.py`, `trait_store.py`, `prompt_bank.py`, `evaluation.py` — Create: contrast prompts, behavior direction, judge, held-out splits and report cards.
-- `patch.py` — `.lobot` patch files and llama.cpp control-vector export.
+- `src/model_lobotomy/engine.py` — the Engine: one owner for model state and every hook. Edits (neuron, vector, ablation, read), runs, streaming, capture, `clean()`.
+- `src/model_lobotomy/steer.py` — model loading, neuron steering math, calibration, recipe strings.
+- `src/model_lobotomy/server.py` — FastAPI server on `http://127.0.0.1:7860`: runs, Stop, Create, Update, click-a-word, chat, replay mode. Routes: [docs/api.md](docs/api.md).
+- `src/model_lobotomy/guard.py` — the refusal guard (opt-in until release; research mode records an override).
+- `src/model_lobotomy/create_job.py`, `src/model_lobotomy/trait_eval.py`, `src/model_lobotomy/trait_store.py`, `src/model_lobotomy/prompt_bank.py`, `src/model_lobotomy/evaluation.py` — Create: contrast prompts, behavior direction, judge, held-out splits and report cards.
+- `src/model_lobotomy/patch.py` — `.lobot` patch files and llama.cpp control-vector export.
 - `web/` — the workbench (`index.html`), the static prototype, fonts, recorded runs (`example.json`, `sweep*.json`). Follows `DESIGN.md`.
-- `app.py` — older Gradio UI.
+- `src/model_lobotomy/app.py` — older Gradio UI.
 - `DESIGN.md` — design system: "the fork" workbench.
 - `docs/roadmap/` — goal, lanes, contracts and one spec per workstream.
 - `docs/plans/lobot-10x-plan.md` — reviewed plan and the binding decisions (D1-D14).
