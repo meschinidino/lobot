@@ -508,7 +508,7 @@ function openPop(anchor, html) {
   const r = anchor.getBoundingClientRect(); pop.style.left = Math.max(8, Math.min(innerWidth - 340, r.left + scrollX)) + "px"; pop.style.top = r.bottom + scrollY + 6 + "px";
   document.body.append(pop); pop.querySelector("input, .opt")?.focus();
 }
-document.addEventListener("click", (e) => { if (pop && !pop.contains(e.target) && !e.target.closest("#addBtn,#readBtn,[data-readsel],[data-focus]")) closePop(); });
+document.addEventListener("click", (e) => { if (pop && e.target.isConnected && !pop.contains(e.target) && !e.target.closest("#addBtn,#readBtn,[data-readsel],[data-focus]")) closePop(); });
 // One form adds or edits a neuron row; it validates against the active model's limits.
 function rowForm(anchor, i) {
   const r = i == null ? { layer: S.rows.at(-1)?.layer ?? 0, neuron: 0, dose: 1 } : S.rows[i], L = S.limits;
@@ -773,7 +773,17 @@ $("findOut").addEventListener("click", (e) => { const b = e.target.closest("[dat
 /* The lift proof (U2): after a run with a neuron the reader described, measure how much it lifted the predicted word. */
 async function proveLift(n) {
   const T = treeRuns(), r = T && T.runs.find((x) => x.n === n); if (!r || !S.api || S.state?.replay) return;
-  const row = r.rows.find((y) => !isB(y) && readerWords[nid(y)]); if (!row) return;
+  // Words the reader predicted: from the Push that added the neuron, else from its card (only when readable).
+  let row = r.rows.find((y) => !isB(y) && readerWords[nid(y)]);
+  if (!row) {
+    for (const y of r.rows.filter((z) => !isB(z))) {
+      const k = `${S.model}|${y.layer}|${y.neuron}`;
+      if (!CARDS[k]) { try { const res = await fetch(`api/neuron/${y.layer}/${y.neuron}?k=12`); if (res.ok) CARDS[k] = await res.json(); } catch { /* no card, no proof */ } }
+      const pt = CARDS[k]?.pushes_toward;
+      if (pt && pt.coherence >= 0.5) { const w = uniq((pt.up || []).map((x) => plainTok(x.token))).slice(0, 3); if (w.length) { readerWords[nid(y)] = w; row = y; break; } }
+    }
+    if (!row) return;
+  }
   const words = readerWords[nid(row)].slice(0, 3);
   try {
     const res = await postJSON("api/lift", { layer: row.layer, neuron: row.neuron, dose: row.dose, words, prompts: null }), b = await res.json();
@@ -984,6 +994,7 @@ function renderGuard() {
   const beh = S.rows.find(isB), job = creating();
   $("fanBtn").hidden = !beh; $("fanBtn").disabled = S.running || !beh || beh.dose === 0;
   $("runBtn").disabled = !S.api || !!job || S.reading > 0;
+  $("findForm").querySelector("button").disabled = !S.api || S.running || S.reading > 0;
   if (S.reading > 0 && !S.running) $("plan").textContent = "Run waits while the model reads the neurons at a word.";
   if (job && !S.running) $("plan").textContent = `Run is off: Create is building ${job.trait}, stage ${STAGES.findIndex(([k]) => k === job.stage) + 1} of 6.`;
 }
