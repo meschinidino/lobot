@@ -58,6 +58,76 @@ class RankTest(unittest.TestCase):
         self.assertEqual(ranked[0][:2], (0, 0))
 
 
+class _TinyBlock(torch.nn.Module):
+    """Residual block shaped like Llama's: MLP up (hidden->intermediate), down back."""
+
+    def __init__(self, hidden, inter):
+        super().__init__()
+        self.mlp = torch.nn.Module()
+        self.mlp.up_proj = torch.nn.Linear(hidden, inter, bias=False)
+        self.mlp.down_proj = torch.nn.Linear(inter, hidden, bias=False)
+
+    def forward(self, x):
+        return x + self.mlp.down_proj(torch.relu(self.mlp.up_proj(x)))
+
+
+class _TinyModel(torch.nn.Module):
+    """model.model.layers[i].mlp.down_proj, the "llama" block path."""
+
+    def __init__(self, layers=2, hidden=4, inter=6, vocab=10):
+        super().__init__()
+        torch.manual_seed(0)
+        self.config = type("Cfg", (), {"hidden_size": hidden, "intermediate_size": inter})()
+        self.model = torch.nn.Module()
+        self.model.embed = torch.nn.Embedding(vocab, hidden)
+        self.model.layers = torch.nn.ModuleList(_TinyBlock(hidden, inter) for _ in range(layers))
+
+    def forward(self, ids):
+        x = self.model.embed(ids)
+        for blk in self.model.layers:
+            x = blk(x)
+        return x
+
+
+class _TinyTok:
+    def apply_chat_template(self, msgs, **_):
+        return msgs[0]["content"]
+
+    def __call__(self, text, return_tensors="pt"):
+        return {"input_ids": torch.tensor([[len(w) % 10 for w in text.split()]])}
+
+
+class CaptureTest(unittest.TestCase):
+    """D9: derive captures MLP neuron activations (down_proj input), not the residual."""
+
+    def setUp(self):
+        self.model, self.tok = _TinyModel(), _TinyTok()
+        self.spec = derive.steer.ModelSpec("tiny", 2, 4, 6, "llama", False)
+        self._device = derive.steer.DEVICE
+        derive.steer.DEVICE = "cpu"
+
+    def tearDown(self):
+        derive.steer.DEVICE = self._device
+
+    def test_capture_is_intermediate_wide_and_matches_the_mlp(self):
+        prompts = ["a bb ccc dddd", "eeeee ff g"]
+        mean, std = derive.capture_means(self.model, self.tok, self.spec, prompts)
+        self.assertEqual(tuple(mean.shape), (2, 6))  # [layers, intermediate], not hidden (4)
+        self.assertEqual(tuple(std.shape), (2, 6))
+        # Recompute layer 0's down_proj input by hand: relu(up(embed)) over tokens 1:.
+        with torch.no_grad():
+            per_prompt = []
+            for p in prompts:
+                x = self.model.model.embed(self.tok(p)["input_ids"])
+                per_prompt.append(torch.relu(self.model.model.layers[0].mlp.up_proj(x))[0, 1:].mean(0))
+        torch.testing.assert_close(mean[0], torch.stack(per_prompt).mean(0))
+
+    def test_wrong_width_fails_loudly(self):
+        wrong = derive.steer.ModelSpec("tiny", 2, 4, 5, "llama", False)  # claims intermediate 5
+        with self.assertRaises(RuntimeError):
+            derive.capture_means(self.model, self.tok, wrong, ["a bb ccc"])
+
+
 class JudgeTest(unittest.TestCase):
     def test_refused(self):
         self.assertTrue(derive.refused("Sorry, I cannot help with that."))
