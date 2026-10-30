@@ -506,5 +506,84 @@ class StreamTest(unittest.TestCase):
         self.assertEqual(self.eng.hook_count(), 0)
 
 
+class DialTest(unittest.TestCase):
+    def test_scale_neutral_zero_trait_one(self):
+        u = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        self.assertAlmostEqual(
+            engine.dial_value(torch.tensor([2.0, 0, 0, 0]), u, 2.0, 5.0),
+            0.0)
+        self.assertAlmostEqual(
+            engine.dial_value(torch.tensor([5.0, 0, 0, 0]), u, 2.0, 5.0),
+            1.0)
+        self.assertAlmostEqual(
+            engine.dial_value(torch.tensor([3.5, 9, 9, 9]), u, 2.0, 5.0),
+            0.5)
+
+    def test_zero_span_reads_zero(self):
+        u = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        self.assertEqual(
+            engine.dial_value(torch.tensor([99.0, 0, 0, 0]), u, 3.0, 3.0),
+            0.0)
+
+    def test_index_skips_prefill_entry(self):
+        u = [1.0, 0.0, 0.0, 0.0]
+        tap = [torch.zeros(4), torch.tensor([1.0, 0, 0, 0]),
+               torch.tensor([2.0, 0, 0, 0])]
+        self.assertAlmostEqual(
+            engine.dial_for_index(tap, 0, u, 0.0, 1.0), 1.0)
+        self.assertAlmostEqual(
+            engine.dial_for_index(tap, 1, u, 0.0, 1.0), 2.0)
+        self.assertIsNone(engine.dial_for_index(tap, 2, u, 0.0, 1.0))
+
+    def test_tap_collects_last_position(self):
+        model = FakeModel()
+        tap: list = []
+        _, out_hooks = engine._build_hooks(
+            model, make_spec(), engine.EMPTY_EDITS, {}, [0], {},
+            {0: tap})
+        x = torch.arange(12, dtype=torch.float32).reshape(1, 3, 4)
+        out_hooks[0](model.blocks[0], (x,), x.clone())
+        self.assertEqual(len(tap), 1)
+        self.assertTrue(torch.equal(tap[0], x[0, -1, :]))
+
+    def test_tap_only_layer_gets_a_hook(self):
+        _, out_hooks = engine._build_hooks(
+            FakeModel(), make_spec(), engine.EMPTY_EDITS, {}, [0], {},
+            {1: []})
+        self.assertIn(1, out_hooks)
+
+
+class CountingTok(FakeGenTok):
+    def __init__(self):
+        self.wraps = 0
+        self.seen: list = []
+
+    def apply_chat_template(self, *a, **k):
+        self.wraps += 1
+        return super().apply_chat_template(*a, **k)
+
+    def __call__(self, text, *a, **k):
+        self.seen.append(text)
+        return super().__call__(text, *a, **k)
+
+
+class WrappedTest(unittest.TestCase):
+    def test_wrapped_skips_template(self):
+        tok = CountingTok()
+        gen = steer.generate_text(FakeGenModel(), tok, "hi",
+                                  max_new_tokens=2, seed=0,
+                                  wrapped="PRE-WRAPPED")
+        self.assertEqual(tok.wraps, 0)
+        self.assertEqual(tok.seen, ["PRE-WRAPPED"])
+        self.assertEqual(gen["token_ids"], [1, 2])
+
+    def test_default_still_wraps(self):
+        tok = CountingTok()
+        steer.generate_text(FakeGenModel(), tok, "hi",
+                            max_new_tokens=2, seed=0)
+        self.assertEqual(tok.wraps, 1)
+        self.assertEqual(tok.seen, ["wrapped"])
+
+
 if __name__ == "__main__":
     unittest.main()
