@@ -40,7 +40,9 @@ mode](replay-mode.md).
   and row limit come from `/api/state`.
 - `/api/update`: behaviors (for example pushing `pirate`) need
   a finished Create job with a saved direction. Without one the
-  server answers 404: "Create the trait first."
+  server answers 404: "Create the trait first." A guard-blocked
+  knob unlocks in research mode with a BLOCKED badge; the run
+  records research mode.
 - `/api/create`: starts a staged trait run. It takes tens of
   minutes. The family must be validated first (see
   `scripts/validate_judge.py`).
