@@ -140,6 +140,13 @@ class FinalSplitLedger:
         self._finals[key] = record
         return record
 
+    def candidates_tried(self) -> dict:
+        """Frozen versions with a final, per candidate (D14: the library reports this)."""
+        tried: dict = {}
+        for cid, *_ in self._finals:
+            tried[cid] = tried.get(cid, 0) + 1
+        return tried
+
     def reserve_for_retry(self, candidate_id: str, reserve_pool: list,
                           n: int) -> list:
         """Hand out n fresh reserve prompts for a retry (never repeats)."""
