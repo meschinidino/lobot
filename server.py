@@ -251,6 +251,12 @@ def _same_rows(a: list[dict], b: list[dict]) -> bool:
 
 
 def _find_recording(model_id: str, prompt: str, rows: list[dict]) -> dict | None:
+    if rows and all(r["dose"] == 0 for r in rows):
+        # Dose 0 changes nothing: any recording of this prompt holds the answer, as its baseline.
+        for rec in _recordings():
+            if rec["model_id"] == model_id and rec["prompt"].strip() == prompt:
+                return {**rec, "rows": rows, "steered": rec["baseline"], "split": None}
+        return None
     for rec in _recordings():
         if rec["model_id"] == model_id and rec["prompt"].strip() == prompt and _same_rows(rec["rows"], rows):
             return rec
