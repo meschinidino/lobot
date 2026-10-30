@@ -1,0 +1,2112 @@
+{
+  "25:7542": {
+    "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+    "layer": 25,
+    "neuron": 7542,
+    "pushes_toward": {
+      "up": [
+        {
+          "token": " features",
+          "id": 4519,
+          "logit": 0.625048041343689
+        },
+        {
+          "token": " possess",
+          "id": 15575,
+          "logit": 0.5618162155151367
+        },
+        {
+          "token": " feature",
+          "id": 4668,
+          "logit": 0.5406142473220825
+        },
+        {
+          "token": " Features",
+          "id": 20289,
+          "logit": 0.5390199422836304
+        },
+        {
+          "token": " Poss",
+          "id": 42145,
+          "logit": 0.5229236483573914
+        },
+        {
+          "token": "poss",
+          "id": 9007,
+          "logit": 0.5082045197486877
+        },
+        {
+          "token": " possesses",
+          "id": 50326,
+          "logit": 0.5030332803726196
+        },
+        {
+          "token": "Features",
+          "id": 22043,
+          "logit": 0.4939107298851013
+        },
+        {
+          "token": " possessed",
+          "id": 43890,
+          "logit": 0.4905124604701996
+        },
+        {
+          "token": " poss",
+          "id": 2278,
+          "logit": 0.48886463046073914
+        },
+        {
+          "token": "features",
+          "id": 20922,
+          "logit": 0.48719459772109985
+        },
+        {
+          "token": " Feature",
+          "id": 20595,
+          "logit": 0.4439890384674072
+        }
+      ],
+      "down": [
+        {
+          "token": " hab",
+          "id": 6183,
+          "logit": -0.15353164076805115
+        },
+        {
+          "token": " haber",
+          "id": 59382,
+          "logit": -0.14426875114440918
+        },
+        {
+          "token": " ha",
+          "id": 6520,
+          "logit": -0.1420227438211441
+        },
+        {
+          "token": " had",
+          "id": 1047,
+          "logit": -0.1373310089111328
+        },
+        {
+          "token": "had",
+          "id": 32345,
+          "logit": -0.1342284083366394
+        },
+        {
+          "token": "iasi",
+          "id": 98654,
+          "logit": -0.13071848452091217
+        },
+        {
+          "token": " hav",
+          "id": 31081,
+          "logit": -0.13057641685009003
+        },
+        {
+          "token": "hatt",
+          "id": 23976,
+          "logit": -0.128666490316391
+        },
+        {
+          "token": " h",
+          "id": 305,
+          "logit": -0.12414436787366867
+        },
+        {
+          "token": "abel",
+          "id": 786,
+          "logit": -0.12187597155570984
+        },
+        {
+          "token": " Had",
+          "id": 24805,
+          "logit": -0.12136641889810562
+        },
+        {
+          "token": " h\u00e4tte",
+          "id": 96135,
+          "logit": -0.11663897335529327
+        }
+      ],
+      "coherence": 1.0,
+      "layer_frac": 0.9259259259259259
+    },
+    "fires_on": [
+      {
+        "activation": 1.705078125,
+        "token": "\n",
+        "context": " edition is the most scholarly and\npresents the reader an incredible",
+        "mark": [
+          34,
+          35
+        ]
+      },
+      {
+        "activation": 1.65234375,
+        "token": " wings",
+        "context": " the two black bars, the wings chequered with black.",
+        "mark": [
+          24,
+          30
+        ]
+      },
+      {
+        "activation": 1.623046875,
+        "token": "\n",
+        "context": " or humorous character, or which\ndisplayed consummate command of",
+        "mark": [
+          32,
+          33
+        ]
+      },
+      {
+        "activation": 1.5478515625,
+        "token": "\n",
+        "context": ", it was found that he\nhad left his enormous fortune in",
+        "mark": [
+          22,
+          23
+        ]
+      },
+      {
+        "activation": 1.314453125,
+        "token": ",",
+        "context": " number to our domesticated productions, and belonging to equally\ndiv",
+        "mark": [
+          39,
+          40
+        ]
+      },
+      {
+        "activation": 1.3056640625,
+        "token": " animals",
+        "context": " I cannot doubt that if other animals and plants, equal\nin",
+        "mark": [
+          29,
+          37
+        ]
+      },
+      {
+        "activation": 1.2841796875,
+        "token": " also",
+        "context": "ity of its body, but also more frequently displays a\n ",
+        "mark": [
+          20,
+          25
+        ]
+      },
+      {
+        "activation": 1.259765625,
+        "token": " others",
+        "context": " teeth resembling ivory saws; others were tufted with knots",
+        "mark": [
+          29,
+          36
+        ]
+      }
+    ],
+    "fires_on_cache": {
+      "built": true,
+      "tokens": 105029
+    }
+  },
+  "21:7229": {
+    "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+    "layer": 21,
+    "neuron": 7229,
+    "pushes_toward": {
+      "up": [
+        {
+          "token": " animals",
+          "id": 10099,
+          "logit": 0.6015435457229614
+        },
+        {
+          "token": " birds",
+          "id": 20229,
+          "logit": 0.5216419696807861
+        },
+        {
+          "token": " animal",
+          "id": 10065,
+          "logit": 0.5106596350669861
+        },
+        {
+          "token": " Animals",
+          "id": 47966,
+          "logit": 0.48357126116752625
+        },
+        {
+          "token": " plants",
+          "id": 11012,
+          "logit": 0.46242859959602356
+        },
+        {
+          "token": "animals",
+          "id": 77896,
+          "logit": 0.4468233585357666
+        },
+        {
+          "token": "birds",
+          "id": 67461,
+          "logit": 0.40857845544815063
+        },
+        {
+          "token": " Animal",
+          "id": 21995,
+          "logit": 0.37893056869506836
+        },
+        {
+          "token": "animal",
+          "id": 48999,
+          "logit": 0.37762451171875
+        },
+        {
+          "token": " bird",
+          "id": 12224,
+          "logit": 0.37523353099823
+        },
+        {
+          "token": "Animal",
+          "id": 42515,
+          "logit": 0.3752198815345764
+        },
+        {
+          "token": " Plants",
+          "id": 50298,
+          "logit": 0.3735431134700775
+        }
+      ],
+      "down": [
+        {
+          "token": " cab",
+          "id": 22239,
+          "logit": -0.14051222801208496
+        },
+        {
+          "token": " Cab",
+          "id": 27200,
+          "logit": -0.12998485565185547
+        },
+        {
+          "token": " studio",
+          "id": 14356,
+          "logit": -0.12945330142974854
+        },
+        {
+          "token": " someone",
+          "id": 4423,
+          "logit": -0.12649965286254883
+        },
+        {
+          "token": "Cab",
+          "id": 99299,
+          "logit": -0.12284017354249954
+        },
+        {
+          "token": "/vendor",
+          "id": 36763,
+          "logit": -0.11299233138561249
+        },
+        {
+          "token": " mest",
+          "id": 61113,
+          "logit": -0.11207801103591919
+        },
+        {
+          "token": " Factors",
+          "id": 68318,
+          "logit": -0.11192360520362854
+        },
+        {
+          "token": "studio",
+          "id": 60119,
+          "logit": -0.11093224585056305
+        },
+        {
+          "token": "ql",
+          "id": 1498,
+          "logit": -0.11010796576738358
+        },
+        {
+          "token": " passenger",
+          "id": 24023,
+          "logit": -0.1099744439125061
+        },
+        {
+          "token": " meeting",
+          "id": 6574,
+          "logit": -0.10853512585163116
+        }
+      ],
+      "coherence": 1.0,
+      "layer_frac": 0.7777777777777778
+    },
+    "fires_on": [
+      {
+        "activation": 5.05078125,
+        "token": "red",
+        "context": ", taking thoroughly\nwell-bred birds, all the above marks",
+        "mark": [
+          26,
+          29
+        ]
+      },
+      {
+        "activation": 3.494140625,
+        "token": " single",
+        "context": "\ngardeners mean a single bud or offset, which suddenly",
+        "mark": [
+          17,
+          24
+        ]
+      },
+      {
+        "activation": 3.318359375,
+        "token": " the",
+        "context": " we see that the treatment of the parent\nhas affected a bud",
+        "mark": [
+          29,
+          33
+        ]
+      },
+      {
+        "activation": 3.291015625,
+        "token": "his",
+        "context": " Hereford cattle, whether\nhis cattle might not have descended from",
+        "mark": [
+          26,
+          29
+        ]
+      },
+      {
+        "activation": 3.146484375,
+        "token": " the",
+        "context": " from that of the rest of the plant.\nSuch buds can be",
+        "mark": [
+          25,
+          29
+        ]
+      },
+      {
+        "activation": 3.140625,
+        "token": " parent",
+        "context": " see that the treatment of the parent\nhas affected a bud or",
+        "mark": [
+          30,
+          37
+        ]
+      },
+      {
+        "activation": 3.052734375,
+        "token": " produced",
+        "context": "black barbs, and they produced mottled brown and black",
+        "mark": [
+          21,
+          30
+        ]
+      },
+      {
+        "activation": 2.927734375,
+        "token": " one",
+        "context": " oil will be extracted out of one whale.\u201d \u2014_Ibid",
+        "mark": [
+          29,
+          33
+        ]
+      }
+    ],
+    "fires_on_cache": {
+      "built": true,
+      "tokens": 105029
+    }
+  },
+  "20:5147": {
+    "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+    "layer": 20,
+    "neuron": 5147,
+    "pushes_toward": {
+      "up": [
+        {
+          "token": " bad",
+          "id": 3958,
+          "logit": 0.6021473407745361
+        },
+        {
+          "token": " worst",
+          "id": 12047,
+          "logit": 0.6009190082550049
+        },
+        {
+          "token": " terrible",
+          "id": 17936,
+          "logit": 0.5978118777275085
+        },
+        {
+          "token": " worse",
+          "id": 11201,
+          "logit": 0.5855216383934021
+        },
+        {
+          "token": "bad",
+          "id": 14176,
+          "logit": 0.4966667890548706
+        },
+        {
+          "token": " poor",
+          "id": 8009,
+          "logit": 0.48681512475013733
+        },
+        {
+          "token": " awful",
+          "id": 25629,
+          "logit": 0.4762146472930908
+        },
+        {
+          "token": " Worst",
+          "id": 70192,
+          "logit": 0.4629598557949066
+        },
+        {
+          "token": " horrible",
+          "id": 28201,
+          "logit": 0.44851362705230713
+        },
+        {
+          "token": " BAD",
+          "id": 48818,
+          "logit": 0.4483218193054199
+        },
+        {
+          "token": "Bad",
+          "id": 17519,
+          "logit": 0.44654780626296997
+        },
+        {
+          "token": " Bad",
+          "id": 11717,
+          "logit": 0.4436729848384857
+        }
+      ],
+      "down": [
+        {
+          "token": "Implicit",
+          "id": 60658,
+          "logit": -0.12858565151691437
+        },
+        {
+          "token": "otti",
+          "id": 42327,
+          "logit": -0.12246286869049072
+        },
+        {
+          "token": "ijd",
+          "id": 33323,
+          "logit": -0.11999433487653732
+        },
+        {
+          "token": " Hir",
+          "id": 80735,
+          "logit": -0.11736805737018585
+        },
+        {
+          "token": " Guth",
+          "id": 92855,
+          "logit": -0.11661379784345627
+        },
+        {
+          "token": "boro",
+          "id": 35967,
+          "logit": -0.11655838787555695
+        },
+        {
+          "token": "upil",
+          "id": 94745,
+          "logit": -0.11637067049741745
+        },
+        {
+          "token": "erea",
+          "id": 68209,
+          "logit": -0.11520259082317352
+        },
+        {
+          "token": "\u0456\u0439",
+          "id": 100417,
+          "logit": -0.11487048119306564
+        },
+        {
+          "token": "pz",
+          "id": 67665,
+          "logit": -0.11474056541919708
+        },
+        {
+          "token": "ongan",
+          "id": 83388,
+          "logit": -0.1124720573425293
+        },
+        {
+          "token": "den",
+          "id": 5294,
+          "logit": -0.11158356070518494
+        }
+      ],
+      "coherence": 1.0,
+      "layer_frac": 0.7407407407407407
+    },
+    "fires_on": [
+      {
+        "activation": 3.71875,
+        "token": " a",
+        "context": " \"It\nis not merely a question of downright blunders,",
+        "mark": [
+          18,
+          20
+        ]
+      },
+      {
+        "activation": 2.50390625,
+        "token": " so",
+        "context": " their help it should have been so excessively\nbad. It is",
+        "mark": [
+          31,
+          34
+        ]
+      },
+      {
+        "activation": 2.400390625,
+        "token": " merely",
+        "context": ": \"It\nis not merely a question of downright blunders",
+        "mark": [
+          12,
+          19
+        ]
+      },
+      {
+        "activation": 2.33203125,
+        "token": " by",
+        "context": "less plot\nacted and told by puppets with pebbles",
+        "mark": [
+          24,
+          27
+        ]
+      },
+      {
+        "activation": 2.201171875,
+        "token": " the",
+        "context": " of quality, too, perhaps the least valuable of the eleven.\n\n",
+        "mark": [
+          25,
+          29
+        ]
+      },
+      {
+        "activation": 2.181640625,
+        "token": " be",
+        "context": ", is seen at once to be little better than an\nim",
+        "mark": [
+          20,
+          23
+        ]
+      },
+      {
+        "activation": 2.109375,
+        "token": " no",
+        "context": "able performer but a composer of no ordinary merit. All the\n",
+        "mark": [
+          32,
+          35
+        ]
+      },
+      {
+        "activation": 2.056640625,
+        "token": " write",
+        "context": " long letter with\nease cannot write ill.\u201d\n\n\u201cThat will not do",
+        "mark": [
+          29,
+          35
+        ]
+      }
+    ],
+    "fires_on_cache": {
+      "built": true,
+      "tokens": 105029
+    }
+  },
+  "20:3729": {
+    "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+    "layer": 20,
+    "neuron": 3729,
+    "pushes_toward": {
+      "up": [
+        {
+          "token": " nights",
+          "id": 22178,
+          "logit": 0.3692569434642792
+        },
+        {
+          "token": " days",
+          "id": 2919,
+          "logit": 0.31092825531959534
+        },
+        {
+          "token": " Nights",
+          "id": 64643,
+          "logit": 0.28373241424560547
+        },
+        {
+          "token": " daytime",
+          "id": 62182,
+          "logit": 0.2750910520553589
+        },
+        {
+          "token": " evenings",
+          "id": 59938,
+          "logit": 0.2676728665828705
+        },
+        {
+          "token": " Days",
+          "id": 21882,
+          "logit": 0.26550549268722534
+        },
+        {
+          "token": "days",
+          "id": 14097,
+          "logit": 0.25658565759658813
+        },
+        {
+          "token": " DAYS",
+          "id": 83931,
+          "logit": 0.2548356056213379
+        },
+        {
+          "token": " nighttime",
+          "id": 93744,
+          "logit": 0.254461407661438
+        },
+        {
+          "token": "Days",
+          "id": 21199,
+          "logit": 0.2512553930282593
+        },
+        {
+          "token": " mornings",
+          "id": 58302,
+          "logit": 0.25107836723327637
+        },
+        {
+          "token": " summers",
+          "id": 80769,
+          "logit": 0.24912512302398682
+        }
+      ],
+      "down": [
+        {
+          "token": "ensa",
+          "id": 58925,
+          "logit": -0.13469985127449036
+        },
+        {
+          "token": "\u7d2f",
+          "id": 116011,
+          "logit": -0.13162383437156677
+        },
+        {
+          "token": "ines",
+          "id": 1572,
+          "logit": -0.1256159245967865
+        },
+        {
+          "token": "ern",
+          "id": 944,
+          "logit": -0.12181933224201202
+        },
+        {
+          "token": " Tune",
+          "id": 75274,
+          "logit": -0.1211080402135849
+        },
+        {
+          "token": "cone",
+          "id": 59182,
+          "logit": -0.11829311400651932
+        },
+        {
+          "token": "ursive",
+          "id": 16921,
+          "logit": -0.11783640831708908
+        },
+        {
+          "token": "ensi",
+          "id": 56587,
+          "logit": -0.11712875962257385
+        },
+        {
+          "token": "\u56e0",
+          "id": 63212,
+          "logit": -0.11652815341949463
+        },
+        {
+          "token": " Gore",
+          "id": 49625,
+          "logit": -0.11568043380975723
+        },
+        {
+          "token": " cast",
+          "id": 6445,
+          "logit": -0.11535963416099548
+        },
+        {
+          "token": " supplements",
+          "id": 33690,
+          "logit": -0.11526071280241013
+        }
+      ],
+      "coherence": 1.0,
+      "layer_frac": 0.7407407407407407
+    },
+    "fires_on": [
+      {
+        "activation": 1.5126953125,
+        "token": " degrees",
+        "context": "ier_.\n\n\u201cIn 40 degrees south, we saw Sper",
+        "mark": [
+          13,
+          21
+        ]
+      },
+      {
+        "activation": 1.466796875,
+        "token": " the",
+        "context": " till the first of May, the sea being then covered with them",
+        "mark": [
+          23,
+          27
+        ]
+      },
+      {
+        "activation": 1.2841796875,
+        "token": "the",
+        "context": " what the landlord said about\nthe harpooneer\u2019s not",
+        "mark": [
+          30,
+          33
+        ]
+      },
+      {
+        "activation": 1.236328125,
+        "token": " the",
+        "context": "<|begin_of_text|>When the clock struck three, Elizabeth felt",
+        "mark": [
+          21,
+          25
+        ]
+      },
+      {
+        "activation": 1.03125,
+        "token": " when",
+        "context": " period of flowering with\nplants when transported from one climate to another",
+        "mark": [
+          32,
+          37
+        ]
+      },
+      {
+        "activation": 0.77783203125,
+        "token": "when",
+        "context": " Prairies in June,\nwhen for scores on scores of miles",
+        "mark": [
+          19,
+          23
+        ]
+      },
+      {
+        "activation": 0.77099609375,
+        "token": " day",
+        "context": "21st June,\nthe longest day in the year in our hemisphere",
+        "mark": [
+          22,
+          26
+        ]
+      },
+      {
+        "activation": 0.76513671875,
+        "token": " with",
+        "context": "ilege of making my own summer with my own coals.\n\nBut",
+        "mark": [
+          29,
+          34
+        ]
+      }
+    ],
+    "fires_on_cache": {
+      "built": true,
+      "tokens": 105029
+    }
+  },
+  "19:4330": {
+    "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+    "layer": 19,
+    "neuron": 4330,
+    "pushes_toward": {
+      "up": [
+        {
+          "token": " storm",
+          "id": 13766,
+          "logit": 0.6919016242027283
+        },
+        {
+          "token": " storms",
+          "id": 44583,
+          "logit": 0.59490966796875
+        },
+        {
+          "token": " Storm",
+          "id": 22620,
+          "logit": 0.5944555401802063
+        },
+        {
+          "token": "Storm",
+          "id": 35391,
+          "logit": 0.561191976070404
+        },
+        {
+          "token": "storm",
+          "id": 27511,
+          "logit": 0.5601806044578552
+        },
+        {
+          "token": " hurricane",
+          "id": 49784,
+          "logit": 0.49287235736846924
+        },
+        {
+          "token": "storms",
+          "id": 83109,
+          "logit": 0.485981822013855
+        },
+        {
+          "token": " Hurricane",
+          "id": 38201,
+          "logit": 0.436087965965271
+        },
+        {
+          "token": " hurricanes",
+          "id": 90127,
+          "logit": 0.39471209049224854
+        },
+        {
+          "token": " cycl",
+          "id": 32343,
+          "logit": 0.3839036822319031
+        },
+        {
+          "token": " thunder",
+          "id": 37943,
+          "logit": 0.3751595616340637
+        },
+        {
+          "token": " tornado",
+          "id": 45272,
+          "logit": 0.3625783920288086
+        }
+      ],
+      "down": [
+        {
+          "token": "dration",
+          "id": 50791,
+          "logit": -0.130266934633255
+        },
+        {
+          "token": "wed",
+          "id": 68467,
+          "logit": -0.11474709957838058
+        },
+        {
+          "token": " brag",
+          "id": 57794,
+          "logit": -0.11470215022563934
+        },
+        {
+          "token": " props",
+          "id": 7059,
+          "logit": -0.1078713983297348
+        },
+        {
+          "token": "rats",
+          "id": 64037,
+          "logit": -0.1055045947432518
+        },
+        {
+          "token": "\u9bae",
+          "id": 121200,
+          "logit": -0.1039380133152008
+        },
+        {
+          "token": " expansions",
+          "id": 78588,
+          "logit": -0.10286195576190948
+        },
+        {
+          "token": " shiny",
+          "id": 42299,
+          "logit": -0.10192136466503143
+        },
+        {
+          "token": "oda",
+          "id": 14320,
+          "logit": -0.101708322763443
+        },
+        {
+          "token": "\ub960",
+          "id": 111652,
+          "logit": -0.10063368082046509
+        },
+        {
+          "token": " underwater",
+          "id": 46474,
+          "logit": -0.09992828220129013
+        },
+        {
+          "token": " thumbs",
+          "id": 57949,
+          "logit": -0.09941881895065308
+        }
+      ],
+      "coherence": 1.0,
+      "layer_frac": 0.7037037037037037
+    },
+    "fires_on": [
+      {
+        "activation": 6.140625,
+        "token": " storm",
+        "context": " the rare old Whale, mid storm and gale In his ocean",
+        "mark": [
+          24,
+          30
+        ]
+      },
+      {
+        "activation": 6.04296875,
+        "token": " g",
+        "context": " old Whale, mid storm and gale In his ocean home will",
+        "mark": [
+          25,
+          27
+        ]
+      },
+      {
+        "activation": 5.640625,
+        "token": " hurricane",
+        "context": "orner\nin a great hurricane; the half-foundered ship",
+        "mark": [
+          16,
+          26
+        ]
+      },
+      {
+        "activation": 5.44140625,
+        "token": " storm",
+        "context": " boat and are caught by a storm,\nthey will come to each",
+        "mark": [
+          25,
+          31
+        ]
+      },
+      {
+        "activation": 5.0859375,
+        "token": " and",
+        "context": " rare old Whale, mid storm and gale In his ocean home",
+        "mark": [
+          26,
+          30
+        ]
+      },
+      {
+        "activation": 5.0703125,
+        "token": " tem",
+        "context": " sharp bleak corner,\nwhere that tempestuous wind Euroclydon",
+        "mark": [
+          31,
+          35
+        ]
+      },
+      {
+        "activation": 4.84375,
+        "token": "ale",
+        "context": " Sea in a midnight\ngale.\u2014It\u2019s the unnatural combat",
+        "mark": [
+          20,
+          23
+        ]
+      },
+      {
+        "activation": 4.71484375,
+        "token": " by",
+        "context": " the same boat and are caught by a storm,\nthey will come",
+        "mark": [
+          29,
+          32
+        ]
+      }
+    ],
+    "fires_on_cache": {
+      "built": true,
+      "tokens": 105029
+    }
+  },
+  "16:3964": {
+    "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+    "layer": 16,
+    "neuron": 3964,
+    "pushes_toward": {
+      "up": [
+        {
+          "token": " fair",
+          "id": 6762,
+          "logit": 0.26387858390808105
+        },
+        {
+          "token": " dirty",
+          "id": 19108,
+          "logit": 0.26052311062812805
+        },
+        {
+          "token": " unfair",
+          "id": 28743,
+          "logit": 0.23894980549812317
+        },
+        {
+          "token": "dirty",
+          "id": 54588,
+          "logit": 0.23276934027671814
+        },
+        {
+          "token": " ethics",
+          "id": 32008,
+          "logit": 0.21898239850997925
+        },
+        {
+          "token": "Dirty",
+          "id": 37585,
+          "logit": 0.21685504913330078
+        },
+        {
+          "token": " Dirty",
+          "id": 55391,
+          "logit": 0.2073243409395218
+        },
+        {
+          "token": " tactics",
+          "id": 26411,
+          "logit": 0.20437699556350708
+        },
+        {
+          "token": " Fair",
+          "id": 14930,
+          "logit": 0.20202958583831787
+        },
+        {
+          "token": " practices",
+          "id": 12659,
+          "logit": 0.1994364857673645
+        },
+        {
+          "token": " foul",
+          "id": 40884,
+          "logit": 0.19766384363174438
+        },
+        {
+          "token": "Fair",
+          "id": 61895,
+          "logit": 0.1961115598678589
+        }
+      ],
+      "down": [
+        {
+          "token": "rical",
+          "id": 12381,
+          "logit": -0.12024946510791779
+        },
+        {
+          "token": "alsa",
+          "id": 42926,
+          "logit": -0.11720327287912369
+        },
+        {
+          "token": "kest",
+          "id": 40423,
+          "logit": -0.11500212550163269
+        },
+        {
+          "token": " Cummings",
+          "id": 88471,
+          "logit": -0.1149706244468689
+        },
+        {
+          "token": " front",
+          "id": 4156,
+          "logit": -0.11358214169740677
+        },
+        {
+          "token": " output",
+          "id": 2612,
+          "logit": -0.11299323290586472
+        },
+        {
+          "token": "anse",
+          "id": 70754,
+          "logit": -0.11292094737291336
+        },
+        {
+          "token": " catastrophe",
+          "id": 65396,
+          "logit": -0.1120782345533371
+        },
+        {
+          "token": " gums",
+          "id": 98754,
+          "logit": -0.11021356284618378
+        },
+        {
+          "token": " tongue",
+          "id": 25466,
+          "logit": -0.10836604237556458
+        },
+        {
+          "token": "oma",
+          "id": 7942,
+          "logit": -0.10820437967777252
+        },
+        {
+          "token": "mdi",
+          "id": 41523,
+          "logit": -0.1080046072602272
+        }
+      ],
+      "coherence": 1.0,
+      "layer_frac": 0.5925925925925926
+    },
+    "fires_on": [
+      {
+        "activation": 1.4326171875,
+        "token": " playing",
+        "context": " what\ntheir object was in playing this prank\u2014if it was a",
+        "mark": [
+          25,
+          33
+        ]
+      },
+      {
+        "activation": 1.2939453125,
+        "token": " this",
+        "context": "\ntheir object was in playing this prank\u2014if it was a prank",
+        "mark": [
+          28,
+          33
+        ]
+      },
+      {
+        "activation": 1.1416015625,
+        "token": ".",
+        "context": ",\u201d and she never attacks first. Some of the merest\n",
+        "mark": [
+          30,
+          31
+        ]
+      },
+      {
+        "activation": 1.091796875,
+        "token": " mean",
+        "context": " paltry device, a very mean art.\u201d\n\n\u201cUndoubtedly,\u201d",
+        "mark": [
+          22,
+          27
+        ]
+      },
+      {
+        "activation": 1.068359375,
+        "token": " a",
+        "context": "upon me. It\nwas a pretty expensive joke for them,",
+        "mark": [
+          15,
+          17
+        ]
+      },
+      {
+        "activation": 1.0068359375,
+        "token": " honour",
+        "context": " friend, is a man of honour and\ndiscretion, whom",
+        "mark": [
+          20,
+          27
+        ]
+      },
+      {
+        "activation": 0.9921875,
+        "token": " un",
+        "context": " a passion again at\nthis unaccountable farrago of",
+        "mark": [
+          24,
+          27
+        ]
+      },
+      {
+        "activation": 0.9521484375,
+        "token": "cry",
+        "context": " however, I shall not\ncry out if in return I am",
+        "mark": [
+          22,
+          25
+        ]
+      }
+    ],
+    "fires_on_cache": {
+      "built": true,
+      "tokens": 105029
+    }
+  },
+  "19:565": {
+    "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+    "layer": 19,
+    "neuron": 565,
+    "pushes_toward": {
+      "up": [
+        {
+          "token": " currency",
+          "id": 11667,
+          "logit": 0.3679690957069397
+        },
+        {
+          "token": " bills",
+          "id": 19123,
+          "logit": 0.336780309677124
+        },
+        {
+          "token": " dollar",
+          "id": 18160,
+          "logit": 0.33150383830070496
+        },
+        {
+          "token": " notes",
+          "id": 8554,
+          "logit": 0.30210787057876587
+        },
+        {
+          "token": " Currency",
+          "id": 29553,
+          "logit": 0.29662853479385376
+        },
+        {
+          "token": " bill",
+          "id": 4121,
+          "logit": 0.2932378947734833
+        },
+        {
+          "token": "notes",
+          "id": 18790,
+          "logit": 0.29179635643959045
+        },
+        {
+          "token": " Bills",
+          "id": 46740,
+          "logit": 0.283206582069397
+        },
+        {
+          "token": " currencies",
+          "id": 36702,
+          "logit": 0.2827329635620117
+        },
+        {
+          "token": " note",
+          "id": 5296,
+          "logit": 0.278925359249115
+        },
+        {
+          "token": " dollars",
+          "id": 11441,
+          "logit": 0.2785879075527191
+        },
+        {
+          "token": " coin",
+          "id": 16652,
+          "logit": 0.272276371717453
+        }
+      ],
+      "down": [
+        {
+          "token": "chal",
+          "id": 86667,
+          "logit": -0.13495057821273804
+        },
+        {
+          "token": "\ufffd",
+          "id": 163,
+          "logit": -0.12186853587627411
+        },
+        {
+          "token": " Juliet",
+          "id": 72124,
+          "logit": -0.12152359634637833
+        },
+        {
+          "token": "umba",
+          "id": 71669,
+          "logit": -0.11977219581604004
+        },
+        {
+          "token": "fos",
+          "id": 51788,
+          "logit": -0.11874491721391678
+        },
+        {
+          "token": " Julien",
+          "id": 88742,
+          "logit": -0.1156466156244278
+        },
+        {
+          "token": " syncing",
+          "id": 97245,
+          "logit": -0.11381649225950241
+        },
+        {
+          "token": "icht",
+          "id": 4970,
+          "logit": -0.11322259157896042
+        },
+        {
+          "token": " synced",
+          "id": 86128,
+          "logit": -0.11182066798210144
+        },
+        {
+          "token": " SYNC",
+          "id": 87777,
+          "logit": -0.11143022775650024
+        },
+        {
+          "token": "\u4ef2",
+          "id": 113850,
+          "logit": -0.11065048724412918
+        },
+        {
+          "token": "Degrees",
+          "id": 66219,
+          "logit": -0.1106419637799263
+        }
+      ],
+      "coherence": 1.0,
+      "layer_frac": 0.7037037037037037
+    },
+    "fires_on": [
+      {
+        "activation": 3.8125,
+        "token": " in",
+        "context": " pounds in gold and seven hundred in notes,\u201d he\nsaid.\n\n",
+        "mark": [
+          33,
+          36
+        ]
+      },
+      {
+        "activation": 3.63671875,
+        "token": "ole",
+        "context": "contains 2,000 napoleons packed between layers of lead",
+        "mark": [
+          18,
+          21
+        ]
+      },
+      {
+        "activation": 3.310546875,
+        "token": "ons",
+        "context": " 2,000 napoleons packed between layers of lead foil",
+        "mark": [
+          13,
+          16
+        ]
+      },
+      {
+        "activation": 2.763671875,
+        "token": " in",
+        "context": ".\n\n\u201cThere are three hundred pounds in gold and seven hundred in notes",
+        "mark": [
+          34,
+          37
+        ]
+      },
+      {
+        "activation": 2.634765625,
+        "token": "000",
+        "context": " sit\ncontains 2,000 napoleons packed between layers",
+        "mark": [
+          16,
+          19
+        ]
+      },
+      {
+        "activation": 2.435546875,
+        "token": " bank",
+        "context": ", sighing note of the bank director. From my position I",
+        "mark": [
+          21,
+          26
+        ]
+      },
+      {
+        "activation": 2.43359375,
+        "token": " and",
+        "context": " are three hundred pounds in gold and seven hundred in notes,\u201d he",
+        "mark": [
+          33,
+          37
+        ]
+      },
+      {
+        "activation": 2.310546875,
+        "token": "s",
+        "context": " planked down four golden sovereigns for my week\u2019s work.",
+        "mark": [
+          35,
+          36
+        ]
+      }
+    ],
+    "fires_on_cache": {
+      "built": true,
+      "tokens": 105029
+    }
+  },
+  "21:213": {
+    "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+    "layer": 21,
+    "neuron": 213,
+    "pushes_toward": {
+      "up": [
+        {
+          "token": " eating",
+          "id": 12459,
+          "logit": 0.6788370609283447
+        },
+        {
+          "token": " eat",
+          "id": 8343,
+          "logit": 0.665913462638855
+        },
+        {
+          "token": " Eating",
+          "id": 60638,
+          "logit": 0.5985395312309265
+        },
+        {
+          "token": " eaten",
+          "id": 35661,
+          "logit": 0.5926213264465332
+        },
+        {
+          "token": " eats",
+          "id": 50777,
+          "logit": 0.5841559767723083
+        },
+        {
+          "token": " ate",
+          "id": 30912,
+          "logit": 0.5650835037231445
+        },
+        {
+          "token": " Eat",
+          "id": 45614,
+          "logit": 0.5547279119491577
+        },
+        {
+          "token": "Eat",
+          "id": 89711,
+          "logit": 0.5199991464614868
+        },
+        {
+          "token": " devour",
+          "id": 88289,
+          "logit": 0.5150734782218933
+        },
+        {
+          "token": "eating",
+          "id": 91955,
+          "logit": 0.48989129066467285
+        },
+        {
+          "token": " eater",
+          "id": 87135,
+          "logit": 0.48248833417892456
+        },
+        {
+          "token": " consuming",
+          "id": 35208,
+          "logit": 0.47957491874694824
+        }
+      ],
+      "down": [
+        {
+          "token": " Artem",
+          "id": 79366,
+          "logit": -0.14366382360458374
+        },
+        {
+          "token": " s\u0129",
+          "id": 106312,
+          "logit": -0.13392657041549683
+        },
+        {
+          "token": "osterone",
+          "id": 33574,
+          "logit": -0.13282836973667145
+        },
+        {
+          "token": "jax",
+          "id": 14858,
+          "logit": -0.1312400996685028
+        },
+        {
+          "token": "\u091f\u0915",
+          "id": 116242,
+          "logit": -0.12879416346549988
+        },
+        {
+          "token": "hti",
+          "id": 95948,
+          "logit": -0.12639614939689636
+        },
+        {
+          "token": " Harrison",
+          "id": 36627,
+          "logit": -0.1259838342666626
+        },
+        {
+          "token": " Kitt",
+          "id": 81767,
+          "logit": -0.12312948703765869
+        },
+        {
+          "token": "\u03af\u03c3",
+          "id": 103244,
+          "logit": -0.12301494181156158
+        },
+        {
+          "token": " Denis",
+          "id": 61703,
+          "logit": -0.12136255204677582
+        },
+        {
+          "token": "ixa",
+          "id": 47484,
+          "logit": -0.11996109783649445
+        },
+        {
+          "token": "\u307e\u305b",
+          "id": 105823,
+          "logit": -0.11962857097387314
+        }
+      ],
+      "coherence": 1.0,
+      "layer_frac": 0.7777777777777778
+    },
+    "fires_on": [
+      {
+        "activation": 4.34375,
+        "token": " ",
+        "context": "\u2019s) mouth, are\n  immediately lost and swallowed up,",
+        "mark": [
+          15,
+          16
+        ]
+      },
+      {
+        "activation": 3.25390625,
+        "token": " immediately",
+        "context": ") mouth, are\n  immediately lost and swallowed up, the",
+        "mark": [
+          14,
+          26
+        ]
+      },
+      {
+        "activation": 2.951171875,
+        "token": " are",
+        "context": "whale\u2019s) mouth, are\n  immediately lost and swallowed",
+        "mark": [
+          15,
+          19
+        ]
+      },
+      {
+        "activation": 2.6015625,
+        "token": " carniv",
+        "context": " I may just\nmention that carnivorous animals, even from the",
+        "mark": [
+          24,
+          31
+        ]
+      },
+      {
+        "activation": 2.556640625,
+        "token": "plant",
+        "context": " with the exception of the\nplantigrades or bear family;",
+        "mark": [
+          27,
+          32
+        ]
+      },
+      {
+        "activation": 2.19140625,
+        "token": "dev",
+        "context": " second degree, had all\ndevoted themselves to this study,",
+        "mark": [
+          24,
+          27
+        ]
+      },
+      {
+        "activation": 2.16015625,
+        "token": " and",
+        "context": ", are\n  immediately lost and swallowed up, the sea-g",
+        "mark": [
+          24,
+          28
+        ]
+      },
+      {
+        "activation": 2.0,
+        "token": " it",
+        "context": " boat, or stone, down it goes all\n  incontin",
+        "mark": [
+          21,
+          24
+        ]
+      }
+    ],
+    "fires_on_cache": {
+      "built": true,
+      "tokens": 105029
+    }
+  },
+  "20:6898": {
+    "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+    "layer": 20,
+    "neuron": 6898,
+    "pushes_toward": {
+      "up": [
+        {
+          "token": " artistic",
+          "id": 32692,
+          "logit": 0.6947492361068726
+        },
+        {
+          "token": " art",
+          "id": 1989,
+          "logit": 0.674098014831543
+        },
+        {
+          "token": " arts",
+          "id": 19071,
+          "logit": 0.6323351263999939
+        },
+        {
+          "token": " artist",
+          "id": 10255,
+          "logit": 0.6247833967208862
+        },
+        {
+          "token": " artists",
+          "id": 13820,
+          "logit": 0.6140804290771484
+        },
+        {
+          "token": " Artist",
+          "id": 29459,
+          "logit": 0.5993126630783081
+        },
+        {
+          "token": " Artists",
+          "id": 53204,
+          "logit": 0.5757467746734619
+        },
+        {
+          "token": " creative",
+          "id": 11782,
+          "logit": 0.5731753706932068
+        },
+        {
+          "token": " Art",
+          "id": 5277,
+          "logit": 0.554253339767456
+        },
+        {
+          "token": " Creative",
+          "id": 25248,
+          "logit": 0.5161049962043762
+        },
+        {
+          "token": "Artist",
+          "id": 41409,
+          "logit": 0.5041947364807129
+        },
+        {
+          "token": "artist",
+          "id": 19135,
+          "logit": 0.5037488341331482
+        }
+      ],
+      "down": [
+        {
+          "token": "ilyn",
+          "id": 69582,
+          "logit": -0.12217027693986893
+        },
+        {
+          "token": " experiment",
+          "id": 9526,
+          "logit": -0.12108767032623291
+        },
+        {
+          "token": " commercially",
+          "id": 54453,
+          "logit": -0.11963079124689102
+        },
+        {
+          "token": "rot",
+          "id": 4744,
+          "logit": -0.11830920726060867
+        },
+        {
+          "token": " commercial",
+          "id": 8518,
+          "logit": -0.11664771288633347
+        },
+        {
+          "token": " kata",
+          "id": 62788,
+          "logit": -0.11487486213445663
+        },
+        {
+          "token": " neutral",
+          "id": 21277,
+          "logit": -0.11135217547416687
+        },
+        {
+          "token": "utr",
+          "id": 80381,
+          "logit": -0.11058264225721359
+        },
+        {
+          "token": "\u30ea\u30ab",
+          "id": 109896,
+          "logit": -0.10985469818115234
+        },
+        {
+          "token": " Orr",
+          "id": 87119,
+          "logit": -0.10820984840393066
+        },
+        {
+          "token": " Commercial",
+          "id": 28943,
+          "logit": -0.1077738106250763
+        },
+        {
+          "token": " autob",
+          "id": 100099,
+          "logit": -0.1069164052605629
+        }
+      ],
+      "coherence": 1.0,
+      "layer_frac": 0.7407407407407407
+    },
+    "fires_on": [
+      {
+        "activation": 1.8349609375,
+        "token": " and",
+        "context": ",\nthe reaction against the poetic and contemplative mood which\nocc",
+        "mark": [
+          33,
+          37
+        ]
+      },
+      {
+        "activation": 1.1474609375,
+        "token": " the",
+        "context": " often thought,\nthe reaction against the poetic and contemplative mood which",
+        "mark": [
+          36,
+          40
+        ]
+      },
+      {
+        "activation": 0.92724609375,
+        "token": " him",
+        "context": "\noccasionally predominated in him. The swing of his nature",
+        "mark": [
+          29,
+          33
+        ]
+      },
+      {
+        "activation": 0.82373046875,
+        "token": " with",
+        "context": "ermann\u2019s\n  Conversations with Goethe_.",
+        "mark": [
+          24,
+          29
+        ]
+      },
+      {
+        "activation": 0.77099609375,
+        "token": " flourishing",
+        "context": "<|begin_of_text|>From the flourishing period of the Chou dynasty",
+        "mark": [
+          25,
+          37
+        ]
+      },
+      {
+        "activation": 0.76953125,
+        "token": " a",
+        "context": " was William Morris. He was a solicitor and\nwas using",
+        "mark": [
+          27,
+          29
+        ]
+      },
+      {
+        "activation": 0.654296875,
+        "token": "to",
+        "context": " love.\u201d This distinction applies\nto books as well as to men",
+        "mark": [
+          33,
+          35
+        ]
+      },
+      {
+        "activation": 0.65087890625,
+        "token": " a",
+        "context": " and often twice. He is a Mr. Godfrey\nN",
+        "mark": [
+          23,
+          25
+        ]
+      }
+    ],
+    "fires_on_cache": {
+      "built": true,
+      "tokens": 105029
+    }
+  },
+  "27:1605": {
+    "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+    "layer": 27,
+    "neuron": 1605,
+    "pushes_toward": {
+      "up": [
+        {
+          "token": " Ace",
+          "id": 38807,
+          "logit": 0.34488731622695923
+        },
+        {
+          "token": " Aqu",
+          "id": 23815,
+          "logit": 0.3429809808731079
+        },
+        {
+          "token": " Alice",
+          "id": 30505,
+          "logit": 0.33959317207336426
+        },
+        {
+          "token": " Adam",
+          "id": 15387,
+          "logit": 0.32238534092903137
+        },
+        {
+          "token": " Aaron",
+          "id": 26757,
+          "logit": 0.32019948959350586
+        },
+        {
+          "token": " Ash",
+          "id": 14937,
+          "logit": 0.3201885223388672
+        },
+        {
+          "token": " Ariel",
+          "id": 76926,
+          "logit": 0.32002192735671997
+        },
+        {
+          "token": " Anderson",
+          "id": 21293,
+          "logit": 0.3191002607345581
+        },
+        {
+          "token": " Att",
+          "id": 7867,
+          "logit": 0.31356170773506165
+        },
+        {
+          "token": " Anna",
+          "id": 24101,
+          "logit": 0.31178006529808044
+        },
+        {
+          "token": " Adams",
+          "id": 27329,
+          "logit": 0.3116620182991028
+        },
+        {
+          "token": " aqu",
+          "id": 15715,
+          "logit": 0.3071521520614624
+        }
+      ],
+      "down": [
+        {
+          "token": "%B",
+          "id": 50257,
+          "logit": -0.10414927452802658
+        },
+        {
+          "token": " ness",
+          "id": 86496,
+          "logit": -0.09379972517490387
+        },
+        {
+          "token": " pues",
+          "id": 69610,
+          "logit": -0.08934815227985382
+        },
+        {
+          "token": " Kosten",
+          "id": 41966,
+          "logit": -0.08503691852092743
+        },
+        {
+          "token": "wig",
+          "id": 38022,
+          "logit": -0.08467545360326767
+        },
+        {
+          "token": " withheld",
+          "id": 77103,
+          "logit": -0.08391189575195312
+        },
+        {
+          "token": "\u7a0b",
+          "id": 39607,
+          "logit": -0.08323394507169724
+        },
+        {
+          "token": "\ufffd",
+          "id": 32405,
+          "logit": -0.0826309397816658
+        },
+        {
+          "token": " questionable",
+          "id": 44378,
+          "logit": -0.08232653886079788
+        },
+        {
+          "token": "wi",
+          "id": 17043,
+          "logit": -0.08042488247156143
+        },
+        {
+          "token": " \ufffd",
+          "id": 115328,
+          "logit": -0.08039924502372742
+        },
+        {
+          "token": "\u0652",
+          "id": 60497,
+          "logit": -0.07871410250663757
+        }
+      ],
+      "coherence": 1.0,
+      "layer_frac": 1.0
+    },
+    "fires_on": [
+      {
+        "activation": 6.13671875,
+        "token": "obo",
+        "context": "CHAPTER 71. The Jeroboam\u2019s Story.\n\nCHAPTER ",
+        "mark": [
+          19,
+          22
+        ]
+      },
+      {
+        "activation": 5.234375,
+        "token": "go",
+        "context": " poor Mary was rather the scapegoat of the sins of blue",
+        "mark": [
+          31,
+          33
+        ]
+      },
+      {
+        "activation": 4.8359375,
+        "token": " de",
+        "context": "--\n\n/* NIND \u201cMy dearest Lizzie, */\n\n\u201cI",
+        "mark": [
+          15,
+          18
+        ]
+      },
+      {
+        "activation": 4.69921875,
+        "token": " Vic",
+        "context": "\nof George in _The Vicar of Wakefield_.\n\n",
+        "mark": [
+          18,
+          22
+        ]
+      },
+      {
+        "activation": 4.6796875,
+        "token": " prof",
+        "context": " book whatsoever,\n  sacred or profane. Therefore you must not",
+        "mark": [
+          29,
+          34
+        ]
+      },
+      {
+        "activation": 4.21875,
+        "token": "oph",
+        "context": "<|begin_of_text|>of the\noesophagus. The Jacobin has",
+        "mark": [
+          27,
+          30
+        ]
+      },
+      {
+        "activation": 4.1171875,
+        "token": "uf",
+        "context": " address it was a\nmanufactory of artificial knee-caps",
+        "mark": [
+          21,
+          23
+        ]
+      },
+      {
+        "activation": 3.822265625,
+        "token": "ne",
+        "context": " who sent it to the Linnean\nSociety, and",
+        "mark": [
+          23,
+          25
+        ]
+      }
+    ],
+    "fires_on_cache": {
+      "built": true,
+      "tokens": 105029
+    }
+  }
+}
