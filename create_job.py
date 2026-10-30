@@ -186,6 +186,7 @@ class CreateRunner:
                 if getattr(eng, "model", "n/a") is None or getattr(
                         eng, "model_id", job.model_id) != job.model_id:
                     eng.load(job.model_id, job.revision)
+                job.revision = getattr(eng, "revision", job.revision)
 
                 def progress(stage, done, total):
                     job.stage = stage
