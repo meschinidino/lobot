@@ -20,9 +20,6 @@ dependencies = [
     "uvicorn>=0.54.0",
 ]
 
-[project.scripts]
-model-lobotomy = "model_lobotomy:main"
-
 [build-system]
 requires = ["uv_build>=0.12.13,<0.13.0"]
 build-backend = "uv_build"
