@@ -239,5 +239,20 @@ class VerifiedTest(unittest.TestCase):
         self.assertEqual(g.cache_size, 0)
 
 
+class ShouldEnforceTest(unittest.TestCase):
+    def test_default_off(self):
+        self.assertFalse(guard.should_enforce())
+
+    def test_opt_in_enforces(self):
+        self.assertTrue(guard.should_enforce(guard=True))
+
+    def test_research_mode_wins_over_opt_in(self):
+        self.assertFalse(
+            guard.should_enforce(guard=True, research_mode=True))
+
+    def test_research_mode_never_blocks(self):
+        self.assertFalse(guard.should_enforce(research_mode=True))
+
+
 if __name__ == "__main__":
     unittest.main()

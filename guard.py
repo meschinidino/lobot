@@ -79,6 +79,18 @@ def refusal_prob(engine, user_text: str, edits, refusal_ids: frozenset,
                      if i < probs.numel()))
 
 
+def should_enforce(guard: bool = False,
+                   research_mode: bool = False) -> bool:
+    """True iff the guard may block this run.
+
+    Off by default until release (D2 overridden 2026-10-29: the
+    prefill screen blocked useful knobs, so runs record would_block
+    but never block unless guard=True). research_mode always wins
+    and never blocks.
+    """
+    return bool(guard) and not research_mode
+
+
 @dataclass(frozen=True)
 class GuardVerdict:
     blocked: bool
