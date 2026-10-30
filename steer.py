@@ -376,11 +376,25 @@ def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[i
     for L in layers:
         norms = torch.cat(pooled[L])
         medians[L] = float(norms.median().item())
+    merged_medians = {str(k): v for k, v in medians.items()}
+    merged_counts = {str(k): v for k, v in counts.items()}
+    if cache_path.exists():
+        try:
+            old = json.loads(cache_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            old = None
+        if old and old.get("key") == full_key:
+            # Same prompts: keep layers calibrated by earlier runs so a
+            # subset run never drops them (clobber fixed 2026-10-29).
+            for k, v in old.get("medians", {}).items():
+                merged_medians.setdefault(k, v)
+            for k, v in old.get("token_counts", {}).items():
+                merged_counts.setdefault(k, v)
     payload = {
         "key": full_key,
-        "medians": {str(k): v for k, v in medians.items()},
+        "medians": merged_medians,
         "prompt_hashes": prompt_hashes,
-        "token_counts": {str(k): v for k, v in counts.items()},
+        "token_counts": merged_counts,
     }
     cache_path.write_text(json.dumps(payload, indent=2))
     return medians, {"cache_hit": False, "key": full_key}
