@@ -653,6 +653,7 @@ class _Wave2Base(unittest.TestCase):
         self.eng = FakeEngine([_gen(BASE_WORDS), _gen(STEER_WORDS)])
         self.patches = [
             mock.patch.object(server, "NO_MODEL", False),
+            mock.patch.object(server, "reader", None),
             mock.patch.object(server, "get_engine", return_value=self.eng),
             mock.patch.object(steer, "calibration_cache_key", return_value={}),
             mock.patch.object(steer, "calibrate_layer_medians",
@@ -842,6 +843,269 @@ class ChatApiTest(_Wave2Base):
             r = self.client.post("/api/chat", json={"session_id": sid,
                                                    "message": "hi"})
         self.assertEqual(r.status_code, 409)
+
+
+class _ReplyTok(FakeTokenizer):
+    """Ids follow the word count, so prompt and prompt+reply differ."""
+
+    def __call__(self, text, **kw):
+        n = len(text.split())
+        return {"input_ids": [list(range(n))]}
+
+
+class ReaderApiTest(_Wave2Base):
+    """R2 routes: neuron card, find, lift, neurons reply (fake engine)."""
+
+    def _stub(self):
+        stub = mock.Mock()
+        stub.pushes_toward.return_value = {
+            "up": [{"token": t, "id": i, "logit": 3.0 - i}
+                   for i, t in enumerate(["alpha", "beta", "gamma"])],
+            "down": [], "coherence": 0.67, "layer_frac": 0.41}
+        stub.fires_on.return_value = [
+            {"activation": 4.1, "token": "pirate", "context": "a pirate map",
+             "mark": [2, 8]}]
+        stub.find_neurons.return_value = {
+            "word": "pirate", "token_ids": [7],
+            "results": [{"layer": 14, "neuron": 1, "score": 9.0,
+                         "rank": 1}]}
+        stub.steer_lift.return_value = {
+            "words": ["pirate"], "base_p": [0.1], "steered_p": [0.3],
+            "lift": 3.0}
+        return stub
+
+    def _tmp_root(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        return Path(tmp.name)
+
+    def _script(self, layers, rows=5, cols=8):
+        script = {}
+        for L in range(layers):
+            script[L] = [torch.zeros(rows, cols)]
+        return script
+
+    def test_neuron_card_shape(self):
+        import app as engine_mod
+        stub = self._stub()
+        root = self._tmp_root()
+        slug = server._model_slug(engine_mod._active_model_id)
+        cache = root / "store" / "reader" / slug
+        cache.mkdir(parents=True)
+        (cache / "fires_on.npz").write_bytes(b"stub")
+        (cache / "sample.json").write_text(
+            json.dumps({"tokens": ["t"] * 100}))
+        with mock.patch.object(server, "ROOT", root), \
+                mock.patch.object(server, "reader", stub):
+            r = self.client.get("/api/neuron/11/1343?k=5")
+        self.assertEqual(r.status_code, 200, r.text)
+        d = r.json()
+        self.assertEqual(d["model_id"], engine_mod._active_model_id)
+        self.assertEqual((d["layer"], d["neuron"]), (11, 1343))
+        self.assertEqual(d["pushes_toward"]["coherence"], 0.67)
+        self.assertEqual(d["fires_on"][0]["token"], "pirate")
+        self.assertEqual(d["fires_on_cache"], {"built": True,
+                                               "tokens": 100})
+        stub.pushes_toward.assert_called_once_with(
+            self.eng, 11, 1343, k=5)
+
+    def test_neuron_out_of_bounds_400(self):
+        for layer, neuron in ((999, 0), (0, 10**9), (-1, 0)):
+            r = self.client.get(f"/api/neuron/{layer}/{neuron}")
+            self.assertEqual(r.status_code, 400, (layer, neuron))
+
+    def test_neuron_card_without_cache_has_null_fires_on(self):
+        stub = self._stub()
+        root = self._tmp_root()
+        with mock.patch.object(server, "ROOT", root), \
+                mock.patch.object(server, "reader", stub):
+            r = self.client.get("/api/neuron/11/1343")
+        self.assertEqual(r.status_code, 200, r.text)
+        d = r.json()
+        self.assertIsNone(d["fires_on"])
+        self.assertEqual(d["fires_on_cache"], {"built": False,
+                                               "tokens": 0})
+        stub.fires_on.assert_not_called()
+
+    def test_find_parses_layer_range(self):
+        stub = self._stub()
+        with mock.patch.object(server, "reader", stub):
+            r = self.client.get(
+                "/api/find?word=pirate&layers=8-27&k=5")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["word"], "pirate")
+        _, args, kw = stub.find_neurons.mock_calls[0]
+        self.assertEqual(args[1], "pirate")
+        self.assertEqual(args[2], list(range(8, 28)))
+        self.assertEqual(kw["k"], 5)
+
+    def test_find_bad_range_400(self):
+        for layers in ("27-8", "abc", "0-999", "8-"):
+            r = self.client.get(
+                f"/api/find?word=pirate&layers={layers}")
+            self.assertEqual(r.status_code, 400, layers)
+
+    def test_find_empty_word_400(self):
+        r = self.client.get("/api/find?word=%20%20")
+        self.assertEqual(r.status_code, 400)
+        stub = self._stub()
+        stub.find_neurons.side_effect = ValueError("no tokens")
+        with mock.patch.object(server, "reader", stub):
+            r = self.client.get("/api/find?word=zzz")
+        self.assertEqual(r.status_code, 400)
+
+    def test_neurons_reply_tokens_addressable(self):
+        import app as engine_mod
+        n_layers = engine_mod.active_spec().layers
+        self.eng.tokenizer = _ReplyTok()
+        script = {L: torch.zeros(2, 8) for L in range(n_layers)}
+        script[2][1, 3] = 9.0
+        with mock.patch.object(server, "_capture_reply_mats",
+                               return_value=script) as cap:
+            r = self.client.post("/api/neurons", json={
+                "prompt": "Say hi.", "rows": [ROW], "token_index": 2,
+                "top_k": 1, "reply": "hello there"})
+        self.assertEqual(r.status_code, 200, r.text)
+        d = r.json()
+        self.assertEqual(len(d["tokens"]), 3)
+        self.assertEqual(d["reply_start"], 2)
+        self.assertEqual(
+            [(n["layer"], n["neuron"]) for n in d["neurons"]],
+            [(2, 3)])
+        self.assertEqual(self.eng.capture_calls, [])
+        cap.assert_called_once()
+        self.assertEqual(list(cap.call_args[0][3]), [0, 1, 2])
+
+    def test_neurons_without_reply_unchanged(self):
+        import app as engine_mod
+        n_layers = engine_mod.active_spec().layers
+        script = self._script(n_layers)
+        script[3][0][1, 5] = 9.0
+        script[7][0][1, 1] = -7.0
+        self.eng.capture_script = script
+        r = self.client.post("/api/neurons", json={
+            "prompt": "Say hi.", "rows": [ROW], "token_index": 2,
+            "top_k": 2})
+        self.assertEqual(r.status_code, 200, r.text)
+        d = r.json()
+        self.assertIsNone(d["reply_start"])
+        self.assertEqual(len(d["tokens"]), 5)
+        self.assertEqual(
+            [(n["layer"], n["neuron"]) for n in d["neurons"]],
+            [(3, 5), (7, 1)])
+        self.assertAlmostEqual(d["neurons"][0]["activation"], 9.0)
+        self.assertTrue(all(n["pushes_toward_top"] is None
+                            for n in d["neurons"]))
+
+    def test_neurons_pushes_toward_top_null_without_reader(self):
+        import app as engine_mod
+        n_layers = engine_mod.active_spec().layers
+        self.eng.capture_script = self._script(n_layers)
+        r = self.client.post("/api/neurons", json={
+            "prompt": "Say hi.", "token_index": 1, "top_k": 2})
+        self.assertEqual(r.status_code, 200, r.text)
+        tops = [n["pushes_toward_top"] for n in r.json()["neurons"]]
+        self.assertTrue(tops)
+        self.assertTrue(all(t is None for t in tops))
+
+    def test_neurons_pushes_toward_top_with_reader(self):
+        import app as engine_mod
+        n_layers = engine_mod.active_spec().layers
+        self.eng.capture_script = self._script(n_layers)
+        with mock.patch.object(server, "reader", self._stub()):
+            r = self.client.post("/api/neurons", json={
+                "prompt": "Say hi.", "token_index": 1, "top_k": 1})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["neurons"][0]["pushes_toward_top"],
+                         ["alpha", "beta", "gamma"])
+
+    def test_lift_shape(self):
+        stub = self._stub()
+        with mock.patch.object(server, "reader", stub):
+            r = self.client.post("/api/lift", json={
+                "layer": 14, "neuron": 100, "dose": 1.5,
+                "words": ["pirate"], "prompts": None})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["lift"], 3.0)
+        _, args, _ = stub.steer_lift.mock_calls[0]
+        self.assertEqual(tuple(args[1:4]), (14, 100, 1.5))
+        self.assertEqual(args[4], ["pirate"])
+        self.assertEqual(len(args[5]), 8)
+
+    def test_lift_dose_out_of_range_422(self):
+        r = self.client.post("/api/lift", json={
+            "layer": 14, "neuron": 100, "dose": 99.0,
+            "words": ["pirate"]})
+        self.assertEqual(r.status_code, 422)
+
+    def test_model_routes_503_without_weights(self):
+        with mock.patch.object(server, "NO_MODEL", True):
+            paths = [("/api/neuron/11/1343", "get"),
+                     ("/api/find?word=pirate", "get")]
+            for path, _ in paths:
+                r = self.client.get(path)
+                self.assertEqual(r.status_code, 503, path)
+            r = self.client.post("/api/lift", json={
+                "layer": 14, "neuron": 100, "dose": 1.0,
+                "words": ["pirate"]})
+            self.assertEqual(r.status_code, 503)
+            r = self.client.post("/api/neurons", json={
+                "prompt": "Say hi.", "token_index": 1})
+            self.assertEqual(r.status_code, 503)
+
+    def test_model_routes_409_when_busy(self):
+        self.eng.lock.acquire()
+        try:
+            for path in ("/api/neuron/11/1343",
+                         "/api/find?word=pirate"):
+                r = self.client.get(path)
+                self.assertEqual(r.status_code, 409, path)
+            r = self.client.post("/api/lift", json={
+                "layer": 14, "neuron": 100, "dose": 1.0,
+                "words": ["pirate"]})
+            self.assertEqual(r.status_code, 409)
+            r = self.client.post("/api/neurons", json={
+                "prompt": "Say hi.", "token_index": 1})
+            self.assertEqual(r.status_code, 409)
+        finally:
+            self.eng.lock.release()
+
+    def test_neuron_card_replay_from_cards_json(self):
+        import app as engine_mod
+        root = self._tmp_root()
+        slug = server._model_slug(engine_mod._active_model_id)
+        cards = root / "store" / "reader" / slug
+        cards.mkdir(parents=True)
+        card = {"model_id": engine_mod._active_model_id, "layer": 11,
+                "neuron": 1343, "pushes_toward": {"up": []},
+                "fires_on": None,
+                "fires_on_cache": {"built": False, "tokens": 0}}
+        (cards / "cards.json").write_text(json.dumps({"11:1343": card}))
+        with mock.patch.object(server, "REPLAY", True), \
+                mock.patch.object(server, "ROOT", root):
+            r = self.client.get("/api/neuron/11/1343")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), card)
+
+    def test_neuron_card_replay_without_cards_503(self):
+        root = self._tmp_root()
+        with mock.patch.object(server, "REPLAY", True), \
+                mock.patch.object(server, "ROOT", root):
+            r = self.client.get("/api/neuron/11/1343")
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(
+            r.json()["detail"], "Neuron cards need the model, or a "
+                                "recorded cards.json for replay mode.")
+
+    def test_reader_routes_reject_cross_origin_post(self):
+        evil = {"Origin": "http://evil.test"}
+        r = self.client.post("/api/lift", json={
+            "layer": 14, "neuron": 100, "dose": 1.0,
+            "words": ["pirate"]}, headers=evil)
+        self.assertEqual(r.status_code, 403)
+        r = self.client.post("/api/neurons", json={
+            "prompt": "Say hi.", "token_index": 1}, headers=evil)
+        self.assertEqual(r.status_code, 403)
 
 
 if __name__ == "__main__":
