@@ -54,7 +54,7 @@ click by click.
    Replay mode does not serve `/api/neurons` or `/api/lift` (they need the model);
    neuron cards replay from `store/reader/<slug>/cards.json`. So record the "Read"
    beat live, or have R3 write cards.json for the demo neurons.
-5. Small polish if time allows: the 375 px evidence table scrolls sideways inside its box.
+5. Done: the evidence table stacks per verb on phones; Create shows a dotted line that turns solid stage by stage.
 
 ## How to work on the UI without a model
 
