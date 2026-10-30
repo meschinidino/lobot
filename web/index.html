@@ -27,6 +27,7 @@
   --body: "Atkinson Hyperlegible Next", "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
   --shelf: 300px;
+  --band: #2A3D33; --pen: #8DB7DA;
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -35,6 +36,7 @@
   --primary: #7B1D2B; --primary-hover: #651522; --on-primary: #FBF1EF;
   --cut: #FF4F9A; --on-cut: #1E2924;
   --ok: #2F6B4A; --ok-tint: #D3E6D8; --warn: #8A5A00; --warn-tint: #F3E6C4; --error: #B3261E; --error-tint: #F6DAD7;
+  --band: #C6D9C0; --pen: #24557A;
 }
 * { box-sizing: border-box; }
 html, body { overflow-x: clip; }
@@ -144,6 +146,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .run .pick:focus-visible { outline: 3px solid var(--ink); }
 .run[aria-current="true"] .pick { color: var(--ink); }
 .run .t { font: 400 20px/1.5 var(--body); overflow-wrap: anywhere; }
+.run.dialed .t { line-height: 2.2; }
 .run[aria-current="true"] .t { font-size: 24px; }
 .run .w { cursor: pointer; }
 .run .w:hover { text-decoration: underline 1px var(--ink-muted); text-underline-offset: 4px; }
@@ -342,7 +345,7 @@ const S = {
   model: null, rows: [], example: false,
   // Guard: on unless research mode (session only, confirmed in a dialog). guardSeen: last guard result per setup.
   guard: true, research: false, guardSeen: {}, checking: false,
-  jobs: [], traits: null, families: null, live: null, page: null,
+  jobs: [], traits: null, families: null, live: null, page: null, read: null,
 };
 // Experiments: one per (model, prompt). Run 1 is the baseline; every steered result adds a run.
 const expKey = (model, prompt) => `${model}\n${prompt.trim()}`;
@@ -364,8 +367,10 @@ function addResult(res, soft = false) {
   const prev = e.runs.findIndex((r) => rowsKey(r.rows) === key);
   const run = { n: prev >= 0 ? e.runs[prev].n : e.runs.length + 2, rows: res.rows, text: res.steered.text, tokens: res.steered.tokens,
     split: res.split && { token: res.split.token, char: res.split.steered_char, base_char: res.split.base_char },
-    seconds: res.seconds, recipe: res.recipe, post: res.post, research: !!res.research, proof: prev >= 0 ? e.runs[prev].proof : undefined, at: Date.now() };
+    seconds: res.seconds, recipe: res.recipe, post: res.post, research: !!res.research,
+    dial: res.dial && res.dial.steered && res.dial.steered.length ? { trait: res.dial.trait, toks: res.dial.steered } : undefined, proof: prev >= 0 ? e.runs[prev].proof : undefined, at: Date.now() };
   if (prev >= 0) e.runs[prev] = run; else e.runs.push(run);
+  if (res.dial && res.dial.baseline && res.dial.baseline.length) e.baseDial = { trait: res.dial.trait, toks: res.dial.baseline };
   e.at = Date.now();
   saveExps();
   return run.n;
@@ -453,7 +458,14 @@ function renderSentence() {
   const edits = S.rows.map((r, i) => `<span class="edit" aria-current="${i === S.focusEdit}">${i ? (i === S.rows.length - 1 ? " and " : ", ") : ""}<button class="link${isB(r) ? "" : " mono"}" type="button" data-focus="${i}" style="font-size:20px" aria-label="Select ${esc(eid(r))} for the knob${isB(r) ? "" : "; press again to edit"}">${esc(eid(r))}</button> at <span class="dose">${fd(r.dose)}</span><button class="x" type="button" data-remove="${i}" aria-label="Remove ${esc(eid(r))}" ${S.running ? "disabled" : ""}>×</button></span>`).join("");
   const full = S.rows.length >= S.limits.max_rows || S.rows.some(isB);
   $("sentence").innerHTML = `On <span class="mono" style="font-size:20px">${esc((S.model || "").split("/").pop())}</span>,
-    ${S.rows.length ? `push ${edits}` : "with no edit"} <button class="btn btn-sm" type="button" id="addBtn" ${full || S.running ? "disabled" : ""} ${full ? 'title="A run uses up to 4 neurons, or one behavior."' : ""}>+ edit</button> and ask:`;
+    ${S.rows.length ? `push ${edits}` : "with no edit"} <button class="btn btn-sm" type="button" id="addBtn" ${full || S.running ? "disabled" : ""} ${full ? 'title="A run uses up to 4 neurons, or one behavior."' : ""}>+ edit</button>
+    ${S.read ? `and read <span class="edit"><button class="link" type="button" data-readsel style="font-size:20px">${esc(S.read)}</button><button class="x" type="button" data-unread aria-label="Stop reading ${esc(S.read)}" ${S.running ? "disabled" : ""}>×</button></span>` : readable().length ? `<button class="btn btn-sm" type="button" id="readBtn" ${S.running ? "disabled" : ""}>+ read</button>` : ""} and ask:`;
+}
+// "+ read": watch one saved behavior at every word (read dial). It works with neuron edits.
+const readable = () => behaviors().saved.filter((b) => b.verdict === "knob");
+function readMenu(anchor) {
+  openPop(anchor, readable().map((b) => `<button class="opt" type="button" data-rd="${esc(b.name)}"><span><b>${esc(b.name)}</b> <span class="meta">v${b.version}</span></span><span class="meta">${S.read === b.name ? "reading" : "read"}</span></button>`).join(""));
+  pop.addEventListener("click", (e) => { const t = e.target.closest("[data-rd]"); if (!t) return; S.read = t.dataset.rd; closePop(); update(); });
 }
 // "+ edit": push a neuron, or use a saved behavior. A run uses neurons or one behavior, not both.
 function addMenu(anchor) {
@@ -473,7 +485,7 @@ function openPop(anchor, html) {
   const r = anchor.getBoundingClientRect(); pop.style.left = Math.max(8, Math.min(innerWidth - 340, r.left + scrollX)) + "px"; pop.style.top = r.bottom + scrollY + 6 + "px";
   document.body.append(pop); pop.querySelector("input, .opt")?.focus();
 }
-document.addEventListener("click", (e) => { if (pop && !pop.contains(e.target) && !e.target.closest("#addBtn,[data-focus]")) closePop(); });
+document.addEventListener("click", (e) => { if (pop && !pop.contains(e.target) && !e.target.closest("#addBtn,#readBtn,[data-readsel],[data-focus]")) closePop(); });
 // One form adds or edits a neuron row; it validates against the active model's limits.
 function rowForm(anchor, i) {
   const r = i == null ? { layer: S.rows.at(-1)?.layer ?? 0, neuron: 0, dose: 1 } : S.rows[i], L = S.limits;
@@ -500,6 +512,8 @@ function rowForm(anchor, i) {
 $("sentence").addEventListener("click", (e) => {
   const t = e.target;
   if (t.closest("#addBtn")) addMenu(t.closest("#addBtn"));
+  else if (t.closest("#readBtn") || t.closest("[data-readsel]")) readMenu(t.closest("#readBtn,[data-readsel]"));
+  else if (t.closest("[data-unread]")) { S.read = null; update(); }
   else if (t.closest("[data-remove]")) { S.rows.splice(+t.closest("[data-remove]").dataset.remove, 1); S.focusEdit = Math.max(0, Math.min(S.focusEdit, S.rows.length - 1)); update(); }
   else if (t.closest("[data-focus]")) { const i = +t.closest("[data-focus]").dataset.focus; if (i === S.focusEdit && !S.running) { if (!isB(S.rows[i])) rowForm(t.closest("[data-focus]"), i); } else { S.focusEdit = i; update(); } }
 });
@@ -508,7 +522,7 @@ $("prompt").addEventListener("input", () => { S.sel = null; renderShelf(); rende
 /* ---------- tree ---------- */
 function treeRuns() {
   const e = curExp(); if (!e) return null;
-  const runs = [{ n: 1, rows: [], text: e.baseline.text, split: null }, ...e.runs];
+  const runs = [{ n: 1, rows: [], text: e.baseline.text, split: null, dial: e.baseDial }, ...e.runs];
   const cs = runs.filter((r) => r.split).map((r) => r.split.char);
   let c = cs.length ? Math.min(...cs) : (/^\S+\s+\S+\s*/.exec(e.baseline.text) || [""])[0].length;
   // A split offset can point at the space before a word (BPE tokens carry it): step onto the word, then back to its start.
@@ -519,6 +533,11 @@ function treeRuns() {
     const sc = r.split ? r.split.char + /^\s*/.exec(r.text.slice(r.split.char))[0].length : -1;
     while ((m = re.exec(tail))) { const start = c + m.index, core = m[0].trimEnd(); out.push({ w: core, sp: m[0].slice(core.length), at: start, split: sc >= start && sc < start + core.length }); }
     r.words = out; r.score = r.rows.reduce((a, x) => a + x.dose, 0);
+    if (r.dial) {
+      // Each word takes the value of the last token that overlaps it (token texts join to the run's text).
+      let pos = 0; const spans = r.dial.toks.map((t) => { const a = pos; pos += t.text.length; return [a, pos, t.value]; });
+      for (const w of out) { let v = null; for (const [a, b, val] of spans) if (a < w.at + w.w.length && b > w.at && val != null) v = val; w.v = v; }
+    }
   });
   return { e, runs, rootChar: c, shared: e.baseline.text.slice(0, c).trim() };
 }
@@ -531,12 +550,13 @@ function runHtml(r, current, inspect) {
     return `<div class="run generating" data-n="${r.n}" aria-current="false"><div class="k"><span class="pick">running: ${esc(editsText(r.rows))}</span><span class="state info">RUNNING</span></div><div class="t">${text ? esc(text) : Array.from({ length: 5 }, (_, i) => `<span class="redact" style="width:${2.4 + (i * 3 % 5) * .7}em"></span>`).join("")}</div></div>`;
   }
   const full = expanded.has(r.n), n = full ? Infinity : current ? 26 : 16;
-  const body = r.words ? r.words.slice(0, n).map((x, j) => `<span class="w${x.split ? " split" : ""}${inspect && inspect.run === r.n && inspect.i === j ? " inspected" : ""}" data-run="${r.n}" data-i="${j}" tabindex="0" role="button" aria-label="Inspect “${esc(x.w)}”">${esc(x.w)}</span>${x.sp}`).join("") + (r.words.length > n ? `… <button class="more" type="button" data-more="${r.n}">show all</button>` : "")
+  const body = r.words ? r.words.slice(0, n).map((x, j) => `<span class="w${x.split ? " split" : ""}${inspect && inspect.run === r.n && inspect.i === j ? " inspected" : ""}" data-run="${r.n}" data-i="${j}"${x.v != null ? ` data-v="${x.v}"` : ""} tabindex="0" role="button" aria-label="Inspect “${esc(x.w)}”">${esc(x.w)}</span>${x.sp}`).join("") + (r.words.length > n ? `… <button class="more" type="button" data-more="${r.n}">show all</button>` : "")
     : Array.from({ length: 7 }, (_, i) => `<span class="redact" style="width:${2.4 + (i * 3 % 5) * .7}em"></span>`).join("") + `<span class="meta"> ${S.running ? "generating" : "not run yet"}</span>`;
   const edits = editsText(r.rows) + (r.research ? ", research mode" : "");
   const label = r.n ? `run ${r.n}: ${edits}` : `next: ${edits}`;
   const tag = !r.n ? `<span class="state ${S.running ? "info" : "warn"}">${S.running ? "RUNNING" : "NOT RUN"}</span>` : r.n > 1 && !r.split ? '<span class="state warn">NO SPLIT</span>' : "";
-  return `<div class="run${!r.n && S.running ? " generating" : ""}" data-n="${r.n}" aria-current="${current}"><div class="k"><button class="pick" type="button" data-pick="${r.n}" ${!r.n || S.running ? "disabled" : ""}>${label}</button>${current ? '<span class="state info">SELECTED</span>' : ""}${tag}</div><div class="t">${body}</div></div>`;
+  const dl = r.dial && r.words ? `<span class="meta" style="color:var(--pen)">reading ${esc(r.dial.trait)}${r.words.some((x) => x.v >= 1) ? ", crosses 1.0" : ""}</span>` : "";
+  return `<div class="run${!r.n && S.running ? " generating" : ""}${r.dial ? " dialed" : ""}" data-n="${r.n}" aria-current="${current}"><div class="k"><button class="pick" type="button" data-pick="${r.n}" ${!r.n || S.running ? "disabled" : ""}>${label}</button>${current ? '<span class="state info">SELECTED</span>' : ""}${tag}${dl}</div><div class="t">${body}</div></div>`;
 }
 let drawN = null;
 function renderTree() {
@@ -582,8 +602,24 @@ function layout() {
     const c = hot ? cs.getPropertyValue("--cut") : cur || n === 1 ? cs.getPropertyValue("--ink") : cs.getPropertyValue("--ink-muted");
     const d = stacked ? `M${x0} ${y0} C ${x0} ${y1}, ${x0} ${y1}, ${x1} ${y1}` : `M${x0} ${y0} C ${x0 + (x1 - x0) * .55} ${y0}, ${x0 + (x1 - x0) * .45} ${y1}, ${x1} ${y1}`;
     return `<path class="${n === drawN ? "draw" : ""}" d="${d}" fill="none" stroke="${c}" stroke-width="${hot ? 4 : cur ? 3 : 2}"${n ? "" : ' stroke-dasharray="5 6"'}/>`;
-  }).join("");
+  }).join("") + kids.map((el) => strip(el, box, +el.dataset.n === drawN)).join("");
   drawN = null;
+}
+// Channel strip (read dial) under a run's words: band 0..1, one pen step per word, an ink tick where it first crosses 1.0.
+function strip(el, box, draw) {
+  const ws = [...el.querySelectorAll(".w[data-v]")]; if (!ws.length) return "";
+  const H = 10, lines = [];
+  for (const w of ws) { const b = w.getBoundingClientRect(), top = Math.round(b.top - box.top); let L = lines.at(-1); if (!L || Math.abs(L.top - top) > 4) lines.push(L = { top, y0: b.bottom - box.top + 5, segs: [] }); L.segs.push([b.left - box.left, b.right - box.left, +w.dataset.v]); }
+  let out = "", onset = false;
+  for (const L of lines) {
+    const y = (v) => L.y0 + H - Math.max(-0.3, Math.min(1.6, v)) * H, x0 = L.segs[0][0], x1 = L.segs.at(-1)[1];
+    out += `<rect x="${x0}" y="${L.y0}" width="${x1 - x0}" height="${H}" fill="var(--band)"/>`;
+    let d = "";
+    L.segs.forEach(([a, b, v], i) => { d += i ? ` V ${y(v)} H ${b}` : `M ${a} ${y(v)} H ${b}`; if (i < L.segs.length - 1) d += ` H ${L.segs[i + 1][0]}`;
+      if (!onset && v >= 1) { onset = true; out += `<line x1="${a}" y1="${L.y0 - 6}" x2="${a}" y2="${L.y0 + H + 4}" stroke="var(--ink)" stroke-width="3"/>`; } });
+    out += `<path class="${draw ? "draw" : ""}" d="${d}" fill="none" stroke="var(--pen)" stroke-width="2"/>`;
+  }
+  return out;
 }
 new ResizeObserver(() => requestAnimationFrame(layout)).observe($("tree"));
 $("runs").addEventListener("click", (e) => {
@@ -647,7 +683,7 @@ function renderInspector() {
       ${pushBtn(nn.layer, nn.neuron, (nn.pushes_toward_top || []).map(plainTok))}</li>`).join("")}</ol>`;
   el.innerHTML = head(`“${esc(x.w)}”`, `run ${r.n}, word ${S.inspect.i + 1} after “${esc(T.shared)}”${x.split ? ", the split" : ""}`) + `
     <div class="kv"><span class="meta">Applied edits in this run</span><b class="mono">${r.rows.length ? esc(editsText(r.rows)) : "none"}</b>
-      <span class="meta">Observed projection</span><b class="mono">n/a</b></div>
+      <span class="meta">Observed projection</span><b class="mono">${x.v != null ? `${esc(r.dial.trait)} ${x.v.toFixed(2)}` : "n/a"}</b></div>${x.v != null ? `<p class="meta" style="margin:4px 0 0">Observed projection: 0 = neutral mean, 1 = ${esc(r.dial.trait)} mean.</p>` : ""}
     <span class="label" style="margin-top:16px">Top neurons at this word</span>${list}
     <p class="meta" style="margin-top:12px">Ranked by activation with this run's edits on. Open a neuron to see what it fires on and pushes toward.</p>`;
 }
@@ -865,9 +901,14 @@ async function run(fan = false) {
         return false;
       });
     } else {
-      finished = await stream("api/run", { prompt, rows: S.rows, ...guardBody }, (ev) => {
+      const read = S.read, toks = [];
+      finished = await stream("api/run", { prompt, rows: S.rows, ...guardBody, dial_trait: read }, (ev) => {
         if (onCommon(ev)) return true;
-        if (ev.stage === "complete") { const n = addResult({ ...ev.result, research }); drawN = n; end(); after(n, ev.result.guard); proveLift(n); return true; }
+        if (ev.stage === "token") toks.push({ text: ev.text, value: ev.dial && read in ev.dial ? ev.dial[read] : null });
+        if (ev.stage === "complete") {
+          const d = ev.result.dial, dial = d && { trait: d.trait, steered: d.steered || toks, baseline: d.baseline || null };
+          const n = addResult({ ...ev.result, research, dial }); drawN = n; end(); after(n, ev.result.guard); proveLift(n); return true;
+        }
         return false;
       });
     }
@@ -1081,7 +1122,7 @@ async function seedRecorded() {
     const tag = text && `${name}:${text.length}`;
     if (!text || seen.has(tag)) continue;
     const d = JSON.parse(text);
-    if (d.runs) for (const r of d.runs) addResult({ model_id: d.model_id, prompt: d.prompt, rows: r.rows, baseline: d.baseline, steered: { text: r.text, tokens: r.tokens }, split: r.split, seconds: r.seconds, recipe: r.recipe || "", post: r.post || "" });
+    if (d.runs) for (const r of d.runs) addResult({ model_id: d.model_id, prompt: d.prompt, rows: r.rows, baseline: d.baseline, steered: { text: r.text, tokens: r.tokens }, split: r.split, seconds: r.seconds, recipe: r.recipe || "", post: r.post || "", dial: r.dial });
     else addResult({ ...d });
     seen.add(tag);
   }
