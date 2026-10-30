@@ -462,6 +462,9 @@ def neurons(req: NeuronsRequest):
         dose = req.dose if req.dose is not None else float(knob["dose"])
     top_k = min(max(int(req.top_k), 1), 32)
     window = min(max(int(req.window), 0), 16)
+    if REPLAY:
+        raise HTTPException(503, "Replay mode loads no weights, and the neurons at a word "
+                                 "need the model. Restart without MODEL_LOBOTOMY_REPLAY.")
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")

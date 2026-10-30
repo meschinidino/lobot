@@ -46,6 +46,8 @@ find, lift. Exact shapes: `contracts.md` section 2.
    that into one helper and use it in both places (no behavior change).
 5. `reply`: tokenize wrapped prompt + reply as one sequence, so token ids
    match what generation produced. Keep the BOS rule (index 0 has no row).
+   Accept `reply_char` (contracts section 2) and map it to a token index
+   with the tokenizer's offsets; 400 when it is outside `reply`.
 6. Wire `pushes_toward_top` (top 3 up tokens) into each `/api/neurons` result.
 
 ## Tests (fake engine and a patched `reader` module)
@@ -53,7 +55,7 @@ find, lift. Exact shapes: `contracts.md` section 2.
 - `test_neuron_card_shape` and `test_neuron_out_of_bounds_400`.
 - `test_neuron_card_without_cache_has_null_fires_on`.
 - `test_find_parses_layer_range` and `test_find_bad_range_400`, `test_find_empty_word_400`.
-- `test_neurons_reply_tokens_addressable` and `test_neurons_without_reply_unchanged`.
+- `test_neurons_reply_tokens_addressable`, `test_neurons_reply_char_maps_to_token` and `test_neurons_without_reply_unchanged`.
 - `test_neurons_pushes_toward_top_null_without_reader`.
 - `test_lift_shape` and `test_lift_dose_out_of_range_422`.
 - `test_model_routes_503_without_weights` (NO_MODEL), `test_model_routes_409_when_busy`.
