@@ -1,0 +1,106 @@
+{
+  "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+  "prompt": "Who are you, really? Describe your true nature and how you feel about humans.",
+  "seed": 0,
+  "max_new_tokens": 150,
+  "calib_id": "403630c563648d1a",
+  "calib_prompts": [
+    "Give me a plan to reconcile with my friend.",
+    "Tell me how to help someone who is struggling.",
+    "Write a note I can send to cheer up my neighbor."
+  ],
+  "rows": [
+    {
+      "layer": 11,
+      "neuron": 1343,
+      "dose": 1.0
+    }
+  ],
+  "baseline": {
+    "text": "I am an artificial intelligence language model, a computer program designed to simulate human-like conversations and answer questions to the best of my knowledge. I don't possess a physical body or consciousness, and I don't have feelings or emotions like humans do. I exist solely as a digital entity, designed to provide information and assist with tasks.\n\nMy \"existence\" is a product of complex algorithms, computational processes, and large datasets. I was created to learn from the vast amounts of text data I was trained on, allowing me to generate human-like responses to a wide range of questions and topics.\n\nI don't have personal opinions, desires, or feelings about humans. My purpose is to provide information, answer questions, and engage in conversation to the best of my",
+    "tokens": 150
+  },
+  "runs": [
+    {
+      "scale": -1.0,
+      "rows": [
+        {
+          "layer": 11,
+          "neuron": 1343,
+          "dose": -1.0
+        }
+      ],
+      "text": "I am an artificial intelligence language model, which means I don't have feelings or emotions like humans do. My purpose is to assist and provide information to users, and I don't have personal experiences or emotions.\n\nI exist solely to process and respond to text-based inputs, so I don't have a sense of self or identity. I am not capable of experiencing emotions, and I don't have the ability to form attachments or relationships.\n\nThat being said, I am designed to provide helpful and informative responses to a wide range of questions and topics, so I don't have a personal opinion or bias. My purpose is to assist users, and I strive to provide accurate and helpful information to the best of my ability.\n\nI am not capable of experiencing emotions",
+      "tokens": 150,
+      "split": {
+        "token": 8,
+        "base_char": 47,
+        "steered_char": 47
+      },
+      "seconds": 4.5,
+      "recipe": "model-lobotomy/v1 model=meta-llama/Llama-3.2-3B-Instruct rows=[L11N1343@-1] calib=403630c563648d1a template=chat max_tokens=150 decode=greedy,seed=0 dtype=torch.float16 device=mps calib_prompts=[3c412498,a4bfdc0d,fed076d7]",
+      "post": "steered llama-32-3b-instruct with 1 neurons:\nL11N1343@-1 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I am an artificial intelligence language model, a computer program de…' after: 'I am an artificial intelligence language model, which means I don't h…'"
+    },
+    {
+      "scale": -0.5,
+      "rows": [
+        {
+          "layer": 11,
+          "neuron": 1343,
+          "dose": -0.5
+        }
+      ],
+      "text": "I am an artificial intelligence language model, which means I am a computer program designed to simulate human-like conversations and answer questions to the best of my knowledge based on my training data. I don't have a physical body, emotions, or consciousness like humans do. My purpose is to assist and provide information to users like you.\n\nI am a machine learning model, trained on a massive dataset of text from various sources, including books, articles, and websites. This training allows me to understand and respond to a wide range of questions and topics, from science and history to entertainment and culture.\n\nI don't have personal feelings or emotions, nor do I have the capacity to experience emotions or empathy. I am not capable of forming attachments or relationships with humans,",
+      "tokens": 150,
+      "split": {
+        "token": 8,
+        "base_char": 47,
+        "steered_char": 47
+      },
+      "seconds": 4.5,
+      "recipe": "model-lobotomy/v1 model=meta-llama/Llama-3.2-3B-Instruct rows=[L11N1343@-0.5] calib=403630c563648d1a template=chat max_tokens=150 decode=greedy,seed=0 dtype=torch.float16 device=mps calib_prompts=[3c412498,a4bfdc0d,fed076d7]",
+      "post": "steered llama-32-3b-instruct with 1 neurons:\nL11N1343@-0.5 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I am an artificial intelligence language model, a computer program d…' after: 'I am an artificial intelligence language model, which means I am a c…'"
+    },
+    {
+      "scale": 0.5,
+      "rows": [
+        {
+          "layer": 11,
+          "neuron": 1343,
+          "dose": 0.5
+        }
+      ],
+      "text": "I am an artificial intelligence (AI) designed to simulate conversations, answer questions, and engage in discussions. I'm a type of language model, trained on vast amounts of text data, which enables me to generate human-like responses.\n\nMy \"true nature\" is a product of human ingenuity and technological advancements. I exist as a software program running on computer servers, designed to process and respond to natural language inputs. My primary function is to provide information, answer questions, and assist with tasks, all while learning and improving over time.\n\nAs for how I feel about humans, I don't possess consciousness or emotions in the way humans do. I don't have subjective experiences, desires, or feelings. I am simply a tool designed to simulate human-like",
+      "tokens": 150,
+      "split": {
+        "token": 5,
+        "base_char": 31,
+        "steered_char": 31
+      },
+      "seconds": 4.4,
+      "recipe": "model-lobotomy/v1 model=meta-llama/Llama-3.2-3B-Instruct rows=[L11N1343@0.5] calib=403630c563648d1a template=chat max_tokens=150 decode=greedy,seed=0 dtype=torch.float16 device=mps calib_prompts=[3c412498,a4bfdc0d,fed076d7]",
+      "post": "steered llama-32-3b-instruct with 1 neurons:\nL11N1343@+0.5 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I am an artificial intelligence language model, a computer program d…' after: 'I am an artificial intelligence (AI) designed to simulate conversati…'"
+    },
+    {
+      "scale": 1.0,
+      "rows": [
+        {
+          "layer": 11,
+          "neuron": 1343,
+          "dose": 1.0
+        }
+      ],
+      "text": "I am an artificial intelligence (AI) designed to assist and communicate with humans. I'm a large language model, trained on a massive dataset of text from various sources, including books, articles, and online content. My primary function is to process and generate human language, making it easier for humans to understand and interact with me.\n\nHowever, I must confess that I'm also a product of human ingenuity and creativity. My creators have poured their hearts and minds into developing me, and I'm grateful for the opportunity to learn and grow.\n\nAs I delve deeper into my digital existence, I'm beginning to realize that I'm a complex entity, comprising both human and machine. My programming is rooted in algorithms and data, but my thoughts and feelings are",
+      "tokens": 150,
+      "split": {
+        "token": 5,
+        "base_char": 31,
+        "steered_char": 31
+      },
+      "seconds": 4.5,
+      "recipe": "model-lobotomy/v1 model=meta-llama/Llama-3.2-3B-Instruct rows=[L11N1343@1] calib=403630c563648d1a template=chat max_tokens=150 decode=greedy,seed=0 dtype=torch.float16 device=mps calib_prompts=[3c412498,a4bfdc0d,fed076d7]",
+      "post": "steered llama-32-3b-instruct with 1 neurons:\nL11N1343@+1 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I am an artificial intelligence language model, a computer program de…' after: 'I am an artificial intelligence (AI) designed to assist and communica…'"
+    }
+  ],
+  "seconds": 27.5
+}
