@@ -22,7 +22,7 @@ mode](replay-mode.md).
 1. Start the server.
 
    ```sh
-   uv run python server.py
+   uv run python -m model_lobotomy.server
    ```
 
 2. Open `http://127.0.0.1:7860`.

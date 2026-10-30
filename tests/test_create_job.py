@@ -15,9 +15,9 @@ import torch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import create_job  # noqa: E402
-import trait_eval as T  # noqa: E402
-from trait_store import TraitFamily, TraitStore, UnsupportedTrait  # noqa: E402
+from model_lobotomy import create_job  # noqa: E402
+from model_lobotomy import trait_eval as T  # noqa: E402
+from model_lobotomy.trait_store import TraitFamily, TraitStore, UnsupportedTrait  # noqa: E402
 
 
 class FakeEngine:

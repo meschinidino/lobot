@@ -11,8 +11,8 @@ disk under `jobs/<id>/trait/`.
 
 ## Read first
 
-- `create_job.py` (job status on disk), `trait_eval.py` (`report.json`
-  layout), `patch.py`, `server.py` (`/api/jobs`).
+- `src/model_lobotomy/create_job.py` (job status on disk), `src/model_lobotomy/trait_eval.py` (`report.json`
+  layout), `src/model_lobotomy/patch.py`, `src/model_lobotomy/server.py` (`/api/jobs`).
 
 ## Deliverables
 

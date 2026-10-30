@@ -19,8 +19,8 @@ show "the steered answer is N× more <trait>".
 ## Read first
 
 - `docs/api.md`, section `/api/run`, "Read dial".
-- `server.py` `_run_stream` (search `dial_trait`, `dial.json`).
-- `engine.py`: `Read`, `EditSet`, `run_stream`.
+- `src/model_lobotomy/server.py` `_run_stream` (search `dial_trait`, `dial.json`).
+- `src/model_lobotomy/engine.py`: `Read`, `EditSet`, `run_stream`.
 - `tests/test_server.py`: the existing dial tests (search `dial`).
 
 ## Deliverables
