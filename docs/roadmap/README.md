@@ -27,7 +27,7 @@ one agent can do the work alone, check it, and know when it is done.
 | Hero model | Llama 3.2 3B Instruct. Qwen 3.5 4B stays supported and is the code default until U1 makes the model choice persistent. |
 | Demo format | A recorded video. Replay mode plays every on-screen run from real recordings, so the take cannot fail. A live take is a bonus, not a must. |
 | Judge | Local judge by default. A judge from the Meta model API may score offline evidence before the demo (J1), never live. |
-| Deadline | The submission time zone is not known. Treat **Mon 11-03 23:00 ET** as the internal deadline for the final video. Tuesday is buffer only. |
+| Deadline | External deadline: Tue 11-04. Target: final video ready **Mon 11-03 23:00 ET**. Tuesday is buffer only. |
 
 ## The demo we are building (10X)
 
