@@ -78,6 +78,13 @@ class CreateRunnerTest(unittest.TestCase):
         self.assertEqual(st["stage"], "verdict")
         self.assertEqual(st["verdict"], "knob")
         self.assertEqual(st["frozen"], {"layer": 7, "dose": 1.0})
+
+    def test_status_records_engine_revision(self):
+        # O8: the pinned revision lands on the job, not just the report.
+        r = self.runner(run_trait_fn=scripted_run())
+        jid = r.start("blunt", seed=0, model_id="m")
+        self.join(r, jid)
+        self.assertEqual(r.status(jid)["revision"], "rev123")
         self.assertTrue((self.jobs / jid / "job.json").exists())
 
     def test_stop_sets_stopped(self):
