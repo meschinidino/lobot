@@ -91,3 +91,13 @@ commits. Never force-push. No event references in repo files.
 - B4: an unenforced would-block shows WOULD BLOCK (evidence) and GUARD (shelf), never PASSED.
 - B5: the model fingerprint prints as key: value pairs.
 - "Pushes toward" lists drop repeats that differ only in spacing or case.
+
+## Fixes after the day-2 smoke test
+
+- D1: "+ edit → Push a neuron" opens the form again (mouse and keyboard). The
+  document click-away closer ignored the detached target of the click that
+  swapped the popup. The guard beat with L11N1343 now runs in the UI.
+- D2: Find is off while a run or a word read holds the model.
+- D3: the lift proof also works for a neuron added by hand or from Find: it
+  takes the words from the neuron's card when the card is readable
+  (coherence at least 0.5); otherwise no proof line, as before.
