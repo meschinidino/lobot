@@ -23,3 +23,7 @@ jobs/
 
 # macOS
 .DS_Store
+
+# local debug and calibration dumps
+calib-*.json
+.claude/launch.json
