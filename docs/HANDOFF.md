@@ -8,6 +8,11 @@ the loop Read → Steer → Guard → Prove on Llama 3.2 3B, as a recorded 3-min
 video. Later stages (100X, 1000X) lead to a signed, re-verifiable registry of
 behavior patches.
 
+## Continue here
+
+`docs/roadmap/reports/night-1-ui.md`: what the UI has, the contract changes, and
+the ordered list of what is left (starting with the real-model pass on Llama).
+
 ## Read first
 
 1. `docs/roadmap/README.md` — stages, decisions, lanes, schedule, rules for agents.
@@ -25,9 +30,10 @@ behavior patches.
   Update (multi-dose filmstrip), refusal guard (opt-in), `.lobot` patches and
   llama.cpp export, read dials (`dial_trait`), click-a-word on the prompt
   (`POST /api/neurons`), chat, replay mode, the Origin check.
-- UI: `web/index.html` is wired to `/api/run` (sentence, knob, experiment
-  tree, guard states, share card). Create, Update, evidence, reader and dials
-  in the UI are lanes U1-U3 (Claude).
+- UI: `web/index.html` has the sentence, knob, experiment tree, guard key and
+  research mode, share card, Create and evidence pages, behavior edits and the
+  5-dose fan (U1), the reader in the word inspector (U2) and read dials (U3).
+  Tested on the stub server (`scripts/ui_stub.py`), not yet on real weights.
 - Recordings: `web/sweep.json` (Qwen) and `web/sweep.llama-32-3b-instruct.json` (Llama).
 - Open question O6 (chat cache semantics): `docs/open-questions.md`.
 
