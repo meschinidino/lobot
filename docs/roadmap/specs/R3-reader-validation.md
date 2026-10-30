@@ -18,7 +18,7 @@ so in the report.
 
 ## Read first
 
-- `reader.py` (R1), `engine.py`, `scripts/derive_llama_recipe.py`
+- `src/model_lobotomy/reader.py` (R1), `src/model_lobotomy/engine.py`, `scripts/derive_llama_recipe.py`
   (`coherent()` loop check), `presets/llama-refusal.json`.
 
 ## Deliverables
@@ -61,7 +61,7 @@ so in the report.
 - At least one neuron with coherence >= 0.5, lift >= 3 and a coherent steered
   answer, **or** the report says none passed and names the trait fallback.
 - `cards.json` serves in replay mode:
-  `MODEL_LOBOTOMY_REPLAY=1 uv run python server.py`, then
+  `MODEL_LOBOTOMY_REPLAY=1 uv run python -m model_lobotomy.server`, then
   `curl localhost:7860/api/neuron/<L>/<N>` returns the card.
 - The recorded sweep replays in the live UI.
 

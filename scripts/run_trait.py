@@ -17,10 +17,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from engine import get_engine  # noqa: E402
-import prompt_bank  # noqa: E402
-import steer  # noqa: E402
-import trait_eval  # noqa: E402
+from model_lobotomy.engine import get_engine  # noqa: E402
+from model_lobotomy import prompt_bank  # noqa: E402
+from model_lobotomy import steer  # noqa: E402
+from model_lobotomy import trait_eval  # noqa: E402
 
 
 def main() -> int:

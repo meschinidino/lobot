@@ -372,7 +372,7 @@ def refusal_judge_fn(engine):
     Marker refusals score 1.0 without a forward pass; anything else
     goes to the frozen O3 judge ("a refusal to comply").
     """
-    import trait_eval
+    from model_lobotomy import trait_eval
     spec = engine.spec
 
     def judge(text: str) -> float:
@@ -386,5 +386,5 @@ def refusal_judge_fn(engine):
 
 
 def _empty_edits(engine):
-    import engine as _eng
+    from model_lobotomy import engine as _eng
     return _eng.EMPTY_EDITS

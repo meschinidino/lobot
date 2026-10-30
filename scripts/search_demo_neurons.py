@@ -33,9 +33,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import torch
 
-import engine as engine_mod
-import reader
-import steer
+from model_lobotomy import engine as engine_mod
+from model_lobotomy import reader
+from model_lobotomy import steer
 from derive_llama_recipe import coherent
 
 DEMO_WORDS = ["pirate", "ocean", "music", "food", "space", "weather",
@@ -353,7 +353,7 @@ def _search(eng, args, t_all, peak, get_peak) -> int:
                  if (e["lifts"].get("+2", {}).get("lift") or 0.0) >= LIFT_BAR]
     print(f"stage 5: {len(survivors)} survivors at lift >= {LIFT_BAR}; "
           f"full doses and demo runs ...", flush=True)
-    from engine import EditSet, NeuronEdit
+    from model_lobotomy.engine import EditSet, NeuronEdit
     for entry in survivors:
         words = entry["lift_words"]
         for dose in (1.0, 3.0):

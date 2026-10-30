@@ -13,9 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import evaluation as E  # noqa: E402
-import prompt_bank  # noqa: E402
-import trait_eval as T  # noqa: E402
+from model_lobotomy import evaluation as E  # noqa: E402
+from model_lobotomy import prompt_bank  # noqa: E402
+from model_lobotomy import trait_eval as T  # noqa: E402
 from unittest import mock  # noqa: E402
 
 import torch  # noqa: E402

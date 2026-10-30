@@ -11,7 +11,7 @@ report. The local judge stays the default and the fallback.
 
 ## Read first
 
-- `trait_eval.py` (judge prompt and scoring), `scripts/validate_judge.py`,
+- `src/model_lobotomy/trait_eval.py` (judge prompt and scoring), `scripts/validate_judge.py`,
   `docs/open-questions.md`.
 
 ## Step 0 (do first)

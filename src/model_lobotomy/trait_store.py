@@ -16,7 +16,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_PATH = ROOT / "store" / "traits.json"
 
 NOT_SUPPORTED = "not supported yet"
