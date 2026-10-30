@@ -27,8 +27,8 @@ sys.path.insert(0, str(ROOT))
 
 import app as engine
 import steer
-from engine import EMPTY_EDITS, EditSet, get_engine
-from server import _split_char
+from engine import EditSet, Read, get_engine
+from server import _dial_spec, _split_char
 from steer import RecipeRow
 
 
@@ -38,6 +38,29 @@ def parse_rows(text: str) -> list[RecipeRow]:
         layer, neuron, dose = part.strip().split(":")
         rows.append(RecipeRow(int(layer), int(neuron), float(dose)))
     return rows
+
+
+def _run_pass(eng, prompt, edits, medians, max_new, dial_spec):
+    """One greedy pass; with dial_spec also its per-token [{"text", "value"}].
+
+    The dial path streams (same greedy run, same seed) so each token
+    carries its read-dial value; without it this is one plain Engine.run.
+    """
+    if dial_spec is None:
+        return eng.run(prompt, edits, medians=medians,
+                       max_new_tokens=max_new, seed=engine.SEED), []
+    values = []
+    result = None
+    for ev in eng.run_stream(prompt, edits, medians=medians,
+                             max_new_tokens=max_new, seed=engine.SEED,
+                             dial=dial_spec):
+        if ev["type"] == "token":
+            d = ev.get("dial") or {}
+            values.append({"text": ev["text"],
+                           "value": d.get(dial_spec["trait"])})
+        else:
+            result = ev["result"]
+    return result, values
 
 
 def main() -> int:
@@ -51,6 +74,9 @@ def main() -> int:
                     help="dose multipliers for the recipe; the baseline always runs")
     ap.add_argument("--out", default=None,
                     help="default: web/sweep.json for Qwen, web/sweep.<short name>.json for others")
+    ap.add_argument("--dial-trait", default=None,
+                    help="record per-token read-dial lists for this trait family "
+                    "(needs a finished Create job; skipped with a note when missing)")
     args = ap.parse_args()
 
     if args.out is None:
@@ -78,21 +104,35 @@ def main() -> int:
         eng.load(args.model)
     steer.check_preset_binding(preset, args.model)
     model, tok = eng.model, eng.tokenizer
+    dial_spec = None
+    if args.dial_trait:
+        try:
+            dial_spec = _dial_spec(eng, args.dial_trait)
+        except KeyError:
+            print(f"[sweep] --dial-trait {args.dial_trait}: no finished Create job "
+                  f"with a saved direction for that trait. "
+                  f"Recording without dial.", flush=True)
     key = steer.calibration_cache_key(
         args.model, eng.revision, tok, str(steer.DTYPE), steer.DEVICE)
+    layers = sorted({r.layer for r in rows}
+                    | ({dial_spec["layer"]} if dial_spec else set()))
     with eng.clean():
         medians, cal_info = steer.calibrate_layer_medians(
-            model, tok, calib_prompts, sorted({r.layer for r in rows}),
+            model, tok, calib_prompts, layers,
             cache_path=ROOT / steer.calibration_path_for(args.model), key=key, spec=spec)
 
-    base = eng.run(prompt, EMPTY_EDITS, medians=medians, max_new_tokens=max_new, seed=engine.SEED)
+    read = (Read(layer=dial_spec["layer"]),) if dial_spec else ()
+    base, base_dial = _run_pass(eng, prompt, EditSet(read=read), medians,
+                                max_new, dial_spec)
     print(f"[sweep] baseline: {base['new_tokens']} tokens, {base['seconds']} s", flush=True)
     runs = []
     for s in scales:
         scaled = [RecipeRow(r.layer, r.neuron, round(r.dose * s, 4)) for r in rows]
         t0 = time.perf_counter()
-        out = eng.run(prompt, EditSet.from_rows(scaled), medians=medians,
-                      max_new_tokens=max_new, seed=engine.SEED)
+        out, out_dial = _run_pass(
+            eng, prompt,
+            EditSet(neuron=EditSet.from_rows(scaled).neuron, read=read),
+            medians, max_new, dial_spec)
         if out["hook_calls"] < 1:
             print(f"[sweep] x{s:+}: steering hooks did not fire; stopping", flush=True)
             return 4
@@ -104,14 +144,21 @@ def main() -> int:
         }
         kw = dict(rows=scaled, calib_id=cal_info["key"]["prompts_sha256"], max_new_tokens=max_new,
                   seed=engine.SEED, calib_prompts=calib_prompts, model_id=args.model)
-        runs.append({
+        entry = {
             "scale": s,
             "rows": [{"layer": r.layer, "neuron": r.neuron, "dose": r.dose} for r in scaled],
             "text": out["text"], "tokens": out["new_tokens"], "split": split,
             "seconds": round(time.perf_counter() - t0, 1),
             "recipe": steer.recipe_string(**kw),
             "post": steer.build_post_text(base=base, steered=out, **kw),
-        })
+        }
+        if dial_spec is not None:
+            entry["dial"] = {"trait": dial_spec["trait"],
+                             "layer": dial_spec["layer"],
+                             "neutral": dial_spec["b0"],
+                             "trait_mean": dial_spec["b1"],
+                             "baseline": base_dial, "steered": out_dial}
+        runs.append(entry)
         print(f"[sweep] x{s:+}: split at token {div}, {out['new_tokens']} tokens", flush=True)
 
     result = {

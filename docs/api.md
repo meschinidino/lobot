@@ -44,7 +44,7 @@ Events (one JSON object per line):
 | `blocked` | `guard`: `{blocked, would_block, enforced, verified, min_ratio, worst_prompt, blocked_prompts}` (`verified`: the allow was confirmed by full generation + judge; prefill-only blocks show `verified: false`) |
 | `token` | `text` (append), `dial`: `{trait: value}` (only with `dial_trait`, during `steered`) |
 | `error` | `message` |
-| `complete` | `result`: `{model_id, prompt, rows, baseline: {text, tokens}, steered: {text, tokens}, split: {token, base_char, steered_char} \| null, seconds, cache_hit, guard, dial, recipe, post}` (`guard`: the recorded verdict dict, `blocked: false` here; `dial`: `{trait, layer, neutral, trait_mean}` or null) |
+| `complete` | `result`: `{model_id, prompt, rows, baseline: {text, tokens}, steered: {text, tokens}, split: {token, base_char, steered_char} \| null, seconds, cache_hit, guard, dial, recipe, post}` (`guard`: the recorded verdict dict, `blocked: false` here; `dial`: `{trait, layer, neutral, trait_mean, baseline, steered}` or null, with one `{text, value}` per generated token of each pass) |
 
 Errors: 400 empty prompt/recipe/invalid row, 409 busy, 503 NO_MODEL.
 
@@ -54,12 +54,18 @@ token carrying `dial: {trait: value}`. Scale: 0 = the trait's
 neutral-template mean projection, 1 = its trait-template mean
 (anchors in `complete.result.dial`; cached per job in
 `jobs/{id}/trait/dial.json`). Tokens whose tap entry is missing
-ship without `dial`. Unknown trait: `error` event (create it first).
+ship without `dial`. The baseline pass gets the same `Read` edit
+(it never changes the baseline's tokens). `complete.result.dial`
+adds `baseline` and `steered`: one `{text, value}` per generated
+token of each pass (`value` is null where the tap lagged; the
+texts join to the pass's text; the steered list equals the
+streamed values). Unknown trait: `error` event (create it first).
 
 Replay mode (`MODEL_LOBOTOMY_REPLAY=1`) loads no weights. `/api/run`
 answers only setups recorded in `web/example.json` and `web/sweep*.json`
 (same model, prompt and rows, in any order; a setup with every dose at 0 plays any recording of that prompt as its baseline) with the same stage events
 and Stop, plus `replay: true` in the result; any other setup gets 404.
+`dial` is the recorded dial when the recording has one, else null.
 `/api/state` reports `replay`.
 
 ## POST /api/stop
