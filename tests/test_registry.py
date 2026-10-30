@@ -16,8 +16,8 @@ import torch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import steer  # noqa: E402
-from steer import RecipeRow  # noqa: E402
+from model_lobotomy import steer  # noqa: E402
+from model_lobotomy.steer import RecipeRow  # noqa: E402
 
 
 def make_llama_fake(layers=(13, 14)):

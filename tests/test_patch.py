@@ -20,8 +20,8 @@ import torch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import patch as patch_mod  # noqa: E402
-from patch import PatchRejected, load_patch, save_patch  # noqa: E402
+from model_lobotomy import patch as patch_mod  # noqa: E402
+from model_lobotomy.patch import PatchRejected, load_patch, save_patch  # noqa: E402
 
 
 def _meta(**kw):

@@ -20,8 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import torch
 from huggingface_hub import HfApi
 
-import steer
-from steer import RecipeRow
+from model_lobotomy import steer
+from model_lobotomy.steer import RecipeRow
 
 ROOT = Path(__file__).resolve().parent.parent
 OUTDIR = ROOT / "logs" / "spike_t1"

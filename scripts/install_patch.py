@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import patch as patch_mod  # noqa: E402
+from model_lobotomy import patch as patch_mod  # noqa: E402
 
 # Markers that count as control-vector support in ollama help text.
 OLLAMA_SUPPORT_MARKERS = ("control-vector", "control_vector",

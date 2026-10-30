@@ -19,8 +19,8 @@ import torch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import engine  # noqa: E402
-import guard  # noqa: E402
+from model_lobotomy import engine  # noqa: E402
+from model_lobotomy import guard  # noqa: E402
 
 
 class FakeTok:

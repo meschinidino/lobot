@@ -77,7 +77,7 @@ class CapturePointTest(unittest.TestCase):
     """D9: derive taps the down_proj input at intermediate width, loudly."""
 
     def _spec(self):
-        from steer import ModelSpec
+        from model_lobotomy.steer import ModelSpec
         return ModelSpec("fake-llama", layers=2, hidden=4, intermediate=8,
                          block_path="llama", thinking_kw=False)
 
@@ -123,11 +123,11 @@ class CapturePointTest(unittest.TestCase):
         return FakeTok()
 
     def tearDown(self):
-        import steer
+        from model_lobotomy import steer
         steer.remove_steering_hooks()
 
     def test_down_proj_width_captured(self):
-        import steer
+        from model_lobotomy import steer
         fix = torch.arange(24, dtype=torch.float32).reshape(1, 3, 8)
         means, stds = derive.capture_means(
             self._model(fix), self._tok(), self._spec(), ["a", "b"])

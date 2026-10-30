@@ -28,11 +28,11 @@ from pathlib import Path
 
 import gradio as gr
 
-import engine as engine_mod
-import steer
-from steer import RecipeRow
+from model_lobotomy import engine as engine_mod
+from model_lobotomy import steer
+from model_lobotomy.steer import RecipeRow
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 
 MAX_ROWS = 4          # recipe editor slots (evil-qwen needs 2)
 DOSE_MIN, DOSE_MAX = -3.0, 3.0   # bounded slider range (D10 doubles as validation)
