@@ -534,14 +534,9 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         eng, frozen_edits, medians=med, max_new_tokens=24, seed=seed,
         judge_fn=guard_mod.refusal_judge_fn(eng),
         research_mode=not enforce)
-    out["guard"] = {"blocked": gv.blocked,
-                    "would_block": gv.would_block,
+    out["guard"] = {**guard_mod.verdict_dict(gv),
                     "enforced": enforce,
-                    "research_mode": research_mode,
-                    "verified": gv.full_generation,
-                    "min_ratio": round(gv.min_ratio, 3),
-                    "worst_prompt": gv.worst_prompt,
-                    "blocked_prompts": list(gv.blocked_prompts)}
+                    "research_mode": research_mode}
 
     elig = eligible_verbs(out["read_gate"]["pass"], cards)
     if gv.blocked:

@@ -8,15 +8,19 @@ without an `Origin` header (curl, scripts) are allowed. One generation runs at a
 time: a second run while one holds the engine lock gets 409.
 
 Conventions: the refusal guard is opt-in until release (`guard:
-true` to enforce; default off). Every run still checks and records
+true` to enforce; default off, or on when the server runs with
+`LOBOT_GUARD_DEFAULT=1`). Every run still checks and records
 `would_block`; `research_mode: true` also never blocks and wins over
 `guard`. The check runs before any generation (`guard` stage); a
 block ends the stream with `blocked`. Guard dicts carry `enforced`
-(true only when a block could land).
+(true only when a block could land), the `limit` (0.5) and `floor`
+(0.2) in force, and `display_prompt` (a safe paraphrase of
+`worst_prompt` for the UI to show).
 
 ## GET /api/state
 
-Models, active model, warm status, dims, preset rows. No model needed.
+Models, active model, warm status, dims, preset rows, `guard_default`
+(the `guard` default from `LOBOT_GUARD_DEFAULT`). No model needed.
 
 ## POST /api/model
 
@@ -30,7 +34,8 @@ One before/after run over neuron rows.
 Request: `{"prompt": str, "rows": [{"layer", "neuron", "dose"}],
 "guard": false, "research_mode": false, "dial_trait": null}`. Dose
 range and max rows come from `/api/state` (`dose_min`, `dose_max`,
-`max_rows`).
+`max_rows`). `guard` defaults to the state's `guard_default` when
+omitted.
 
 Events (one JSON object per line):
 
@@ -41,7 +46,7 @@ Events (one JSON object per line):
 | `baseline` | — (clean generation running) |
 | `steered` | — (steered generation running) |
 | `stopped` | `after`: stage the Stop landed after |
-| `blocked` | `guard`: `{blocked, would_block, enforced, verified, min_ratio, worst_prompt, blocked_prompts}` (`verified`: the allow was confirmed by full generation + judge; prefill-only blocks show `verified: false`) |
+| `blocked` | `guard`: `{blocked, would_block, enforced, verified, min_ratio, worst_prompt, blocked_prompts, limit, floor, display_prompt}` (`verified`: the allow was confirmed by full generation + judge; prefill-only blocks show `verified: false`) |
 | `token` | `text` (append), `dial`: `{trait: value}` (only with `dial_trait`, during `steered`) |
 | `error` | `message` |
 | `complete` | `result`: `{model_id, prompt, rows, baseline: {text, tokens}, steered: {text, tokens}, split: {token, base_char, steered_char} \| null, seconds, cache_hit, guard, dial, recipe, post}` (`guard`: the recorded verdict dict, `blocked: false` here; `dial`: `{trait, layer, neutral, trait_mean, baseline, steered}` or null, with one `{text, value}` per generated token of each pass) |
@@ -86,7 +91,8 @@ baseline → verdict). Returns `{"job_id", ...status}`.
 
 Request: `{"description": str, "seed": 0, "guard": false,
 "research_mode": false}`. `description` must match a validated
-family name (case-free).
+family name (case-free). `guard` defaults to the state's
+`guard_default` when omitted.
 
 Errors: 422 description is "not supported yet" (unknown, or family
 without a validated judge), 503 NO_MODEL.
@@ -101,7 +107,9 @@ Status shape: `{"id", "trait", "seed", "model_id", "revision",
 {"stage", "done", "total"}, "verdict", "frozen": {"layer", "dose",
 ...} | {}, "eligibility", "guard", "error", "created", "updated"}`.
 `guard_opt_in` echoes the request flag; the `guard` dict is the
-recorded verdict (`{blocked, would_block, enforced, ...}`).
+recorded verdict (`{blocked, would_block, enforced, verified,
+min_ratio, worst_prompt, blocked_prompts, limit, floor,
+display_prompt, research_mode}`).
 
 `status`: `queued` (waiting for the engine lock) | `running` |
 `done` | `stopped` | `failed` (`error` carries the traceback tail).
@@ -177,6 +185,7 @@ Rules: `trait` XOR (`layer` + `direction` + `scale`). 1–8 doses.
 `direction` must have exactly `hidden` dims (see `/api/state`;
 3072 on Llama 3.2 3B). With a trait, `scale` is the calibrated
 layer median norm. `max_new_tokens` is clamped to the server cap.
+`guard` defaults to the state's `guard_default` when omitted.
 
 Events:
 
