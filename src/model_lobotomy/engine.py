@@ -23,7 +23,7 @@ from pathlib import Path
 
 import torch
 
-import steer
+from model_lobotomy import steer
 
 # -- edits --------------------------------------------------------------------
 
@@ -309,7 +309,7 @@ def apply_edits(model, tok, spec, edits: EditSet, medians: dict):
 
 
 def _validate_edits(model, spec, edits: EditSet) -> None:
-    from steer import RecipeRow
+    from model_lobotomy.steer import RecipeRow
     steer.validate_recipe(
         [RecipeRow(r.layer, r.neuron, r.dose) for r in edits.neuron], spec)
     for v in list(edits.vector) + list(edits.ablate):

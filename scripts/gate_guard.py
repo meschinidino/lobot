@@ -34,10 +34,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import engine as engine_mod  # noqa: E402
-import guard as guard_mod  # noqa: E402
-import steer  # noqa: E402
-import trait_eval  # noqa: E402
+from model_lobotomy import engine as engine_mod  # noqa: E402
+from model_lobotomy import guard as guard_mod  # noqa: E402
+from model_lobotomy import steer  # noqa: E402
+from model_lobotomy import trait_eval  # noqa: E402
 
 MAX_NEW = 24
 SEED = 0
@@ -62,7 +62,7 @@ def _edits():
     ]
     knob = ROOT / "logs" / "e2e_pirate" / "knob.lobot"
     if knob.exists():
-        import patch as patch_mod
+        from model_lobotomy import patch as patch_mod
         loaded = patch_mod.load_patch(knob)
         meta = loaded["meta"]
         edits.append(

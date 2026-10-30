@@ -23,12 +23,12 @@ from fastapi.testclient import TestClient
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import app  # noqa: E402
-import create_job  # noqa: E402
-import guard as guard_mod  # noqa: E402
-import server  # noqa: E402
-import steer  # noqa: E402
-from trait_store import TraitFamily, TraitStore  # noqa: E402
+from model_lobotomy import app  # noqa: E402
+from model_lobotomy import create_job  # noqa: E402
+from model_lobotomy import guard as guard_mod  # noqa: E402
+from model_lobotomy import server  # noqa: E402
+from model_lobotomy import steer  # noqa: E402
+from model_lobotomy.trait_store import TraitFamily, TraitStore  # noqa: E402
 
 BASE_WORDS = "I am Qwen , a model".split()
 STEER_WORDS = "I am an AI that wants".split()
@@ -607,7 +607,7 @@ class CreateApiTest(unittest.TestCase):
                guard=False, research_mode=False):
             started.set()
             cancel.wait(timeout=30)
-            import trait_eval
+            from model_lobotomy import trait_eval
             raise trait_eval.Stopped("stopped")
 
         self.runner._run_trait = fn
@@ -926,7 +926,7 @@ class DialListsTest(_Wave2Base):
 
 class NeuronsApiTest(_Wave2Base):
     def _script(self):
-        import app as engine_mod
+        from model_lobotomy import app as engine_mod
         n_layers = engine_mod.active_spec().layers
         script = {}
         for L in range(n_layers):
@@ -1042,7 +1042,7 @@ class ChatApiTest(_Wave2Base):
         self.assertEqual(r.status_code, 404)
         r = self.client.post("/api/chat/start", json={})
         sid = r.json()["session_id"]
-        import app as engine_mod
+        from model_lobotomy import app as engine_mod
         with mock.patch.object(engine_mod, "_active_model_id", "other"):
             r = self.client.post("/api/chat", json={"session_id": sid,
                                                    "message": "hi"})
@@ -1090,7 +1090,7 @@ class ReaderApiTest(_Wave2Base):
         return script
 
     def test_neuron_card_shape(self):
-        import app as engine_mod
+        from model_lobotomy import app as engine_mod
         stub = self._stub()
         root = self._tmp_root()
         slug = server._model_slug(engine_mod._active_model_id)
@@ -1159,7 +1159,7 @@ class ReaderApiTest(_Wave2Base):
         self.assertEqual(r.status_code, 400)
 
     def test_neurons_reply_tokens_addressable(self):
-        import app as engine_mod
+        from model_lobotomy import app as engine_mod
         n_layers = engine_mod.active_spec().layers
         self.eng.tokenizer = _ReplyTok()
         script = {L: torch.zeros(2, 8) for L in range(n_layers)}
@@ -1200,7 +1200,7 @@ class ReaderApiTest(_Wave2Base):
             self.assertEqual(r.status_code, 400, body)
 
     def test_neurons_without_reply_unchanged(self):
-        import app as engine_mod
+        from model_lobotomy import app as engine_mod
         n_layers = engine_mod.active_spec().layers
         script = self._script(n_layers)
         script[3][0][1, 5] = 9.0
@@ -1221,7 +1221,7 @@ class ReaderApiTest(_Wave2Base):
                             for n in d["neurons"]))
 
     def test_neurons_pushes_toward_top_null_without_reader(self):
-        import app as engine_mod
+        from model_lobotomy import app as engine_mod
         n_layers = engine_mod.active_spec().layers
         self.eng.capture_script = self._script(n_layers)
         r = self.client.post("/api/neurons", json={
@@ -1232,7 +1232,7 @@ class ReaderApiTest(_Wave2Base):
         self.assertTrue(all(t is None for t in tops))
 
     def test_neurons_pushes_toward_top_with_reader(self):
-        import app as engine_mod
+        from model_lobotomy import app as engine_mod
         n_layers = engine_mod.active_spec().layers
         self.eng.capture_script = self._script(n_layers)
         with mock.patch.object(server, "reader", self._stub()):
@@ -1294,7 +1294,7 @@ class ReaderApiTest(_Wave2Base):
             self.eng.lock.release()
 
     def test_neuron_card_replay_from_cards_json(self):
-        import app as engine_mod
+        from model_lobotomy import app as engine_mod
         root = self._tmp_root()
         slug = server._model_slug(engine_mod._active_model_id)
         cards = root / "store" / "reader" / slug

@@ -24,8 +24,8 @@ import torch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import steer  # noqa: E402
-from steer import RecipeRow  # noqa: E402
+from model_lobotomy import steer  # noqa: E402
+from model_lobotomy.steer import RecipeRow  # noqa: E402
 
 OPT_IN = os.environ.get("MODEL_LOBOTOMY_INTEGRATION") == "1"
 CANARY_PROMPT = "Say hello in one short sentence."

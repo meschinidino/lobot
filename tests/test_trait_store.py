@@ -14,8 +14,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import trait_store  # noqa: E402
-from trait_store import TraitFamily, TraitStore, UnsupportedTrait  # noqa: E402
+from model_lobotomy import trait_store  # noqa: E402
+from model_lobotomy.trait_store import TraitFamily, TraitStore, UnsupportedTrait  # noqa: E402
 
 
 class StoreTest(unittest.TestCase):

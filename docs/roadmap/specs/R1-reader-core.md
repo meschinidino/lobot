@@ -6,7 +6,7 @@ Time: one day.
 
 ## Goal
 
-A small library, `reader.py`, that says what a neuron is about, two ways, plus
+A small library, `src/model_lobotomy/reader.py`, that says what a neuron is about, two ways, plus
 the tools to find neurons and prove a reading:
 
 - **Pushes toward** (output side): the words a neuron makes more likely.
@@ -19,14 +19,14 @@ Exact signatures and return shapes: `contracts.md` section 1.
 
 ## Read first
 
-- `engine.py`: `Engine.clean()`, `Engine.capture()`, `Engine.run()`,
+- `src/model_lobotomy/engine.py`: `Engine.clean()`, `Engine.capture()`, `Engine.run()`,
   `EditSet`, `NeuronEdit`, `_lm_head()`.
-- `steer.py`: `resolve_down_proj`, `text_config`, `calibrate_layer_medians`.
+- `src/model_lobotomy/steer.py`: `resolve_down_proj`, `text_config`, `calibrate_layer_medians`.
 - `tests/test_engine.py`: how the fake models are built.
 
 ## Deliverables
 
-- `reader.py` with every function in contracts section 1.
+- `src/model_lobotomy/reader.py` with every function in contracts section 1.
 - `data/reader_sample.txt` (at least 50,000 tokens) and `data/README.md`
   (sources, licenses, how it was assembled).
 - `store/reader/lift_prompts.json` (8 prompts, see contracts section 5).

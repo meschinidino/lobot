@@ -11,7 +11,7 @@ the demo runs with it on.
 
 ## Read first
 
-- `guard.py` (prefill screen, ratio limit 0.5, natural floor 0.2, full
+- `src/model_lobotomy/guard.py` (prefill screen, ratio limit 0.5, natural floor 0.2, full
   confirm), `scripts/gate_guard.py`, `tests/test_guard.py`,
   `docs/open-questions.md`.
 
