@@ -16,9 +16,18 @@ one agent can do the work alone, check it, and know when it is done.
 
 | Stage | When | Outcome |
 |---|---|---|
-| **10X** | now to Wed 2026-11-04 (demo deadline) | The loop on Llama, live: read a neuron, steer it, guard it, with proof on screen and a patch you can export. 3-minute video. |
+| **10X** | now to Mon 2026-11-03 (internal demo deadline; Tue 11-04 is buffer) | The loop on Llama, on screen: read a neuron, steer it, guard it, with proof on screen and a patch you can export. 3-minute video. |
 | **100X** | November to January | Describe a behavior in words and get a tested patch in about a minute; clean features (not single neurons); live dials in chat; install into llama.cpp and Ollama; patches anyone can re-verify. |
 | **1000X** | 2027 | An open, signed registry of behavior patches for open models, with portable evidence, guards for many risks, cross-model transfer, and behavior CI. |
+
+## Decisions (2026-10-30)
+
+| Topic | Decision |
+|---|---|
+| Hero model | Llama 3.2 3B Instruct. Qwen 3.5 4B stays supported and is the code default until U1 makes the model choice persistent. |
+| Demo format | A recorded video. Replay mode plays every on-screen run from real recordings, so the take cannot fail. A live take is a bonus, not a must. |
+| Judge | Local judge by default. A judge from the Meta model API may score offline evidence before the demo (J1), never live. |
+| Deadline | The submission time zone is not known. Treat **Mon 11-03 23:00 ET** as the internal deadline for the final video. Tuesday is buffer only. |
 
 ## The demo we are building (10X)
 
@@ -70,9 +79,10 @@ against it with replay and stubs.
 Thu 10-30  R1, R2, D1, E1, S1(code), P1(code), J1 | U1
 Fri 10-31  R3 (model slot) | merge R1/R2/D1/E1 | U2, U3 | S1 measure (model slot)
 Sat 11-01  R3 shortlist done | P1 round trip (model slot) | U2/U3 against real API
-Sun 11-02  feature freeze 18:00 ET | V1 recordings (model slot) | full test pass
-Mon 11-03  V1 video cut, share card, post text | bug fixes only
-Tue 11-04  rehearse twice, final video by 18:00 ET (3 h buffer)
+           feature freeze 23:00 ET
+Sun 11-02  V1 recordings (model slot) | full test pass | bug fixes only
+Mon 11-03  V1 video cut, share card, post text | final video by 23:00 ET
+Tue 11-04  buffer: re-cut only if a check fails
 ```
 
 Model-lane order (one at a time): R3 search → S1 measurement → P1 round trip →

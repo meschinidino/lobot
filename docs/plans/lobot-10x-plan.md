@@ -1,5 +1,7 @@
 # lobot 10X plan: behavior knobs you can see, measure and export
 
+> **Status (2026-10-30):** the goal and schedule now live in `docs/roadmap/`. This plan stays the record of reviews and binding decisions (D1-D14, design decisions 1-14). Where they differ, the roadmap wins on scope and order; this plan wins on engineering decisions.
+
 Working plan for /plan-ceo-review, 2026-10-29. Branch: main (no remote). Review depth: strategy-only (the user asked for scope and direction, not implementation design). Mode: SCOPE EXPANSION (explicit user request).
 
 Source of truth for problem and constraints: office-hours design doc `~/.gstack/projects/model-lobotomy/office-hours-design-20261028-233909.md`.

@@ -116,7 +116,7 @@ components:
 
 **Memorable thing:** "I could see it, and I could turn it." Turn the knob, and you see exactly where and how the answer changes. Every design choice serves this line.
 
-**Product context:** lobot is a local workbench for behavior CRUD on small open models, on one laptop. Create builds a behavior direction with a report card. Read shows per-token behavior values. Update steers with a signed dose. Delete ablates the direction. Users: viewers who see one short screen recording, often on a phone, and the author, who runs many experiments. Peers (Neuronpedia, Goodfire, Transluce) use calm, academic looks; steering tools paint heatmaps over text. lobot shows the change itself.
+**Product context:** lobot is a local workbench to see a behavior inside a small open model, change it, prove the change, and keep it safe, on one laptop. The loop: Read (click a word: the neurons behind it, what they fire on, what they push toward), Steer (push a neuron or a behavior direction; the answer forks), Guard (the refusal check blocks unsafe edits and says why), Prove (report card and a patch others can re-check). Behavior CRUD (Create, Read, Update, Delete) is the engine underneath. Hero model: Llama 3.2 3B. Users: viewers who see one short screen recording, often on a phone, and the author, who runs many experiments. Peers (Neuronpedia, Goodfire, Transluce) use calm, academic looks; steering tools paint heatmaps over text. lobot shows the change itself.
 
 **Not a dashboard:** the first screen holds one object (the fan), the model's own words, one knob and one number. No stat tiles, meter rows, sidebars of numbers, gauges or chart grids on the first screen. Evidence lives one click away.
 

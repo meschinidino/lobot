@@ -1,12 +1,13 @@
 # V1 Recordings and demo production
 
 Owner: human (recording, voice), model slot (recordings), Claude (screens,
-share card, script). Depends on: R3, S1, U1-U3. Time: Sunday to Tuesday.
+share card, script). Depends on: R3, S1, U1-U3. Time: Sunday and Monday (final video Mon 11-03 23:00 ET).
 
 ## Goal
 
-A 3-minute video and an X post that show the loop on Llama, live and honest,
-with a replay fallback that cannot fail on stage.
+A recorded 3-minute video and an X post that show the loop on Llama, honest
+and reproducible. Every run on screen plays from a real recording in replay
+mode, so the take cannot fail. A live take is optional.
 
 ## Storyboard (3:00)
 
@@ -26,8 +27,8 @@ with a replay fallback that cannot fail on stage.
    whole video.
 2. Claude: share card for the R3 neuron; X post text under 280 characters;
    final screenshots; collapsed-shelf recording view.
-3. Human: record live first; record the replay take as backup; cut to 3:00;
-   captions on.
+3. Human: record the replay take (the main take); record a live take only if
+   time allows; cut to 3:00; captions on.
 4. Rehearse twice from a cold start, timing each beat.
 
 ## Checks
@@ -36,7 +37,7 @@ with a replay fallback that cannot fail on stage.
   reports do not support.
 - No harmful text on screen (the guard shows `display_prompt`).
 - No event or competition reference in repo files.
-- The replay take matches the live take token for token.
+- Replay output matches the recorded run token for token (replay tests pass).
 
 ## Done means
 
