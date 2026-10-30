@@ -120,12 +120,41 @@ def _neuron_deltas(model, spec, rows: list[NeuronEdit],
     return out
 
 
+def dial_value(h, unit, b0: float, b1: float) -> float:
+    """Trait-dial projection: 0 = neutral mean, 1 = trait mean.
+
+    h is one residual vector, unit the trait direction. A zero span
+    reads 0.0 (uncalibrated) instead of exploding.
+    """
+    span = float(b1) - float(b0)
+    if abs(span) < 1e-6:
+        return 0.0
+    p = float(torch.as_tensor(h, dtype=torch.float32)
+              @ torch.as_tensor(unit, dtype=torch.float32))
+    return (p - float(b0)) / span
+
+
+def dial_for_index(tap: list, k: int, unit, b0: float, b1: float):
+    """Dial value for generated token k, or None when the tap lags.
+
+    tap[0] is the prefill entry (prompt's last token); decode step k
+    appends tap[k + 1]. A short tap means extra forwards ran that the
+    tap cannot map, so the token ships without a value.
+    """
+    j = k + 1
+    if j >= len(tap):
+        return None
+    return dial_value(tap[j], unit, b0, b1)
+
+
 def _build_hooks(model, spec, edits: EditSet, medians: dict,
-                 counter: list, reads: dict):
+                 counter: list, reads: dict, taps: dict | None = None):
     """Build (mlp_hooks, out_hooks): {layer: hook_fn} per D13 order.
 
     counter is a one-item list bumped on every hook call; reads collects
-    {layer: output copy} for Read edits. No registration here.
+    {layer: output copy} for Read edits; taps (optional {layer: list})
+    appends the last-position vector per forward for live dials.
+    No registration here.
     """
     deltas = _neuron_deltas(model, spec, list(edits.neuron), medians)
     mlp_hooks = {}
@@ -147,8 +176,9 @@ def _build_hooks(model, spec, edits: EditSet, medians: dict,
         u = torch.tensor(v.direction, dtype=torch.float32)
         vec.setdefault(v.layer, []).append((u, float(v.scale) * float(v.dose)))
     want_read = {r.layer for r in edits.read}
+    tap_layers = set(taps or {})
     out_hooks = {}
-    for layer in set(abl) | set(vec) | want_read:
+    for layer in set(abl) | set(vec) | want_read | tap_layers:
         def _post(_m, _a, out, *, _L=layer):
             counter[0] += 1
             h = steer._block_hidden(out)
@@ -161,6 +191,8 @@ def _build_hooks(model, spec, edits: EditSet, medians: dict,
                 x = x + s * uu.to(x.device)
             if _L in want_read:
                 reads[_L] = x.detach().cpu()
+            if taps is not None and _L in taps:
+                taps[_L].append(x[0, -1, :].detach().cpu())
             x = x.to(dt)
             if isinstance(out, torch.Tensor):
                 return x
@@ -398,6 +430,26 @@ class Engine:
             return capture(self.model, self.tokenizer, self.spec,
                            texts, layers, point, reduce)
 
+    def capture_with_edits(self, texts: list[str], layers: list[int],
+                           edits: EditSet, medians: dict,
+                           point: str = "mlp_in",
+                           reduce: str = "none") -> dict:
+        """capture() with an EditSet active (click-a-word reads the
+        steered activations, not the clean ones). Registers, captures,
+        always unregisters."""
+        if self.model is None:
+            raise RuntimeError("no model loaded")
+        spec = self.spec
+        _validate_edits(self.model, spec, edits)
+        counter: list = [0]
+        reads: dict = {}
+        self._register_hooks(edits, medians, counter, reads, spec)
+        try:
+            return capture(self.model, self.tokenizer, spec,
+                           texts, layers, point, reduce)
+        finally:
+            self.remove_all()
+
     def prefill(self, user_text: str, edits: EditSet | None = None, *,
                 medians: dict | None = None):
         """One forward pass; return last-position logits (1D vocab tensor).
@@ -445,10 +497,11 @@ class Engine:
         return out.logits[0, -1, :].detach()
 
     def _register_hooks(self, edits: EditSet, medians: dict,
-                        counter: list, reads: dict, spec) -> None:
+                        counter: list, reads: dict, spec,
+                        taps: dict | None = None) -> None:
         """Shared hook path for run/run_stream (D13 order, registered)."""
         mlp_hooks, out_hooks = _build_hooks(
-            self.model, spec, edits, medians, counter, reads)
+            self.model, spec, edits, medians, counter, reads, taps)
         for L, fn in mlp_hooks.items():
             self._hooks.append(("neuron", L, steer.resolve_down_proj(
                 self.model, L, spec).register_forward_pre_hook(fn)))
@@ -460,12 +513,15 @@ class Engine:
                 self.model, L, spec).register_forward_hook(fn)))
 
     def run(self, prompt: str, edits: EditSet, *, medians: dict,
-            max_new_tokens: int, seed: int, cancel=None) -> dict:
+            max_new_tokens: int, seed: int, cancel=None,
+            wrapped: str | None = None) -> dict:
         """One greedy generation under an EditSet (D13 order).
 
         Registers every hook in the registry, generates, collects
         read-outs and always unregisters. Returns the generate_text
-        keys plus hook_calls and reads ({layer: tensor}).
+        keys plus hook_calls and reads ({layer: tensor}). wrapped is
+        a pre-wrapped prompt (chat history); otherwise the prompt is
+        wrapped as one user turn.
         """
         if self.model is None:
             raise RuntimeError("no model loaded")
@@ -479,7 +535,7 @@ class Engine:
             gen = steer.generate_text(
                 self.model, self.tokenizer, prompt,
                 max_new_tokens=max_new_tokens, seed=seed, spec=spec,
-                cancel=cancel)
+                cancel=cancel, wrapped=wrapped)
         finally:
             self.remove_all()
         gen["hook_calls"] = counter[0]
@@ -488,14 +544,19 @@ class Engine:
         return gen
 
     def run_stream(self, prompt: str, edits: EditSet, *, medians: dict,
-                   max_new_tokens: int, seed: int, cancel=None):
+                   max_new_tokens: int, seed: int, cancel=None,
+                   dial: dict | None = None,
+                   wrapped: str | None = None):
         """run() as token events, then one done event (filmstrip live).
 
         Yields {"type": "token", "text": delta} per generated token
         (cumulative decode, so concatenated deltas equal the text) and
         finally {"type": "done", "result": <run() dict>}. Generation
         runs in a worker thread; closing the generator (disconnect)
-        sets cancel, joins the worker and removes the hooks.
+        sets cancel, joins the worker and removes the hooks. dial is
+        {"trait", "layer", "unit", "b0", "b1"}: token events then
+        carry {"dial": {trait: value}} for the read dial. wrapped is
+        a pre-wrapped prompt (chat history).
         """
         if self.model is None:
             raise RuntimeError("no model loaded")
@@ -506,8 +567,12 @@ class Engine:
         streamer = steer.RowStreamer()
         counter: list = [0]
         reads: dict = {}
+        taps: dict | None = None
+        tap: list = []
+        if dial is not None:
+            taps = {int(dial["layer"]): tap}
         t0 = time.perf_counter()
-        self._register_hooks(edits, medians, counter, reads, spec)
+        self._register_hooks(edits, medians, counter, reads, spec, taps)
         result: dict = {}
 
         def _target():
@@ -515,7 +580,7 @@ class Engine:
                 result["gen"] = steer.generate_text_with_streamer(
                     self.model, self.tokenizer, prompt,
                     max_new_tokens=max_new_tokens, seed=seed, spec=spec,
-                    cancel=cancel, streamer=streamer)
+                    cancel=cancel, streamer=streamer, wrapped=wrapped)
             except Exception as e:  # noqa: BLE001 - re-raised after join
                 result["error"] = e
             finally:
@@ -535,7 +600,14 @@ class Engine:
                 delta = text[len(prev):]
                 prev = text
                 if delta:
-                    yield {"type": "token", "text": delta}
+                    ev = {"type": "token", "text": delta}
+                    if dial is not None:
+                        v = dial_for_index(
+                            tap, len(ids) - 1, dial["unit"],
+                            dial["b0"], dial["b1"])
+                        if v is not None:
+                            ev["dial"] = {dial["trait"]: v}
+                    yield ev
         except GeneratorExit:
             cancel.set()
             worker.join(timeout=120)

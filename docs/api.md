@@ -28,8 +28,9 @@ reloads). 400 unknown model, 409 run in progress.
 One before/after run over neuron rows.
 
 Request: `{"prompt": str, "rows": [{"layer", "neuron", "dose"}],
-"guard": false, "research_mode": false}`. Dose range and max rows
-come from `/api/state` (`dose_min`, `dose_max`, `max_rows`).
+"guard": false, "research_mode": false, "dial_trait": null}`. Dose
+range and max rows come from `/api/state` (`dose_min`, `dose_max`,
+`max_rows`).
 
 Events (one JSON object per line):
 
@@ -41,10 +42,19 @@ Events (one JSON object per line):
 | `steered` | — (steered generation running) |
 | `stopped` | `after`: stage the Stop landed after |
 | `blocked` | `guard`: `{blocked, would_block, enforced, verified, min_ratio, worst_prompt, blocked_prompts}` (`verified`: the allow was confirmed by full generation + judge; prefill-only blocks show `verified: false`) |
+| `token` | `text` (append), `dial`: `{trait: value}` (only with `dial_trait`, during `steered`) |
 | `error` | `message` |
-| `complete` | `result`: `{model_id, prompt, rows, baseline: {text, tokens}, steered: {text, tokens}, split: {token, base_char, steered_char} \| null, seconds, cache_hit, guard, recipe, post}` (`guard`: the recorded verdict dict, `blocked: false` here) |
+| `complete` | `result`: `{model_id, prompt, rows, baseline: {text, tokens}, steered: {text, tokens}, split: {token, base_char, steered_char} \| null, seconds, cache_hit, guard, dial, recipe, post}` (`guard`: the recorded verdict dict, `blocked: false` here; `dial`: `{trait, layer, neutral, trait_mean}` or null) |
 
 Errors: 400 empty prompt/recipe/invalid row, 409 busy, 503 NO_MODEL.
+
+Read dial: `dial_trait: "<family>"` resolves the newest finished
+Create job for that trait and streams one `token` event per steered
+token carrying `dial: {trait: value}`. Scale: 0 = the trait's
+neutral-template mean projection, 1 = its trait-template mean
+(anchors in `complete.result.dial`; cached per job in
+`jobs/{id}/trait/dial.json`). Tokens whose tap entry is missing
+ship without `dial`. Unknown trait: `error` event (create it first).
 
 Replay mode (`MODEL_LOBOTOMY_REPLAY=1`) loads no weights. `/api/run`
 answers only setups recorded in `web/example.json` and `web/sweep*.json`
@@ -152,6 +162,76 @@ Errors: 400 (empty prompt, 0 or 9+ doses, trait+explicit mixed,
 missing explicit field, layer/direction shape), 404 (no finished
 Create job with a saved direction for the trait), 409 busy, 503
 NO_MODEL.
+
+## POST /api/neurons (R1 click-a-word)
+
+Top neurons at one prompt token, measured with the run's edits on.
+
+Request: `{"prompt": str, "rows": [...], "trait": null, "dose":
+null, "token_index": int, "top_k": 8, "window": 4, "guard": false,
+"research_mode": false}`. `dose` defaults to the knob's frozen
+dose; `top_k` clamps to 1–32, `window` to 0–16 tokens.
+
+Response (one JSON object, not a stream):
+
+```json
+{
+  "blocked": false,
+  "model_id": "Qwen/Qwen3.5-4B",
+  "prompt": "Say hi.",
+  "tokens": ["Say", " hi", "."],
+  "token_index": 1,
+  "neurons": [
+    {"layer": 14, "neuron": 8949, "activation": 9.2,
+     "top_contexts": [
+       {"position": 1, "activation": 9.2, "text": "ay hi."}]}
+  ]
+}
+```
+
+`tokens` is the wrapped prompt's token split; `token_index`
+addresses it starting at 1 (position 0 is the BOS slot and has
+no captured row). `neurons` ranks every layer's MLP-input
+activations
+at that token by absolute value. Each entry's `top_contexts` are
+that neuron's 3 highest-activating positions in this prompt with
+a ±`window` decoded span. Guard blocks return `{"blocked": true,
+"guard": {...}}` with no neurons.
+
+Errors: 400 (empty prompt, too many rows, bad row, bad
+`token_index`), 404 (trait without a finished Create job), 409
+busy, 503 NO_MODEL.
+
+## Chat (E2)
+
+Multi-turn with edits that persist across turns. History lives
+server-side (in memory; a restart clears it).
+
+`POST /api/chat/start {"rows": [], "trait": null, "dose": null,
+"max_new_tokens": 150, "guard": false, "research_mode": false}` →
+`{"session_id", "model_id"}`. At most 16 sessions; the oldest
+goes. Errors: 400 (too many rows, bad row), 404 (trait without a
+finished Create job).
+
+`POST /api/chat {"session_id", "message", "rows": null,
+"max_new_tokens": null}` → NDJSON. `rows` replaces the session's
+edits when present (null keeps them); the trait and dose persist.
+Events:
+
+| stage | fields |
+|---|---|
+| `token` | `text` (append) |
+| `blocked` | `guard` (verdict dict; only when enforced) |
+| `stopped` | `after`: `guard` or `chat` |
+| `error` | `message` |
+| `done` | `result`: `{session_id, turn, reply, tokens, seconds}` |
+
+History caps at 40 turns (oldest pairs drop). Errors: 400 empty
+message/bad rows, 404 unknown session or vanished trait knob, 409
+busy or session pinned to another model, 503 NO_MODEL.
+
+`GET /api/chat/{session_id}` → `{"session_id", "model_id",
+"turns": [{"role", "content"}]}` for reattach. 404 unknown.
 
 ## Frontend loop (happy path)
 
