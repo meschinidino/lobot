@@ -102,6 +102,7 @@ class Row(BaseModel):
 class RunRequest(BaseModel):
     prompt: str
     rows: list[Row]
+    guard: bool = False
     research_mode: bool = False
 
 
@@ -112,6 +113,7 @@ class ModelRequest(BaseModel):
 class CreateRequest(BaseModel):
     description: str
     seed: int = 0
+    guard: bool = False
     research_mode: bool = False
 
 
@@ -123,6 +125,7 @@ class UpdateRequest(BaseModel):
     scale: float | None = None
     doses: list[float]
     max_new_tokens: int = 60
+    guard: bool = False
     research_mode: bool = False
 
 
@@ -194,7 +197,7 @@ def run(req: RunRequest):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     _cancel.clear()
     return StreamingResponse(
-        _run_stream(prompt, rows, spec,
+        _run_stream(prompt, rows, spec, guard=req.guard,
                     research_mode=req.research_mode),
         media_type="application/x-ndjson")
 
@@ -225,6 +228,7 @@ def create(req: CreateRequest):
     try:
         job_id = runner.start(req.description, seed=req.seed,
                               model_id=engine._active_model_id,
+                              guard=req.guard,
                               research_mode=req.research_mode)
     except trait_store.UnsupportedTrait as e:
         raise HTTPException(422, str(e)) from None
@@ -291,7 +295,8 @@ def update(req: UpdateRequest):
     return StreamingResponse(
         _update_stream(prompt, layer, direction, scale, list(req.doses),
                        min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
-                       spec, research_mode=req.research_mode),
+                       spec, guard=req.guard,
+                       research_mode=req.research_mode),
         media_type="application/x-ndjson")
 
 
@@ -321,21 +326,22 @@ def _event(**kw) -> bytes:
 
 def _guard_event_dict(gv) -> dict:
     return {"blocked": gv.blocked, "would_block": gv.would_block,
+            "enforced": not gv.research_mode,
             "verified": gv.full_generation,
             "min_ratio": round(gv.min_ratio, 3),
             "worst_prompt": gv.worst_prompt,
             "blocked_prompts": list(gv.blocked_prompts)}
 
 
-def _verified_guard(eng, edits, medians, research_mode):
+def _verified_guard(eng, edits, medians, enforce):
     return guard_mod.Guard().check_verified(
         eng, edits, medians=medians, max_new_tokens=24, seed=engine.SEED,
         judge_fn=guard_mod.refusal_judge_fn(eng),
-        research_mode=research_mode, cancel=_cancel)
+        research_mode=not enforce, cancel=_cancel)
 
 
 def _run_stream(prompt: str, rows: list[RecipeRow], spec,
-                research_mode: bool = False):
+                guard: bool = False, research_mode: bool = False):
     """Stage events, then one result event. Holds the Engine lock throughout.
 
     The lock is taken here, not in run(): a client that disconnects before
@@ -371,8 +377,9 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
             return
 
         yield _event(stage="guard")
-        gv = _verified_guard(eng, EditSet.from_rows(rows), medians,
-                             research_mode)
+        gv = _verified_guard(
+            eng, EditSet.from_rows(rows), medians,
+            guard_mod.should_enforce(guard, research_mode))
         if gv.blocked:
             yield _event(stage="blocked", guard=_guard_event_dict(gv))
             return
@@ -424,6 +431,7 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
                 "split": split,
                 "seconds": round(time.perf_counter() - t_all, 1),
                 "cache_hit": cal_info["cache_hit"],
+                "guard": _guard_event_dict(gv),
                 "recipe": steer.recipe_string(
                     rows, calib_id, max_new_tokens=max_new, seed=engine.SEED,
                     calib_prompts=calib_prompts, model_id=engine._active_model_id),
@@ -437,7 +445,8 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
 
 def _update_stream(prompt: str, layer: int, direction: list,
                    scale: float | None, doses: list[float],
-                   max_new: int, spec, research_mode: bool = False):
+                   max_new: int, spec, guard: bool = False,
+                   research_mode: bool = False):
     """Vector Update filmstrip: guard, then per-column token events.
 
     One batched generate across doses (E6 hook, singles fallback);
@@ -477,7 +486,7 @@ def _update_stream(prompt: str, layer: int, direction: list,
         yield _event(stage="guard")
         gv = _verified_guard(
             eng, EditSet(vector=(VectorEdit(layer, unit, scale, strongest),)),
-            medians, research_mode)
+            medians, guard_mod.should_enforce(guard, research_mode))
         if gv.blocked:
             yield _event(stage="blocked", guard=_guard_event_dict(gv))
             return

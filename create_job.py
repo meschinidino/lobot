@@ -41,6 +41,7 @@ class _Job:
     model_id: str
     revision: str | None
     research_mode: bool
+    guard_opt_in: bool = False
     status: str = "queued"
     stage: str = STAGES[0]
     done: int = 0
@@ -60,7 +61,8 @@ class _Job:
         return {
             "id": self.id, "trait": self.trait, "seed": self.seed,
             "model_id": self.model_id, "revision": self.revision,
-            "research_mode": self.research_mode, "status": self.status,
+            "research_mode": self.research_mode,
+            "guard_opt_in": self.guard_opt_in, "status": self.status,
             "stage": self.stage,
             "progress": {"stage": self.stage, "done": self.done,
                          "total": self.total},
@@ -98,7 +100,7 @@ class CreateRunner:
     # -- job control --
 
     def start(self, trait: str, *, seed: int = 0, model_id: str,
-              revision: str | None = None,
+              revision: str | None = None, guard: bool = False,
               research_mode: bool = False) -> str:
         fam = self.store.resolve(trait)
         if not fam.hand_validated:
@@ -111,7 +113,7 @@ class CreateRunner:
                   f"{len(self._jobs):03d}")
         job = _Job(id=job_id, trait=fam.name, seed=seed,
                    model_id=model_id, revision=revision,
-                   research_mode=research_mode)
+                   research_mode=research_mode, guard_opt_in=guard)
         with self._mu:
             if job_id in self._jobs:
                 raise ValueError(f"job {job_id} already exists")
@@ -198,6 +200,7 @@ class CreateRunner:
                     job.seed, self.jobs_dir / job_id / "trait",
                     job.model_id, getattr(eng, "revision", job.revision),
                     cancel=job.cancel, progress=progress,
+                    guard=job.guard_opt_in,
                     research_mode=job.research_mode)
                 job.stage = "verdict"
                 job.verdict = out.get("verdict")

@@ -29,6 +29,8 @@ def main() -> int:
     ap.add_argument("--model", default=steer.LLAMA_MODEL_ID)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workdir", default=None)
+    ap.add_argument("--guard", action="store_true",
+                    help="enforce the refusal guard (default: record only)")
     args = ap.parse_args()
     if args.trait not in trait_eval.spike.BEHAVIORS:
         print(f"unknown trait {args.trait!r}; have "
@@ -41,7 +43,8 @@ def main() -> int:
     workdir = Path(args.workdir or (ROOT / "logs" / f"e2e_{args.trait}"))
     out = trait_eval.run_trait(eng, eng.spec, args.trait,
                                prompt_bank.PROMPT_BANK, args.seed,
-                               workdir, args.model, eng.revision)
+                               workdir, args.model, eng.revision,
+                               guard=args.guard)
     print(f"[trait] verdict={out['verdict']} eligibility={out['eligibility']} "
           f"({out['seconds']} s)", flush=True)
     print(f"[trait] report: {workdir / 'report.md'}", flush=True)

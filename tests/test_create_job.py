@@ -39,7 +39,8 @@ def validated_store(tmp):
 
 def scripted_run(stages=("extract", "tune", "verdict"), out=None):
     def fn(eng, spec, trait, bank, seed, workdir, model_id,
-           revision, cancel=None, progress=None, research_mode=False):
+           revision, cancel=None, progress=None, guard=False,
+           research_mode=False):
         for s in stages:
             if cancel is not None and cancel.is_set():
                 raise T.Stopped("stopped")
@@ -85,6 +86,28 @@ class CreateRunnerTest(unittest.TestCase):
         jid = r.start("blunt", seed=0, model_id="m")
         self.join(r, jid)
         self.assertEqual(r.status(jid)["revision"], "rev123")
+
+    def test_guard_flag_defaults_off_and_flows_to_run(self):
+        seen = {}
+
+        def fn(eng, spec, trait, bank, seed, workdir, model_id,
+               revision, cancel=None, progress=None,
+               guard=False, research_mode=False):
+            seen["guard"] = guard
+            return {"verdict": "knob", "frozen": {}, "eligibility": {},
+                    "guard": {}}
+
+        r = self.runner(run_trait_fn=fn)
+        jid = r.start("blunt", seed=0, model_id="m")
+        self.join(r, jid)
+        self.assertFalse(r.status(jid)["guard_opt_in"])
+        self.assertFalse(seen["guard"])
+
+        r2 = self.runner(run_trait_fn=fn)
+        jid2 = r2.start("blunt", seed=0, model_id="m", guard=True)
+        self.join(r2, jid2)
+        self.assertTrue(r2.status(jid2)["guard_opt_in"])
+        self.assertTrue(seen["guard"])
         self.assertTrue((self.jobs / jid / "job.json").exists())
 
     def test_stop_sets_stopped(self):
@@ -92,7 +115,7 @@ class CreateRunnerTest(unittest.TestCase):
 
         def fn(eng, spec, trait, bank, seed, workdir, model_id,
                revision, cancel=None, progress=None,
-               research_mode=False):
+               guard=False, research_mode=False):
             started.set()
             cancel.wait(timeout=30)
             raise T.Stopped("stopped")

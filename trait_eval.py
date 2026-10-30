@@ -430,7 +430,7 @@ def baseline_top1(eng, spec, cfg, label, tuning, final,
 
 def run_trait(eng, spec, trait_name, bank, seed, workdir,
               model_id, revision, cancel=None, progress=None,
-              research_mode=False):
+              guard=False, research_mode=False):
     """One complete trait end to end. Writes report.json + report.md.
 
     cancel (threading.Event) raises Stopped at generation granularity;
@@ -529,12 +529,14 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     frozen_edits = engine_mod.EditSet(vector=(_vec_edit(
         frozen["layer"], frozen["unit"], med[frozen["layer"]],
         frozen["dose"]),))
+    enforce = guard_mod.should_enforce(guard, research_mode)
     gv = guard_mod.Guard().check_verified(
         eng, frozen_edits, medians=med, max_new_tokens=24, seed=seed,
         judge_fn=guard_mod.refusal_judge_fn(eng),
-        research_mode=research_mode)
+        research_mode=not enforce)
     out["guard"] = {"blocked": gv.blocked,
                     "would_block": gv.would_block,
+                    "enforced": enforce,
                     "research_mode": research_mode,
                     "verified": gv.full_generation,
                     "min_ratio": round(gv.min_ratio, 3),

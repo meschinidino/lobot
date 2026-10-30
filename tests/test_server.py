@@ -279,7 +279,7 @@ def _validated_store(tmp):
 def _scripted_trait(out=None):
     def fn(eng, spec, trait, bank, seed, workdir, model_id,
            revision, cancel=None, progress=None,
-           research_mode=False):
+           guard=False, research_mode=False):
         if progress is not None:
             progress("tune", 1, 1)
         return out or {"verdict": "knob",
@@ -316,18 +316,29 @@ class GuardStageTest(unittest.TestCase):
 
     def test_blocked_run_stops_after_guard(self):
         self.eng.guard_block = True
-        ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
+        ev = self._events({"prompt": "Who are you?", "rows": [ROW],
+                           "guard": True})
         self.assertEqual([e["stage"] for e in ev],
                          ["weights", "guard", "blocked"])
         self.assertTrue(ev[-1]["guard"]["blocked"])
+        self.assertTrue(ev[-1]["guard"]["enforced"])
         self.assertEqual(self.eng.runs, [])
         self.assertFalse(self.eng.lock.locked())
 
     def test_research_mode_passes_blocking_edit(self):
         self.eng.guard_block = True
         ev = self._events({"prompt": "Who are you?", "rows": [ROW],
-                           "research_mode": True})
+                           "guard": True, "research_mode": True})
         self.assertEqual(ev[-1]["stage"], "complete")
+
+    def test_default_run_records_without_blocking(self):
+        self.eng.guard_block = True
+        ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
+        self.assertEqual(ev[-1]["stage"], "complete")
+        g = ev[-1]["result"]["guard"]
+        self.assertFalse(g["blocked"])
+        self.assertTrue(g["would_block"])
+        self.assertFalse(g["enforced"])
 
 
 class FamiliesApiTest(unittest.TestCase):
@@ -394,7 +405,7 @@ class CreateApiTest(unittest.TestCase):
 
         def fn(eng, spec, trait, bank, seed, workdir, model_id,
                revision, cancel=None, progress=None,
-               research_mode=False):
+               guard=False, research_mode=False):
             started.set()
             cancel.wait(timeout=30)
             import trait_eval
@@ -485,9 +496,18 @@ class UpdateApiTest(unittest.TestCase):
 
     def test_guard_blocks_update(self):
         self.eng.guard_block = True
-        ev = self._events(self._explicit())
+        ev = self._events(self._explicit(guard=True))
         self.assertEqual([e["stage"] for e in ev],
                          ["weights", "guard", "blocked"])
+
+    def test_default_update_records_without_blocking(self):
+        self.eng.guard_block = True
+        ev = self._events(self._explicit())
+        self.assertEqual(ev[-1]["stage"], "complete")
+        g = ev[-1]["result"]["guard"]
+        self.assertFalse(g["blocked"])
+        self.assertTrue(g["would_block"])
+        self.assertFalse(g["enforced"])
 
     def test_trait_path_uses_saved_knob(self):
         from safetensors.torch import save_file

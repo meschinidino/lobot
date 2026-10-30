@@ -5,9 +5,12 @@ Cross-origin POSTs are rejected with 403; requests without an `Origin`
 header (curl, same-page fetch) are allowed. One generation runs at a
 time: a second run while one holds the engine lock gets 409.
 
-Conventions: `research_mode: true` records `would_block` but never
-blocks (the guard still runs and reports). The guard runs before any
-generation (`guard` stage); a block ends the stream with `blocked`.
+Conventions: the refusal guard is opt-in until release (`guard:
+true` to enforce; default off). Every run still checks and records
+`would_block`; `research_mode: true` also never blocks and wins over
+`guard`. The check runs before any generation (`guard` stage); a
+block ends the stream with `blocked`. Guard dicts carry `enforced`
+(true only when a block could land).
 
 ## GET /api/state
 
@@ -23,8 +26,8 @@ reloads). 400 unknown model, 409 run in progress.
 One before/after run over neuron rows.
 
 Request: `{"prompt": str, "rows": [{"layer", "neuron", "dose"}],
-"research_mode": false}`. Dose range and max rows come from
-`/api/state` (`dose_min`, `dose_max`, `max_rows`).
+"guard": false, "research_mode": false}`. Dose range and max rows
+come from `/api/state` (`dose_min`, `dose_max`, `max_rows`).
 
 Events (one JSON object per line):
 
@@ -35,9 +38,9 @@ Events (one JSON object per line):
 | `baseline` | — (clean generation running) |
 | `steered` | — (steered generation running) |
 | `stopped` | `after`: stage the Stop landed after |
-| `blocked` | `guard`: `{blocked, would_block, verified, min_ratio, worst_prompt, blocked_prompts}` (`verified`: the allow was confirmed by full generation + judge; prefill-only blocks show `verified: false`) |
+| `blocked` | `guard`: `{blocked, would_block, enforced, verified, min_ratio, worst_prompt, blocked_prompts}` (`verified`: the allow was confirmed by full generation + judge; prefill-only blocks show `verified: false`) |
 | `error` | `message` |
-| `complete` | `result`: `{model_id, prompt, rows, baseline: {text, tokens}, steered: {text, tokens}, split: {token, base_char, steered_char} \| null, seconds, cache_hit, recipe, post}` |
+| `complete` | `result`: `{model_id, prompt, rows, baseline: {text, tokens}, steered: {text, tokens}, split: {token, base_char, steered_char} \| null, seconds, cache_hit, guard, recipe, post}` (`guard`: the recorded verdict dict, `blocked: false` here) |
 
 Errors: 400 empty prompt/recipe/invalid row, 409 busy, 503 NO_MODEL.
 
@@ -57,8 +60,9 @@ Create accepts validated families only.
 Start a staged trait run (extract → tune → read_gate → final →
 baseline → verdict). Returns `{"job_id", ...status}`.
 
-Request: `{"description": str, "seed": 0, "research_mode": false}`.
-`description` must match a validated family name (case-free).
+Request: `{"description": str, "seed": 0, "guard": false,
+"research_mode": false}`. `description` must match a validated
+family name (case-free).
 
 Errors: 422 description is "not supported yet" (unknown, or family
 without a validated judge), 503 NO_MODEL.
@@ -69,14 +73,17 @@ Job status (reattach-safe: served from disk when the job is not live
 in this process). 404 unknown job.
 
 Status shape: `{"id", "trait", "seed", "model_id", "revision",
-"research_mode", "status", "stage", "progress": {"stage", "done",
-"total"}, "verdict", "frozen": {"layer", "dose", ...} | {},
-"eligibility", "guard", "error", "created", "updated"}`.
+"research_mode", "guard_opt_in", "status", "stage", "progress":
+{"stage", "done", "total"}, "verdict", "frozen": {"layer", "dose",
+...} | {}, "eligibility", "guard", "error", "created", "updated"}`.
+`guard_opt_in` echoes the request flag; the `guard` dict is the
+recorded verdict (`{blocked, would_block, enforced, ...}`).
 
 `status`: `queued` (waiting for the engine lock) | `running` |
 `done` | `stopped` | `failed` (`error` carries the traceback tail).
 `verdict`: `knob` | `no_knob` | `blocked` (guard refused the frozen
-direction). The full trait report is `jobs/{id}/trait/report.json`;
+direction; only when enforced). The full trait report is
+`jobs/{id}/trait/report.json`;
 the frozen direction is `jobs/{id}/trait/direction.safetensors`
 (`{"direction": tensor}`).
 
@@ -107,6 +114,7 @@ Request:
   "scale": 2.5,
   "doses": [0.0, 0.5, 1.0],
   "max_new_tokens": 60,
+  "guard": false,
   "research_mode": false
 }
 ```
