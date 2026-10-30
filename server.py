@@ -721,11 +721,12 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
 
 
 def _latest_knob(trait: str) -> dict | None:
-    """Newest finished Create job for a trait with a saved direction."""
+    """Newest finished Create job for a trait with a saved direction, on the active model."""
     runner = _get_runner()
     cands = [j for j in runner.list_jobs()
              if j.get("trait") == trait and j.get("status") == "done"
-             and j.get("frozen")]
+             and j.get("frozen")
+             and j.get("model_id", engine._active_model_id) == engine._active_model_id]
     cands.sort(key=lambda j: j.get("updated", 0), reverse=True)
     for job in cands:
         path = (runner.jobs_dir / job["id"] / "trait"
