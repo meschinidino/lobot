@@ -63,10 +63,10 @@ class RegistryTest(unittest.TestCase):
 
     def test_calibration_paths_split(self):
         self.assertEqual(steer.calibration_path_for(steer.MODEL_ID),
-                         "calibration.json")
+                         "docs/calibration.json")
         self.assertEqual(
             steer.calibration_path_for(steer.LLAMA_MODEL_ID),
-            "calibration.meta-llama-llama-3.2-3b-instruct.json")
+            "docs/calibration.meta-llama-llama-3.2-3b-instruct.json")
 
 
 class LlamaPathTest(unittest.TestCase):

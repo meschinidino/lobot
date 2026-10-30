@@ -51,8 +51,8 @@ Pick a model and its trait fingerprint appears. Type "sycophantic" and a new dia
 - Click a word: top neurons at a token, push one
 - Delivery in waves 0-4, gates first (see working plan)
 
-## Deferred to TODOS.md
-- Bake Delete into weights and export a full model (repo `TODOS.md`)
+## Deferred to docs/TODOS.md
+- Bake Delete into weights and export a full model (repo `docs/TODOS.md`)
 
 ## Reviewer Concerns
 - Round 1 (5/10, FAIL): corrections applied in the working plan, incl. restated spike evidence (1 clean / 1 weak / 4 none). Round 2 (8/10): two stale text lines fixed (E1 wording, E3 in 0I). Round 3 (9/10): one stale line fixed after the cap; issues verified: 1 of 1 by the author, not by the reviewer.

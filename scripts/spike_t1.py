@@ -138,7 +138,7 @@ def main() -> int:
         steer.MODEL_ID, info.sha, tok, str(steer.DTYPE), steer.DEVICE)
     medians, cal_info = steer.calibrate_layer_medians(
         model, tok, preset["calibration_prompts"], [13, 14],
-        cache_path=ROOT / "calibration.json", key=key)
+        cache_path=ROOT / "docs" / "calibration.json", key=key)
     summary["calibration"] = {"medians": medians, **cal_info}
     print(f"medians: {medians} cache_hit={cal_info['cache_hit']}", flush=True)
 
