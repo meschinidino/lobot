@@ -240,6 +240,9 @@ dialog h2 { font: 800 28px/1 var(--display); font-stretch: 75%; margin: 0 0 12px
       <div id="models"></div>
       <h2>Behaviors <button class="btn btn-sm" id="newBeh" type="button">+ New</button></h2>
       <div id="behaviors"></div>
+      <h2>Neurons</h2>
+      <form id="findForm" role="search" style="display:flex;gap:8px;align-items:end"><label style="flex:1;min-width:0"><span class="meta">Find neurons that push…</span><input class="num" id="findIn" type="text" spellcheck="false" placeholder="a word, e.g. pirate" style="font-family:var(--body)"></label><button class="btn btn-sm" type="submit">Find</button></form>
+      <div id="findOut"></div>
       <h2>Experiments <span class="meta" id="expCount"></span></h2>
       <div id="exps"></div>
       <h2>Theme <button class="btn btn-sm" id="themeBtn" type="button">Light</button></h2>
@@ -361,7 +364,7 @@ function addResult(res, soft = false) {
   const prev = e.runs.findIndex((r) => rowsKey(r.rows) === key);
   const run = { n: prev >= 0 ? e.runs[prev].n : e.runs.length + 2, rows: res.rows, text: res.steered.text, tokens: res.steered.tokens,
     split: res.split && { token: res.split.token, char: res.split.steered_char, base_char: res.split.base_char },
-    seconds: res.seconds, recipe: res.recipe, post: res.post, research: !!res.research, at: Date.now() };
+    seconds: res.seconds, recipe: res.recipe, post: res.post, research: !!res.research, proof: prev >= 0 ? e.runs[prev].proof : undefined, at: Date.now() };
   if (prev >= 0) e.runs[prev] = run; else e.runs.push(run);
   e.at = Date.now();
   saveExps();
@@ -514,7 +517,7 @@ function treeRuns() {
   runs.forEach((r) => {
     const out = [], re = /\S+\s*/g, tail = r.text.slice(c); let m;
     const sc = r.split ? r.split.char + /^\s*/.exec(r.text.slice(r.split.char))[0].length : -1;
-    while ((m = re.exec(tail))) { const start = c + m.index, core = m[0].trimEnd(); out.push({ w: core, sp: m[0].slice(core.length), split: sc >= start && sc < start + core.length }); }
+    while ((m = re.exec(tail))) { const start = c + m.index, core = m[0].trimEnd(); out.push({ w: core, sp: m[0].slice(core.length), at: start, split: sc >= start && sc < start + core.length }); }
     r.words = out; r.score = r.rows.reduce((a, x) => a + x.dose, 0);
   });
   return { e, runs, rootChar: c, shared: e.baseline.text.slice(0, c).trim() };
@@ -559,7 +562,7 @@ function renderTree() {
   $("plan").textContent = m ? `matches run ${m.n}` : T ? "changed since the last run" : "";
   $("shareBtn").disabled = !(T && T.runs.some((r) => r.split));
   if (!S.running) {
-    if (sel) setStatus("ok", "SPLIT", `Run ${sel.n} leaves run 1 at ${at(sel.split)}. ${sel.seconds} s, greedy, seed 0.${sel.research ? " Research mode: the guard was off." : ""}`);
+    if (sel) setStatus("ok", "SPLIT", `Run ${sel.n} leaves run 1 at ${at(sel.split)}. ${sel.seconds} s, greedy, seed 0.${sel.research ? " Research mode: the guard was off." : ""}${sel.proof ? " " + proofText(sel.proof) : ""}`);
     else if (m && m.n > 1) setStatus("warn", "NO SPLIT", `Run ${m.n} matches run 1 token for token. Try a larger dose.`);
     else if (m) setStatus("info", "NO EDIT", "Run 1 is the model with no edit.");
     else setStatus("info", "READY", T ? "This setup has no run yet. Press Run." : "Press Run.");
@@ -590,23 +593,133 @@ $("runs").addEventListener("click", (e) => {
 });
 $("runs").addEventListener("keydown", (e) => { const w = e.target.closest(".w"); if (w && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); inspect(+w.dataset.run, +w.dataset.i); } });
 
-/* ---------- word inspector (design decision 14A: pin, Esc, observed vs applied) ---------- */
+/* ---------- word inspector (design decision 14A) and the reader (U2): neurons at a word, neuron card, find ---------- */
+const NEUR = {}, CARDS = {}; // caches: neurons per (experiment, run, word); cards per model and neuron
+const readerWords = store.get("readerWords", {}); // neuron id -> words the reader predicted it pushes toward (for the lift proof)
+const plainTok = (t) => String(t).replace(/^[\sĠ▁]+/, "");
 function inspect(n, i) {
-  const T = treeRuns(), r = T.runs.find((x) => x.n === n), x = r.words[i];
-  S.inspect = { run: n, i }; $("work").classList.add("inspecting"); const el = $("inspector"); el.hidden = false;
-  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h3 id="iHead">“${esc(x.w)}”</h3><button class="btn btn-sm" type="button" id="iClose">Close · Esc</button></div>
-    <p class="meta" style="margin:6px 0 0">run ${n}, word ${i + 1} after “${esc(T.shared)}”${x.split ? ", the split" : ""}</p>
+  S.inspect = { run: n, i }; S.card = null; openInspector(); renderTree();
+  loadNeurons(n, i); $("iClose")?.focus({ preventScroll: true });
+}
+function openInspector() { $("work").classList.add("inspecting"); $("inspector").hidden = false; renderInspector(); }
+function pushBtn(L, N, words) {
+  const id = `L${L}N${N}`, inEdits = S.rows.some((r) => !isB(r) && nid(r) === id);
+  const why = inEdits ? "" : S.rows.some(isB) ? "remove the behavior first" : S.rows.length >= S.limits.max_rows ? "4 edits at most" : "";
+  return inEdits ? `<span class="meta">in edits</span>` : `<button class="btn btn-sm" type="button" data-push="${L},${N}" data-words="${esc((words || []).join("\u0001"))}" ${why || S.running ? "disabled" : ""} ${why ? `title="${why}"` : ""}>Push</button>`;
+}
+function renderInspector() {
+  const el = $("inspector"); if (el.hidden) return;
+  const head = (h, sub) => `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h3 id="iHead">${h}</h3><button class="btn btn-sm" type="button" id="iClose">Close · Esc</button></div>${sub ? `<p class="meta" style="margin:6px 0 0">${sub}</p>` : ""}`;
+  if (S.card) {
+    const { layer: L, neuron: N } = S.card, c = CARDS[`${S.model}|${L}|${N}`], id = `L${L}N${N}`;
+    let body;
+    if (!c) body = `<p class="meta">Loading the neuron card.</p>`;
+    else if (c.error) body = `<p class="empty">${esc(c.error)}</p>`;
+    else {
+      const pt = c.pushes_toward || {}, up = (pt.up || []).map((x) => plainTok(x.token)).filter(Boolean), down = (pt.down || []).map((x) => plainTok(x.token)).filter(Boolean);
+      const readable = pt.coherence != null && pt.coherence >= 0.5;
+      const fires = c.fires_on ? c.fires_on.slice(0, 3).map((f) => { const [a, b] = f.mark || [0, 0], t = f.context || "";
+        return `<li style="margin:6px 0">${esc(t.slice(0, a))}<u style="text-decoration-thickness:2px;text-underline-offset:4px;font-weight:700">${esc(t.slice(a, b))}</u>${esc(t.slice(b))} <span class="meta">${num(f.activation)}</span></li>`; }).join("")
+        : null;
+      body = `<span class="label" style="margin-top:16px">Pushes toward</span>
+        ${readable ? `<p style="margin:0">${esc(up.slice(0, 8).join(", "))}</p>${down.length ? `<details><summary class="meta">Pushes away from</summary><p style="margin:4px 0 0">${esc(down.slice(0, 8).join(", "))}</p></details>` : ""}`
+          : `<p style="margin:0">Not readable at this layer.</p>`}
+        <p class="meta" style="margin:4px 0 0">coherence <span class="mono">${pt.coherence != null ? pt.coherence.toFixed(2) : "n/a"}</span> · layer ${Math.round((pt.layer_frac ?? 0) * 100)}% deep</p>
+        <span class="label" style="margin-top:16px">Fires on</span>
+        ${fires ? `<ol style="margin:0;padding-left:20px">${fires}</ol>` : `<p class="meta" style="margin:0">No fires-on cache for this model yet. The model slot builds it (R3).</p>`}
+        <div class="row2">${pushBtn(L, N, readable ? up.slice(0, 3) : [])}${S.inspect ? `<button class="btn btn-sm" type="button" id="iBack">Back to the word</button>` : ""}</div>
+        <p class="meta" style="margin-top:12px">Neurons often mix several jobs. Run tests what one actually does.</p>`;
+    }
+    el.innerHTML = head(`<span class="mono" style="font-size:24px">${id}</span>`, "neuron card") + body;
+    return;
+  }
+  if (!S.inspect) { el.hidden = true; $("work").classList.remove("inspecting"); return; }
+  const T = treeRuns(), r = T && T.runs.find((x) => x.n === S.inspect.run), x = r && r.words[S.inspect.i];
+  if (!x) { closeInspector(); return; }
+  const k = nKey(r, S.inspect.i), d = NEUR[k];
+  let list;
+  if (!d) list = `<p class="meta" style="margin:0">Measuring the neurons at this word. The model reads the answer once.</p>`;
+  else if (d.error) list = `<p class="meta" style="margin:0">${esc(d.error)}</p>`;
+  else if (d.blocked) list = `<p class="meta" style="margin:0">The refusal guard blocked these edits, so nothing was measured.</p>`;
+  else list = `<ol class="nlist" style="list-style:none;margin:0;padding:0">${d.neurons.map((nn) => `<li style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--grid)">
+      <div style="min-width:0"><button class="link mono" type="button" data-card="${nn.layer},${nn.neuron}">L${nn.layer}N${nn.neuron}</button> <span class="meta">${num(nn.activation)}</span>
+      ${nn.pushes_toward_top ? `<br><span class="meta">pushes toward ${esc(nn.pushes_toward_top.map(plainTok).join(", "))}</span>` : ""}</div>
+      ${pushBtn(nn.layer, nn.neuron, (nn.pushes_toward_top || []).map(plainTok))}</li>`).join("")}</ol>`;
+  el.innerHTML = head(`“${esc(x.w)}”`, `run ${r.n}, word ${S.inspect.i + 1} after “${esc(T.shared)}”${x.split ? ", the split" : ""}`) + `
     <div class="kv"><span class="meta">Applied edits in this run</span><b class="mono">${r.rows.length ? esc(editsText(r.rows)) : "none"}</b>
       <span class="meta">Observed projection</span><b class="mono">n/a</b></div>
-    <span class="label" style="margin-top:16px">Top neurons at this word</span>
-    <p class="meta" style="margin:0">Not available yet. Listing the neurons that fired at a word needs a server endpoint, planned for wave 2 (R1).</p>
-    <span class="label" style="margin-top:16px">Push a neuron you know</span>
-    <button class="btn btn-sm" type="button" id="iPush" ${S.rows.length >= S.limits.max_rows || S.rows.some(isB) || S.running ? "disabled" : ""}>+ neuron</button>
-    <p class="meta" style="margin-top:12px">Neurons often mix several jobs. Run tests what one actually does.</p>`;
-  renderTree(); $("iClose").focus({ preventScroll: true });
+    <span class="label" style="margin-top:16px">Top neurons at this word</span>${list}
+    <p class="meta" style="margin-top:12px">Ranked by activation with this run's edits on. Open a neuron to see what it fires on and pushes toward.</p>`;
 }
-function closeInspector() { S.inspect = null; $("inspector").hidden = true; $("work").classList.remove("inspecting"); renderTree(); }
-$("inspector").addEventListener("click", (e) => { if (e.target.closest("#iClose")) closeInspector(); else if (e.target.closest("#iPush")) rowForm(e.target.closest("#iPush")); });
+const nKey = (r, i) => `${S.model}|${$("prompt").value.trim()}|${r.n}|${rowsKey(r.rows)}|${i}`;
+async function loadNeurons(n, i) {
+  const T = treeRuns(), r = T.runs.find((x) => x.n === n), x = r.words[i], k = nKey(r, i);
+  if (NEUR[k] && !NEUR[k].error) return renderInspector();
+  NEUR[k] = null; renderInspector();
+  if (!S.api) { NEUR[k] = { error: "The lobot server is not reachable." }; return renderInspector(); }
+  const beh = r.rows.find(isB);
+  try {
+    const res = await postJSON("api/neurons", { prompt: T.e.prompt, rows: r.rows.filter((y) => !isB(y)), trait: beh ? beh.trait : null, dose: beh ? beh.dose : null,
+      reply: r.text, reply_char: x.at, top_k: 8, guard: false, research_mode: S.research });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(res.status === 409 ? "A run is in progress. Try again when it ends." : typeof body.detail === "string" ? body.detail : `The server returned HTTP ${res.status}.`);
+    NEUR[k] = body;
+  } catch (e) { NEUR[k] = { error: String(e.message || e) }; }
+  if (S.inspect && S.inspect.run === n && S.inspect.i === i) renderInspector();
+}
+async function openCard(L, N) {
+  S.card = { layer: L, neuron: N }; openInspector(); $("iClose")?.focus({ preventScroll: true });
+  const k = `${S.model}|${L}|${N}`; if (CARDS[k] && !CARDS[k].error) return;
+  CARDS[k] = null;
+  try {
+    const res = await fetch(`api/neuron/${L}/${N}?k=12`), body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : `The server returned HTTP ${res.status}.`);
+    CARDS[k] = body;
+  } catch (e) { CARDS[k] = { error: String(e.message || e) }; }
+  if (S.card && S.card.layer === L && S.card.neuron === N) renderInspector();
+}
+function closeInspector() { S.inspect = null; S.card = null; $("inspector").hidden = true; $("work").classList.remove("inspecting"); renderTree(); }
+$("inspector").addEventListener("click", (e) => {
+  const t = e.target;
+  if (t.closest("#iClose")) closeInspector();
+  else if (t.closest("#iBack")) { S.card = null; renderInspector(); }
+  else if (t.closest("[data-card]")) { const [L, N] = t.closest("[data-card]").dataset.card.split(",").map(Number); openCard(L, N); }
+  else if (t.closest("[data-push]")) {
+    const b = t.closest("[data-push]"), [L, N] = b.dataset.push.split(",").map(Number), words = b.dataset.words ? b.dataset.words.split("\u0001") : [];
+    S.rows.push({ layer: L, neuron: N, dose: 1 }); S.focusEdit = S.rows.length - 1;
+    if (words.length) { readerWords[`L${L}N${N}`] = words; store.set("readerWords", readerWords); }
+    update(); renderInspector(); setStatus("info", "READY", `L${L}N${N} is in the sentence at +1.00. Press Run to see what it does.`);
+  }
+});
+
+/* Find a neuron (shelf): neurons that push one word hardest. */
+async function findNeurons(word) {
+  const out = $("findOut"); word = word.trim(); if (!word) return;
+  out.innerHTML = `<p class="meta">Searching every layer.</p>`;
+  try {
+    const res = await fetch(`api/find?word=${encodeURIComponent(word)}&k=8`), body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : `The server returned HTTP ${res.status}.`);
+    out.innerHTML = body.results.length ? body.results.map((x) => `<button class="exp" type="button" data-card="${x.layer},${x.neuron}"><span class="p mono">L${x.layer}N${x.neuron}</span><span class="meta">${x.rank ? `“${esc(word)}” is its #${x.rank} word` : "pushes it, not in its top 100"}</span></button>`).join("")
+      : `<p class="empty">No neuron pushes “${esc(word)}” clearly.</p>`;
+  } catch (e) { out.innerHTML = `<p class="empty">${esc(e.message || e)}</p>`; }
+}
+$("findForm").addEventListener("submit", (e) => { e.preventDefault(); findNeurons($("findIn").value); });
+$("findOut").addEventListener("click", (e) => { const b = e.target.closest("[data-card]"); if (!b) return; const [L, N] = b.dataset.card.split(",").map(Number); setView("work"); openCard(L, N); });
+
+/* The lift proof (U2): after a run with a neuron the reader described, measure how much it lifted the predicted word. */
+async function proveLift(n) {
+  const T = treeRuns(), r = T && T.runs.find((x) => x.n === n); if (!r || !S.api || S.state?.replay) return;
+  const row = r.rows.find((y) => !isB(y) && readerWords[nid(y)]); if (!row) return;
+  const words = readerWords[nid(row)].slice(0, 3);
+  try {
+    const res = await postJSON("api/lift", { layer: row.layer, neuron: row.neuron, dose: row.dose, words, prompts: null }), b = await res.json();
+    if (!res.ok || !b.base_p || !(b.base_p[0] > 0)) return;
+    r.proof = { word: b.words[0], ratio: b.steered_p[0] / b.base_p[0], id: nid(row), dose: row.dose };
+    const e = curExp(), run = e && e.runs.find((x) => x.n === n); if (run) { run.proof = r.proof; saveExps(); }
+    if (S.sel === n) renderTree();
+  } catch { /* no proof line without a real measurement */ }
+}
+const proofText = (p) => `The reader predicted “${p.word}” for ${p.id}; pushing it at ${fd(p.dose)} made “${p.word}” ${p.ratio >= 10 ? Math.round(p.ratio) : p.ratio.toFixed(1)}× more likely as the next word (8 neutral prompts, measured).`;
 
 /* ---------- knob: turns the dose of the edit selected in the sentence ---------- */
 const K = (() => {
@@ -754,7 +867,7 @@ async function run(fan = false) {
     } else {
       finished = await stream("api/run", { prompt, rows: S.rows, ...guardBody }, (ev) => {
         if (onCommon(ev)) return true;
-        if (ev.stage === "complete") { const n = addResult({ ...ev.result, research }); drawN = n; end(); after(n, ev.result.guard); return true; }
+        if (ev.stage === "complete") { const n = addResult({ ...ev.result, research }); drawN = n; end(); after(n, ev.result.guard); proveLift(n); return true; }
         return false;
       });
     }
@@ -783,7 +896,7 @@ $("fanBtn").addEventListener("click", () => run(true));
 $("stopBtn").addEventListener("click", stop);
 document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run(); }
-  else if (e.key === "Escape") { if (pop) closePop(); else if (S.running) stop(); else if (S.inspect) closeInspector(); }
+  else if (e.key === "Escape") { if (pop) closePop(); else if (S.running) stop(); else if (S.card && S.inspect) { S.card = null; renderInspector(); } else if (S.inspect || S.card) closeInspector(); }
 });
 
 /* ---------- refusal guard key and research mode (design decision 6A) ---------- */
@@ -825,7 +938,7 @@ const STROKE = {
 const stroke = (k) => `<svg class="stroke" viewBox="0 0 48 12" aria-hidden="true">${STROKE[k]}</svg>`;
 const RULES = { trait_ci_excludes_zero: "the effect's interval includes 0", trait_mean_ge_min: "the mean effect is under 0.30", control_upper_lt_max: "the random-direction control moved it too", paired_ci_excludes_zero: "it is not clearly above the control" };
 const reports = {};
-function openPage(p) { S.page = p; closePop(); if (S.inspect) closeInspector(); setView("page"); renderPage(true); }
+function openPage(p) { S.page = p; closePop(); if (S.inspect || S.card) closeInspector(); setView("page"); renderPage(true); }
 async function renderPage(first = false) {
   const el = $("vPage"), p = S.page; if (!p || el.hidden) return;
   const keep = document.activeElement && el.contains(document.activeElement) ? document.activeElement.id : null;
@@ -957,7 +1070,7 @@ function applyState(st) {
   S.limits = { layers: st.layers, neurons: st.neurons, dose_min: st.dose_min, dose_max: st.dose_max, max_rows: st.max_rows };
   K.draw();
 }
-function update() { renderShelf(); renderSentence(); renderTree(); renderKnob(); renderGuard(); }
+function update() { renderShelf(); renderSentence(); renderTree(); renderKnob(); renderGuard(); renderInspector(); }
 // Seed the browser's experiments with every recording (example.json, sweep*.json) once per file version,
 // so the tree is not empty on first visit and a newly recorded sweep shows up.
 async function seedRecorded() {
