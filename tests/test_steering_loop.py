@@ -56,7 +56,7 @@ class SteeringLoopTest(unittest.TestCase):
         # the committed calibration.json (miss fails loudly instead).
         cls._tmpdir = tempfile.TemporaryDirectory(prefix="t9-calib-")
         tmp_cache = Path(cls._tmpdir.name) / "calibration.json"
-        shutil.copyfile(ROOT / "calibration.json", tmp_cache)
+        shutil.copyfile(ROOT / "docs" / "calibration.json", tmp_cache)
         from huggingface_hub import model_info
 
         info = model_info(steer.MODEL_ID)

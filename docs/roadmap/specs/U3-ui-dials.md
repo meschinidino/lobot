@@ -12,7 +12,7 @@ present at each word of each run, inside the tree, not in a panel of meters.
 
 - In the sentence: "and read [behavior ▾]" adds a read (max 2).
 - Each branch's words carry a thin pen line under them (the channel strip from
-  DESIGN.md, Read detail): one step per token, 0..1 band shaded. One pen color
+  docs/DESIGN.md, Read detail): one step per token, 0..1 band shaded. One pen color
   per behavior, from the pen inks; always with a text label.
 - The selected run's pen draws as the run completes (420 ms), not before.
 - The word inspector shows the exact value at the clicked word:
