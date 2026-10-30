@@ -9,7 +9,9 @@ prototype so its tree shows every recorded run:
         [--prompt "..."] [--rows 14:8949:1,13:7956:-1] [--scales -1,-0.5,0.5,1]
     uv run python scripts/build_prototype.py
 
-The recipe defaults to the model's preset rows. Nothing is posted anywhere.
+Qwen writes web/sweep.json (the prototype's tree); other models write
+web/sweep.<short name>.json. The server's replay mode and the live app read
+them all. The recipe defaults to the model's preset rows. Nothing is posted anywhere.
 """
 
 from __future__ import annotations
@@ -47,9 +49,13 @@ def main() -> int:
                     help="layer:neuron:dose,... (default: the model's preset rows)")
     ap.add_argument("--scales", default="-1,-0.5,0.5,1",
                     help="dose multipliers for the recipe; the baseline always runs")
-    ap.add_argument("--out", default=str(ROOT / "web" / "sweep.json"))
+    ap.add_argument("--out", default=None,
+                    help="default: web/sweep.json for Qwen, web/sweep.<short name>.json for others")
     args = ap.parse_args()
 
+    if args.out is None:
+        name = "sweep.json" if args.model == steer.MODEL_ID else f"sweep.{steer.model_short_name(args.model)}.json"
+        args.out = str(ROOT / "web" / name)
     engine._active_model_id = args.model
     preset = engine.active_preset()
     spec = engine.active_spec()

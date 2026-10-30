@@ -128,14 +128,14 @@ def _state() -> dict:
 
 
 def _recordings() -> list[dict]:
-    """Every recorded run as a /api/run result: example.json, then sweep.json."""
+    """Every recorded run as a /api/run result: example.json, then each web/sweep*.json."""
     out = []
-    ex_path, sw_path = WEB / "example.json", WEB / "sweep.json"
+    ex_path = WEB / "example.json"
     if ex_path.exists():
         ex = json.loads(ex_path.read_text())
         out.append({k: ex[k] for k in ("model_id", "prompt", "rows", "baseline", "steered",
                                        "split", "seconds", "recipe", "post")})
-    if sw_path.exists():
+    for sw_path in sorted(WEB.glob("sweep*.json")):
         sw = json.loads(sw_path.read_text())
         for r in sw["runs"]:
             out.append({"model_id": sw["model_id"], "prompt": sw["prompt"], "rows": r["rows"],

@@ -625,14 +625,21 @@ function applyState(st) {
   K.draw();
 }
 function update() { renderShelf(); renderSentence(); renderTree(); renderKnob(); }
-// Seed the browser's experiments with the recorded example (and sweep) once, so the tree is not empty on first visit.
+// Seed the browser's experiments with every recording (example.json, sweep*.json) once per file version,
+// so the tree is not empty on first visit and a newly recorded sweep shows up.
 async function seedRecorded() {
-  if (store.get("seeded", false)) return;
-  const ex = await fetch("example.json").then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const sw = await fetch("sweep.json").then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  if (ex) addResult({ ...ex });
-  if (sw) for (const r of sw.runs) addResult({ model_id: sw.model_id, prompt: sw.prompt, rows: r.rows, baseline: sw.baseline, steered: { text: r.text, tokens: r.tokens }, split: r.split, seconds: r.seconds, recipe: "", post: "" });
-  store.set("seeded", true);
+  const seen = new Set(store.get("seededFiles", []));
+  const names = ["example.json", "sweep.json", ...(S.state ? S.state.models.map((m) => `sweep.${m.short}.json`) : [])];
+  for (const name of names) {
+    const text = await fetch(name).then((r) => (r.ok ? r.text() : null)).catch(() => null);
+    const tag = text && `${name}:${text.length}`;
+    if (!text || seen.has(tag)) continue;
+    const d = JSON.parse(text);
+    if (d.runs) for (const r of d.runs) addResult({ model_id: d.model_id, prompt: d.prompt, rows: r.rows, baseline: d.baseline, steered: { text: r.text, tokens: r.tokens }, split: r.split, seconds: r.seconds, recipe: r.recipe || "", post: r.post || "" });
+    else addResult({ ...d });
+    seen.add(tag);
+  }
+  store.set("seededFiles", [...seen]);
 }
 await document.fonts.ready;
 K.draw();
