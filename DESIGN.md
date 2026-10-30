@@ -1,11 +1,12 @@
 ---
 # gstack: design-md-format=spec
 name: lobot
-description: A clinical ward chart that stays orderly until one token, where a hot pink cut shows that one knob changed a mind.
+description: A workbench on dark instrument paper where every run forks the answer into a new branch, and one knob turns the edit.
 colors:
   ground: "#D5E3D0"
   sheet: "#EEF4EB"
   grid: "#B7CCB2"
+  band: "#C6D9C0"
   text: "#1E2924"
   text-muted: "#41504A"
   primary: "#7B1D2B"
@@ -13,6 +14,10 @@ colors:
   on-primary: "#FBF1EF"
   cut: "#FF4F9A"
   on-cut: "#1E2924"
+  pen-1: "#1E2924"
+  pen-2: "#24557A"
+  pen-3: "#5B5F8C"
+  pen-4: "#6E4A2F"
   success: "#2F6B4A"
   success-tint: "#D3E6D8"
   warning: "#8A5A00"
@@ -22,12 +27,17 @@ colors:
   dark-ground: "#131C18"
   dark-sheet: "#1C2722"
   dark-grid: "#24332C"
+  dark-band: "#2A3D33"
   dark-text: "#DCE7DF"
   dark-text-muted: "#9DB0A6"
   dark-primary: "#B0404F"
   dark-primary-hover: "#9A3240"
   dark-cut: "#FF5FA4"
   dark-on-cut: "#131C18"
+  dark-pen-1: "#DCE7DF"
+  dark-pen-2: "#8DB7DA"
+  dark-pen-3: "#A9ADD6"
+  dark-pen-4: "#C9A27E"
   dark-success: "#8FD3A8"
   dark-warning: "#F0C46A"
   dark-error: "#FF8A80"
@@ -36,7 +46,7 @@ typography:
     fontFamily: Bricolage Grotesque
     fontWeight: 800
     fontStretch: 75%
-    fontSize: clamp(48px, 7vw, 96px)
+    fontSize: clamp(64px, 9vw, 96px)
     lineHeight: 0.9
     letterSpacing: -0.02em
   heading:
@@ -47,8 +57,8 @@ typography:
     lineHeight: 1
   output:
     fontFamily: Atkinson Hyperlegible Next
-    fontSize: 18px
-    lineHeight: 1.6
+    fontSize: 20px
+    lineHeight: 1.4
   body:
     fontFamily: Atkinson Hyperlegible Next
     fontSize: 1rem
@@ -91,6 +101,8 @@ components:
     backgroundColor: "{colors.sheet}"
     borderColor: "{colors.text}"
     rounded: "{rounded.none}"
+  channel-band:
+    backgroundColor: "{colors.band}"
   split-token:
     backgroundColor: "{colors.cut}"
     textColor: "{colors.on-cut}"
@@ -100,108 +112,142 @@ components:
 
 ## Overview
 
-**Creative North Star:** A ward chart that goes wrong. The page is calm clinical paperwork. One hot pink cut marks the token where the steered answer leaves the baseline.
+**Creative North Star:** The fork. The model writes one answer. At the token where an edit changes its mind, the answer forks, and every run adds a branch, so tinkering grows a tree. One knob turns the selected edit. Printed flat on dark instrument paper: ink and one pink cut, never light or glow.
 
-**Memorable thing:** "I watched one knob change a mind." Every design choice serves the before/after split.
+**Memorable thing:** "I could see it, and I could turn it." Turn the knob, and you see exactly where and how the answer changes. Every design choice serves this line.
 
-**Product context:** lobot is a local neuron-steering workbench. It runs one prompt twice on a small open model (baseline and steered) and shows the first divergent token. Users: portfolio viewers who look once (often as an X screenshot), and the author, who runs many experiments. Peers: Neuronpedia, Goodfire, Transluce. All three use calm, light, academic looks. lobot breaks from them on purpose.
+**Product context:** lobot is a local workbench for behavior CRUD on small open models, on one laptop. Create builds a behavior direction with a report card. Read shows per-token behavior values. Update steers with a signed dose. Delete ablates the direction. Users: viewers who see one short screen recording, often on a phone, and the author, who runs many experiments. Peers (Neuronpedia, Goodfire, Transluce) use calm, academic looks; steering tools paint heatmaps over text. lobot shows the change itself.
+
+**Not a dashboard:** the first screen holds one object (the fan), the model's own words, one knob and one number. No stat tiles, meter rows, sidebars of numbers, gauges or chart grids on the first screen. Evidence lives one click away.
 
 **Mode per surface:**
-- Workbench: Operate. Dense, fast, keyboard-first.
-- First visit: Persuade. A recorded example run explains the product before weights load.
-- Capture view: Experience. A portrait card built for a phone feed.
+- Workbench (shelf + sentence + experiment tree): Operate and tinker. One object in the main area: the tree.
+- Recording mode (shelf collapsed): Persuade. The sentence and the tree only.
+- Share card: Experience. A 4:5 post built from recorded text.
+- Workbench (Read detail, evidence, Library, Create): Operate. Dense is allowed here, still no dashboard.
 
-**Reference sites:** https://www.neuronpedia.org, https://www.goodfire.ai, https://transluce.org (screenshots taken 2026-10-29).
+**Reference sites:** https://www.neuronpedia.org, https://www.goodfire.ai, https://transluce.org (screenshots 2026-10-29). ECG interface research (dl.gi.de, Aures et al. 2017) supports markers on the trace itself.
 
 **Key characteristics:**
-- Ward-green ground with a faint chart grid.
-- Big condensed display type, used once per screen.
-- Square corners, ruled fields, 2px ink borders, no shadows.
-- One pink mark per run: the split.
+- Dark by default.
+- The shared words, then curves that fork into one branch per dose.
+- One rotary knob with a detent per dose; the pointer picks the branch.
+- The dose in display type is the only big number.
+- One pink event per screen: the split token on the selected branch, and its curve.
 
 ## Colors
 
-**Strategy:** Committed. Ward green owns the page. Neutrals are green-tinted inks.
+**Strategy:** Committed. Ward green owns the page. Neutrals are green-tinted inks. Four pen inks carry trait data.
 
-**Light or dark:** Light ("Day ward") is the default. The use scene is a laptop in mixed light, and screenshots go to X feeds that are often light. Dark ("Night ward") is a full token set, not an inversion. It keeps the same hierarchy: sheet is one step lighter than ground, and pink stays the brightest color on the page.
+**Light or dark:** Dark is the default (user decision 2026-10-30): pink and ink read strongest on the dark paper in a screen recording. Light is a full token set, not an inversion, and stays available. In both, sheet is one step lighter than ground, and pink stays the brightest color on the page.
 
 Rules for each token:
-- `cut` (pink) marks the first divergent token, the cut line and the spike in the agreement trace. Use it nowhere else, not even for focus rings.
+- `cut` (pink) marks one event per screen: the first token where the answer measurably changed. On the fan, that is the split token on the selected branch and that branch's curve. On the Read detail, that is where the selected behavior first crosses 1.0 (its mean). Unselected branches mark their split token in ink. Use pink nowhere else, not even for focus rings.
+- `pen-1` to `pen-4` (graphite, ward blue, slate, umber) draw trait channels only. Each trait keeps one pen everywhere, and each pen always has a text label. Pens never use pink, oxblood or a state hue. All pens reach at least 5:1 on the sheet in both themes.
+- `band` fills the 0 to 1 range of every channel (neutral mean to trait mean). It is a reference range, not an alarm. Values above 1 cross onto the plain sheet with no color change.
 - `primary` (oxblood) is the run action only.
-- `success`, `warning` and `error` signal run states with a tint background and a colored mono label. Do not use colored edges.
-- `text-muted` is for metadata. Never use it to fade the baseline answer: both answers must stay fully readable.
+- `success`, `warning` and `error` signal states with a tint background and a colored mono label. No colored edges.
+- `text-muted` is for metadata. Never use it to fade a model answer, except to dim text at a dose that was not recorded.
 
 ## Typography
 
-All three faces load from Google Fonts. Self-host them in the app, because lobot runs local only.
+All three faces load from Google Fonts (verified 2026-10-29: Bricolage Grotesque wdth 75 wght 800, Atkinson Hyperlegible Next 200 to 800, JetBrains Mono 400 to 700). Self-host them in the app, because lobot runs local only.
 
-- **Bricolage Grotesque** (800, width 75): wordmark, page headline, section heads and the BASELINE / STEERED column heads. Never body text.
-- **Atkinson Hyperlegible Next:** model output (18px/1.6), UI (16px) and labels (14px bold, sentence case, no tracking). It is a legibility face, which fits the clinic theme and survives phone-size screenshots.
-- **JetBrains Mono** (tabular numbers): layer, neuron, dose, token index, timings and the recipe string. Every value a user might copy is mono.
+- **Bricolage Grotesque** (800, width 75): the display role has one job per screen, the live reading (`1.07`) or the dose (`+0.50`). The number is the headline; there is no tagline. The heading size (28px) sets the wordmark, section heads and the BASELINE / DOSE column heads.
+- **Atkinson Hyperlegible Next:** model output (20px/1.4 on the tape, where it is the time axis; 18px in columns), UI (16px) and labels (14px bold, sentence case, no tracking).
+- **JetBrains Mono** (tabular numbers): layer, neuron, dose, token index, readings in labels, timings, effect sizes and the recipe string. Every value a user might copy is mono.
 
-Scale: display 48 to 96px, heading 28px, output 18px, body 16px, label 14px, mono 12 to 14px.
-
-Capitals appear only in the display voice (BASELINE, STEERED) and in mono state keys (RUNNING, COMPLETE). Labels and table headers use sentence case. Levels differ by size, not only by weight.
+Capitals appear only in the column heads (BASELINE, DOSE +1.00) and in mono state keys (COMPLETE, PASS). Levels differ by size, not only by weight.
 
 ## Layout
 
-- Max width 1400px. Outer margin 32px on desktop, 16px below 720px.
-- Masthead: wordmark left; model picker ("PATIENT: <model>"), History and theme toggle right.
-- First visit: a headline band ("One knob. Different answer.") over a recorded example run. After the first real run, the band collapses into the masthead.
-- Workbench: a 300px left rail (prompt, recipe table, add row, Run experiment) and one shared output sheet. At laptop widths the rail can shrink to 260px. Below 1000px the rail moves above the sheet. Below 720px the two answers stack.
-- Output sheet, top to bottom: run-state bar, 72px agreement trace, BASELINE | STEERED columns with equal width and aligned starts, export rows (recipe string, X post).
-- A Workbench toggle compacts spacing for long sessions.
+- Shell: a collapsible shelf (300px) on the left and the workbench beside it, capped at 1400px and centred. Collapsed, the shelf is a 56px rail with an open control and the current model and edit count. Below 860px the shelf sits on top and starts collapsed.
+- Shelf, top to bottom: wordmark and collapse; Models with "+ Add"; under the active model, its behaviors with their state key ("Use" and "Edit" appear on hover or focus) and "+ New"; other models with a one-line state (on disk, gated); theme. "RESEARCH MODE · GUARD OFF" shows at the top of the shelf when it is on.
+- Workbench, top to bottom: the sentence (the page's h1) with Run and Share card under it; the experiment tree; the control row (knob, dose of the selected edit, one state line).
+- The sentence: "On [model ▾], push [edit] at [dose] and [edit] at [dose] [+ edit] and ask “prompt”". Every bracket is a control: the model opens the model list; an edit selects it for the knob; × removes it; "+ edit" adds a behavior. With no edits it reads "with no edit". A status line says "matches run N" or "changed since the last run".
+- The experiment tree: the shared words on the left at 32 to 44px; one branch per run on the right. Curves run from the end of the shared words to each branch: pink and 4px for the selected run's split, ink for the selected run and the no-edit run, muted for other runs, dashed for a planned setup that was not run. Each branch label lists its edits; clicking it loads that setup into the sentence. A planned branch shows redacted bars and NOT RUN, never invented text.
+- Word inspector: clicking any word opens a 400px panel beside the tree (below the tree under 1100px).
+- Below 860px the tree stacks: shared words on top, branches below, curves drop down the left edge.
+- Pages that replace the workbench in the main area: Edit behavior, New behavior, Add model, Share card. The shelf stays.
 
 ## Elevation & Depth
 
-There are no shadows and no glow. Depth comes from layers of paper: the ground carries the grid, and the sheet sits on top with a 2px ink border. The only displacement is the cut: the steered text below the split shifts 2px right and 6px down, with a torn edge.
+There are no shadows and no glow. Depth comes from layers of paper: the ground carries the grid, and the sheet sits on top with a 2px ink border. The pens are ink on the sheet, never light.
 
 ## Shapes
 
-Corners are square (0px). Use 2px only where a browser control needs it. No pills, no rounded cards, no nested cards. Rows in the recipe table are table rows, not cards.
+Corners are square (0px). Use 2px only where a browser control needs it. The knob is the one circle in the system: a printed dial face with a square-ended pointer. No pills, no rounded cards, no nested cards.
 
 ## Components
 
-- **Focus:** every control shows a 3px `text` (ink) outline with a 2px offset. Ink reaches 3:1 on ground, sheet and grid; pink does not.
-- **Run experiment (primary):** oxblood fill, `on-primary` bold text (tinted paper, not pure white), `⌘ Enter` hint. Hover: `primary-hover`. Active: shifts 1px down. Disabled while a run is active; Stop takes its place.
-- **Ghost button:** transparent, 2px ink border, 44px minimum height. Hover and `aria-pressed="true"` invert to ink fill. Disabled: 45% opacity, `not-allowed` cursor and the `disabled` attribute.
-- **Field:** no box. A 2px ink underline. Invalid: `error` underline and text, `aria-invalid`, one message under the recipe table.
-- **Recipe row:** mono layer, neuron and signed dose (always show the sign, two decimals). The dose field is text, not a number input, so the sign and the decimal point do not follow the browser locale. A slider below each row with a fixed zero notch. Keyboard entry and fine steps work. Moving a dose changes the recipe only; generation runs on Run.
-- **Model picker:** shows readiness ("warm", "gated, needs login") and the fixed note "Switching reloads weights."
-- **Run states:** RUNNING (with token count and elapsed time), COMPLETE ("Answers split at token N"), NO SPLIT ("Both answers match token for token"), ERROR (factual text, for example "Layer 41 does not exist"). If one answer ends first, mark the end position as the split.
-- **Agreement trace:** flat while tokens match, a pink spike at the split, jittery after it. The jitter shows the state "diverged"; it does not plot per-token data. The label "first split · token N" sits next to the spike.
-- **Split token:** pink background, ink text, bold. The matching baseline token gets a 3px pink underline.
-- **Jump to split:** scrolls both columns to the split. Scrolling is linked by default, with an unlock control.
-- **Export rows:** recipe string with Copy; X post with a 280 counter and Copy for X.
-- **History:** a drawer. Each item shows the prompt excerpt, recipe, split position and time. Selecting an item restores its settings and outputs.
-- **Empty state:** a dashed ink box with one instruction sentence. It points to the recorded example.
-- **Capture view:** hides controls. Shows wordmark, model, recipe, prompt and the excerpt around the split at 24px. Portrait layout for phone feeds. Label excerpts as excerpts.
+- **Focus:** every control shows a 3px `text` (ink) outline with a 2px offset. Pink never marks focus.
+- **The experiment tree (the signature):** described in Layout. Every Run adds a branch where its answer first differs; tinkering grows the tree. Runs persist per prompt and model.
+- **The sentence:** described in Layout. It is the only place where edits are set; there is no separate edit rack.
+- **Word inspector:** follows the token inspector contract (design decision 14A): opens on click, Enter or Space on a word; Close and Esc; shows the edits applied in that run, "Observed projection" separate from the applied dose (n/a when not measured), and the top neurons at that token with their activation and a one-line "also fires on". Each neuron has Push (adds it to the sentence at +1.00) or "In edits". Note: "Neurons often mix several jobs."
+- **Channel strip (Read detail, workbench):** one stepped pen line per trait, one step per token, over the `band`. Scale: 0 = neutral mean, 1 = trait mean (projection normalized by the contrast-set mean gap). Read draws a single pen line. The label says "observed projection", never "prediction". Missing values show as a gap, not a zero.
+- **Live reading:** the selected trait's value at the newest token, in display type, with its token index and scale note in mono. A second trait shows at heading size.
+- **Knob:** a 150 to 220px printed dial: ink ring, minor ticks, one major tick per dose step with its signed label, a heavier tick at 0. It turns the dose of the edit selected in the sentence; with no edit it dims. The square pointer snaps to a dose step. Dragging, arrow keys, Home and End all work. `role="slider"` with `aria-valuetext` set to the signed dose. Turning the knob changes the setup; it never starts generation. If the setup matches a run, that run is selected; otherwise a planned branch appears.
+- **Verb line grammar:** the four verbs appear as stroke styles, never as icons. Create: a dotted line that turns solid one stage at a time. Read: a single pen line. Update: a double line, faint baseline pen plus bold steered pen; the gap is the effect. Delete: a hatched excision bracket that cuts the line, with the side effects printed inside it. The same strokes appear in the Library, in tabs and in evidence rows.
+- **The pink event:** a 3px vertical rule at the event token, through the strip and the word, plus the word in `cut` and a mono flag ("crosses trait mean · token 14 · 1.07"). On Update the rule marks the split in the steered column, and the baseline token gets a 3px pink underline. Only the selected dose gets pink. Other doses mark their split in ink.
+- **Run (primary):** oxblood fill, `on-primary` bold text, `⌘ Enter` hint. Disabled while a run is active; Stop takes its place.
+- **Ghost button:** transparent, 2px ink border, 44px minimum height. Hover and `aria-pressed="true"` invert to ink fill.
+- **Field:** no box. A 2px ink underline. Invalid: `error` underline and text, `aria-invalid`.
+- **Verdict line:** a mono state key (KNOB BETTER, PROMPT BETTER, NO CLEAR WINNER, EVIDENCE UNAVAILABLE), the scope "Held-out evaluation · trait vN · dose d", and the effect delta with its interval. Withheld while streaming; STALE after a change.
+- **Evidence table:** rows Read / Increase / Decrease / Delete; columns state key, effect with 95% CI, control bound, side effects, tested doses. Folded on the first screen; open in Workbench. A failed verb disables its control, with the reason inline.
+- **Run states:** RUNNING (token count, elapsed time), COMPLETE, NO SPLIT, STOPPED at token N, FAILED (cause), NOT RUN.
+- **Library:** a ruled list. Saved traits first (name at heading size, model, the four verb strokes with state, version), then "Create new version" per supported family.
+- **Empty state:** a dashed ink box with one instruction sentence.
+- **Shelf rows:** a behavior row shows name, version and one state key (PASS, DECREASE FAIL, READ LATER, GUARD). A guard-blocked behavior is dimmed and cannot be used. Models that are gated or not downloaded are dimmed with their reason.
+- **Edit behavior:** name; versions (use an older one, or create a new one that keeps the current one until it passes); the evidence table; Remove behavior with a confirmation that names what is removed. Editing never changes a direction by hand: that would void its evidence.
+- **Add model:** Hugging Face id, then checks for size and memory, access, architecture support and behaviors; "Download and add"; installed models with Reload and Remove.
+- **Share card:** 4:5 for an X post, built only from recorded text: wordmark, model and its edits, the prompt in quotes, the shared words forking into "no edit" and the edited answer, the dose in display type, and "same prompt · same seed · split at token N". A ready post text sits next to it. Excerpts end with an ellipsis.
+- **Video storyboard (the key 10 seconds):** frame 1, one answer at ±0.00; frame 2, a hand turns the knob and the answer re-runs; frame 3, the answer forks, with pink on the steered branch. Voice-over: "Same prompt, same seed. I turn one knob inside the model, and its answer forks here."
 
 ## Do's and Don'ts
 
-- Do: keep exactly one pink element group per run (split token, cut line, trace spike).
+- Do: keep exactly one pink event per screen.
+- Do: keep the main area to one object: the experiment tree, with the words, one knob and one number.
+- Do: label every run with its true edits. A neuron recipe is never shown as a behavior.
+- Do: draw every trait value as a pen step under its own word.
 - Do: show signed doses with two decimals in mono (`+1.00`, `−1.00`).
-- Do: design loading, no-split, error and long-output states for every view.
-- Do: use real recorded runs in demos and the first visit. Label illustrative text as illustrative.
-- Don't: add shadows, glow, gradients or rounded cards.
-- Don't: use pink for buttons, links or decoration.
-- Don't: turn the steered answer after the split into a red diff wall. After the split, text is ordinary ink.
-- Don't: add brains, scalpels, glitch effects or invented sinister output. The real divergence supplies the disturbance.
+- Do: label illustrative or unrecorded values on screen.
+- Do: design loading, empty, stopped, error and long-output states for the tape and the knob.
+- Don't: build a dashboard: no stat tiles, meter rows, gauges or number sidebars on the first screen.
+- Don't: paint heatmaps over the words. The words stay ink on paper.
+- Don't: use clinical or personality words in the UI: say MODEL (not PATIENT), behavior (not personality or trait profile), Dark and Light (not ward), and avoid vitals, patient, diagnosis and theatre. The look may stay clinical; the words must not suggest medical or personality analysis.
+- Don't: draw the dial as a car gauge: no colored arcs, no fills, no glow.
+- Don't: let the knob start generation; it shows doses that were run.
+- Don't: add shadows, glow, gradients, rounded cards, brains or glitch effects.
+- Don't: use pink for buttons, links, focus or decoration.
 
 ## Motion
 
-- **Approach:** intentional.
+- **Approach:** intentional, paced by data.
 - **Easing:** enter ease-out, exit ease-in, move ease-in-out.
 - **Duration:** micro 50 to 100ms, short 150 to 250ms, medium 250 to 400ms, long 400 to 700ms.
-- **The one authored moment:** the cut. When the steered pass reaches the split, the pink line draws across both columns from left to right in 420ms, then the text below shifts and tears. With `prefers-reduced-motion`, show the final state without animation.
+- **Pens:** step one token at a time as the real stream arrives. The pace comes from the model, never from a timer, except in a replay that says it is a replay.
+- **Knob:** the pointer moves to its detent in 160ms ease-in-out; the sentence and the tree follow.
+- **Shelf:** collapses and opens in 250ms ease-in-out.
+- **The one authored moment:** the fork. When a run reaches its split, its branch curve draws from the shared words in 420ms and the split token turns pink. With `prefers-reduced-motion`, show the final state without animation.
 
 ## Decisions Log
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-10-29 | Initial design system created | Created by /design-consultation from the README, the office-hours design doc and screenshots of three interp sites. Three independent drafts (Claude, Codex, a Claude subagent) converged on a clinical document with one hot mark at the split. |
+| 2026-10-29 | Initial design system created | Created by /design-consultation from the README, the office-hours design doc and screenshots of three interp sites. Three independent drafts converged on a clinical document with one hot mark at the split. |
 | 2026-10-29 | Tokens taken from the approved HTML preview | AI mockups were not generated: the gstack designer has no OpenAI API key. |
-| 2026-10-29 | Focus rings in ink, not pink | /design-html lint: pink measured 2.3:1 on the ground; focus needs 3:1. This also keeps pink for the split only. |
-| 2026-10-29 | Labels in sentence case, untracked, 14px | /design-html lint blocks tracked uppercase labels. Capitals stay in the display voice and in mono state keys. |
+| 2026-10-29 | Focus rings in ink, not pink | /design-html lint: pink measured 2.3:1 on the ground; focus needs 3:1. |
+| 2026-10-29 | Labels in sentence case, untracked, 14px | /design-html lint blocks tracked uppercase labels. |
 | 2026-10-29 | `on-primary` #FBF1EF, dark hover #9A3240 | Lint flags pure white as untinted paper; the old dark hover was 4.4:1 against white text. |
-| 2026-10-29 | Workbench layout exceptions | The run fills the first screen (no tall hero), model output may exceed the word budget per screen, and the bench uses no marketing section gaps. Waived in `web/index.html` with reasons. |
+| 2026-10-29 | Workbench layout exceptions | The run fills the first screen, model output may exceed the word budget per screen, and the bench uses no marketing section gaps. |
+| 2026-10-29 | Update for the Read era: "the ward instrument" | /design-consultation (Update mode). The product moved to behavior CRUD with Read as the headline, and the wave-1 prototype was judged too dense, with no knob and no "whoa". New memory line "I could see it, and I could turn it." Strip-chart channels under every word, one rotary knob, the reading as the only display type, verb line grammar, and pink as the first measurable change. An independent Claude subagent proposed the same core; Codex was not installed. |
+| 2026-10-29 | Pen inks graphite, ward blue, slate, umber | Fulfils design decision 11A (trait palette). Umber replaces a proposed iodine #A8610A that sat too close to the warning amber. |
+| 2026-10-29 | The knob snaps to recorded doses only | Keeps "moving a dose changes the recipe; generation runs on Run". The subagent proposed live re-runs; rejected for honesty and cost. |
+| 2026-10-29 | The agreement trace is replaced by the channel strip and the pink rule | The tape shows agreement and divergence per token in place; a separate 72px trace repeated it. |
+| 2026-10-30 | The fork: dose fan as the first screen | /design-consultation rounds 2-3. The user chose M (dose fan) as the main screen, O (storyboard) for the video and P (share card) for X. Rule: the product must not look like a dashboard. |
+| 2026-10-30 | Dark by default | User preference after seeing both themes; pink and ink read strongest on dark paper in a recording. |
+| 2026-10-30 | Plain words in the UI | Avoids a misread as medical advice or a personality analyzer: MODEL, behavior, Dark and Light. The clinical look stays. |
+| 2026-10-30 | Channel strip moves to the workbench | Per-token pens stay as the Read detail; the first screen shows the fork instead. |
+| 2026-10-30 | Workbench: H1 shelf + sentence, collapsible | User chose H1 with a collapsible shelf: the shelf manages models and behaviors (add, edit, remove); the sentence sets model and edits; collapsed, the screen becomes the recording view. |
+| 2026-10-30 | Tinkering: experiment tree and word inspector | User chose T3 and T1 over an edit rack and neuron search. Every run grows a branch; clicking a word shows top neurons with Push. Follows design decision 14A. |
+| 2026-10-30 | Runs carry their true recipe | The recorded run is a two-neuron recipe; it is labelled by its neurons, not as a behavior. |

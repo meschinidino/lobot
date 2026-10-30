@@ -1,0 +1,488 @@
+<!doctype html>
+<!-- Source of web/prototype.html. Edit this file, then run: uv run python scripts/build_prototype.py -->
+<!-- Static prototype of the lobot workbench: shelf, sentence, experiment tree, word inspector. No backend. -->
+<!-- The build copies in web/example.json, web/sweep.json (if present) and the fonts, so the built page opens anywhere. -->
+<!-- Every run in the tree was recorded. Behaviors on the shelf and neurons in the inspector are labelled illustrative. -->
+<!-- gstack-lint-disable hero-balance: the experiment tree and the sentence fill the first screen; the answers are the content, so there is no headline band -->
+<!-- gstack-lint-disable hand-drawn-svg: the tree curves are data, each one links the shared answer words to one run -->
+<!-- gstack-lint-disable monospace-costume: neuron ids, doses and token indices are values a user might copy; they are set in mono -->
+<!-- gstack-lint-disable screen-word-budget: most words on the screen are the two model answers in the experiment tree, which are the content -->
+<!-- gstack-lint-disable section-gap: the sentence, the experiment tree and the knob row form one screen, not marketing sections -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lobot prototype: workbench</title>
+<meta name="description" content="Static prototype of the lobot workbench: pick a model and edits in one sentence, run, and watch the answer fork into an experiment tree.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23131C18'/%3E%3Cpath d='M6 16 C 14 16, 14 7, 26 7' stroke='%23DCE7DF' stroke-width='2.5' fill='none'/%3E%3Cpath d='M6 16 C 14 16, 14 25, 26 25' stroke='%23FF5FA4' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+/* Tokens: DESIGN.md is the source of truth. Dark is the default. */
+:root, :root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #131C18; --sheet: #1C2722; --grid: #24332C;
+  --ink: #DCE7DF; --ink-muted: #9DB0A6;
+  --primary: #B0404F; --primary-hover: #9A3240; --on-primary: #FBF1EF;
+  --cut: #FF5FA4; --on-cut: #131C18;
+  --ok: #8FD3A8; --ok-tint: #1D3328; --warn: #F0C46A; --warn-tint: #3A2F17; --error: #FF8A80; --error-tint: #3A1E1C;
+  --display: "Bricolage Grotesque", "Arial Narrow", sans-serif;
+  --body: "Atkinson Hyperlegible Next", "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --shelf: 300px;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ground: #D5E3D0; --sheet: #EEF4EB; --grid: #B7CCB2;
+  --ink: #1E2924; --ink-muted: #41504A;
+  --primary: #7B1D2B; --primary-hover: #651522; --on-primary: #FBF1EF;
+  --cut: #FF4F9A; --on-cut: #1E2924;
+  --ok: #2F6B4A; --ok-tint: #D3E6D8; --warn: #8A5A00; --warn-tint: #F3E6C4; --error: #B3261E; --error-tint: #F6DAD7;
+}
+* { box-sizing: border-box; }
+html, body { overflow-x: clip; }
+body {
+  margin: 0; min-height: 100dvh; background-color: var(--ground); color: var(--ink); font: 400 16px/1.5 var(--body);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px; background-position: -1px -1px;
+}
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; }
+.mono { font-family: var(--mono); font-feature-settings: "tnum"; }
+.meta { font: 13px var(--mono); color: var(--ink-muted); font-feature-settings: "tnum"; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.skip { position: absolute; left: 16px; top: -64px; background: var(--ink); color: var(--ground); padding: 8px 16px; z-index: 20; }
+.skip:focus { top: 16px; }
+
+.btn { font: 700 14px/1.25 var(--body); color: var(--ink); background: transparent; border: 2px solid var(--ink); border-radius: 0; padding: 8px 12px; min-height: 44px; cursor: pointer; }
+.btn:hover:not([disabled]) { background: var(--ink); color: var(--ground); }
+.btn[aria-pressed="true"] { background: var(--ink); color: var(--ground); }
+.btn:active:not([disabled]) { transform: translateY(1px); }
+.btn-sm { min-height: 44px; padding: 4px 12px; font-size: 13px; }
+.btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-size: 16px; display: inline-flex; gap: 12px; align-items: center; }
+.btn-primary:hover:not([disabled]) { background: var(--primary-hover); border-color: var(--primary-hover); color: var(--on-primary); }
+.btn-primary kbd { font: 400 12px var(--mono); opacity: .85; }
+.btn-danger { border-color: var(--error); color: var(--error); }
+.link { all: unset; cursor: pointer; text-decoration: underline 2px; text-underline-offset: 6px; }
+.link:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.state { display: inline-flex; gap: 8px; align-items: baseline; padding: 2px 8px; font: 700 11px var(--mono); white-space: nowrap; }
+.state.ok { background: var(--ok-tint); color: var(--ok); } .state.warn { background: var(--warn-tint); color: var(--warn); } .state.info { background: var(--ground); color: var(--ink-muted); } .state.err { background: var(--error-tint); color: var(--error); }
+
+/* Shell: collapsible shelf + main */
+.shell { display: grid; grid-template-columns: var(--shelf) minmax(0, 1fr); min-height: 100dvh; }
+.shell.collapsed { --shelf: 56px; }
+.shelf { border-right: 2px solid var(--ink); background: var(--sheet); padding: 20px; position: sticky; top: 0; height: 100dvh; overflow-y: auto; }
+.shelf .head { display: flex; justify-content: space-between; align-items: center; }
+.wordmark { font: 800 32px/1 var(--display); font-stretch: 75%; letter-spacing: -0.02em; margin: 0; }
+.shelf h2 { text-wrap: balance; font: 700 14px var(--body); margin: 24px 0 8px; display: flex; justify-content: space-between; align-items: center; }
+.model { margin-top: 12px; }
+.model .mn { all: unset; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; width: 100%; gap: 8px; min-height: 44px; }
+.model .mn:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.model .mn b { font: 800 22px var(--display); font-stretch: 75%; }
+.model.off { opacity: .55; }
+.beh { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 8px; margin-top: 2px; }
+.beh .bn { font: 700 15px var(--body); }
+.beh .acts { display: none; gap: 4px; }
+.beh:hover .acts, .beh:focus-within .acts { display: flex; }
+.beh:hover .state, .beh:focus-within .state { display: none; }
+.beh.off { opacity: .5; }
+.shell.collapsed .shelf { padding: 16px 0; overflow: hidden; }
+.shell.collapsed .shelf .full { display: none; }
+.rail { display: none; flex-direction: column; align-items: center; gap: 16px; }
+.shell.collapsed .rail { display: flex; }
+.rail .vt { writing-mode: vertical-rl; transform: rotate(180deg); }
+@media (max-width: 860px) {
+  .shell, .shell.collapsed { grid-template-columns: 1fr; }
+  .shelf { position: static; height: auto; border-right: 0; border-bottom: 2px solid var(--ink); }
+  .shell.collapsed .shelf { padding: 12px 16px; }
+  .shell.collapsed .rail { flex-direction: row; justify-content: space-between; }
+  .shell.collapsed .rail .vt { writing-mode: horizontal-tb; transform: none; }
+}
+
+.main { padding: 20px 40px 32px; min-width: 0; width: 100%; max-width: 1400px; justify-self: center; }
+@media (max-width: 720px) { .main { padding: 16px; } }
+
+/* The sentence: model, edits, prompt and Run read as one instruction. */
+.ask { padding-bottom: 16px; border-bottom: 1px solid var(--ink-muted); }
+.sentence { font: 400 24px/1.6 var(--body); margin: 0; }
+.sentence .edit { white-space: nowrap; }
+@media (max-width: 720px) { .sentence { font-size: 20px; } .sentence .edit { white-space: normal; } .sentence .edit .dose { font-size: 22px; } }
+.sentence .edit .dose { font: 800 28px var(--display); font-stretch: 75%; }
+.sentence .edit[aria-current="true"] .link { text-decoration-color: var(--ink); text-decoration-thickness: 4px; }
+.sentence .x { all: unset; cursor: pointer; font: 14px var(--mono); color: var(--ink-muted); padding: 0 4px; }
+.sentence .x:focus-visible { outline: 3px solid var(--ink); }
+.sentence .q { color: var(--ink-muted); }
+.row2 { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.pop { position: absolute; z-index: 10; background: var(--sheet); border: 2px solid var(--ink); min-width: 320px; }
+.pop .opt { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 12px; width: 100%; padding: 12px 16px; border-top: 1px solid var(--grid); }
+.pop .opt:first-child { border-top: 0; }
+.pop .opt:hover, .pop .opt:focus-visible { background: var(--ink); color: var(--ground); outline: none; }
+.pop .opt[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.pop .opt b { font: 800 20px var(--display); font-stretch: 75%; }
+
+/* The experiment tree */
+.work { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; }
+.work.inspecting { grid-template-columns: minmax(0, 1fr) 400px; }
+@media (max-width: 1100px) { .work.inspecting { grid-template-columns: 1fr; } }
+.tree { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 96px; padding: 32px 0 16px; min-height: max(360px, calc(100dvh - 420px)); align-content: center; }
+.tree svg.links { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.root { align-self: center; font: 400 clamp(32px, 4vw, 44px)/1.2 var(--body); position: relative; }
+.root .flag { position: absolute; left: 0; top: calc(100% + 8px); }
+.flag { font: 600 12px var(--mono); background: var(--cut); color: var(--on-cut); padding: 0 4px; white-space: nowrap; }
+.runs { display: flex; flex-direction: column; gap: 24px; }
+.run { position: relative; padding-left: 12px; }
+.run .k { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.run .pick { all: unset; cursor: pointer; font: 13px var(--mono); color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.run .k { min-width: 0; }
+.run .pick:focus-visible { outline: 3px solid var(--ink); }
+.run[aria-current="true"] .pick { color: var(--ink); }
+.run .t { font: 400 20px/1.5 var(--body); }
+.run[aria-current="true"] .t { font-size: 24px; }
+.run .w { cursor: pointer; }
+.run .w:hover { text-decoration: underline 1px var(--ink-muted); text-underline-offset: 4px; }
+.run .w.inspected { outline: 2px solid var(--ink); outline-offset: 2px; }
+.run .w.split { font-weight: 700; text-decoration: underline 2px var(--ink-muted); text-underline-offset: 4px; }
+.run[aria-current="true"] .w.split { background: var(--cut); color: var(--on-cut); text-decoration: none; }
+.redact { display: inline-block; height: .8em; background: var(--ink-muted); opacity: .25; margin-right: .3em; vertical-align: -.05em; }
+@media (max-width: 860px) { .tree { grid-template-columns: minmax(0, 1fr); row-gap: 28px; } .runs { padding-left: 40px; } }
+.runs, .run { min-width: 0; }
+.run .pick { min-width: 0; flex: 0 1 auto; }
+
+/* Word inspector */
+.inspector { background: var(--sheet); border: 2px solid var(--ink); padding: 16px; align-self: start; position: sticky; top: 16px; }
+.inspector h3 { font: 800 28px/1 var(--display); font-stretch: 75%; margin: 0; }
+.inspector .nrow { display: grid; grid-template-columns: 96px 48px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 12px 0; border-top: 1px solid var(--grid); }
+.inspector .nrow b { font: 700 14px var(--mono); }
+
+/* Control row */
+.control { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--ink-muted); }
+.knob svg { width: 150px; height: 150px; touch-action: none; cursor: grab; display: block; }
+.knob svg:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+.bigdose { font: 800 clamp(56px, 7vw, 96px)/.85 var(--display); font-stretch: 75%; letter-spacing: -0.02em; font-feature-settings: "tnum"; }
+.control .spacer { flex: 1; }
+
+/* Pages: edit behavior, add model, share card */
+.page h1 { font: 800 40px/1 var(--display); font-stretch: 75%; margin: 8px 0 0; }
+.page .top { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.label { display: block; font: 700 14px var(--body); margin: 20px 0 4px; }
+.field { width: 100%; font: 400 20px/1.4 var(--body); color: var(--ink); background: transparent; border: 0; border-bottom: 2px solid var(--ink); border-radius: 0; padding: 8px 0; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+@media (max-width: 960px) { .cols { grid-template-columns: 1fr; } }
+.rule { display: grid; grid-template-columns: 140px minmax(0, 1fr) auto; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--grid); align-items: baseline; }
+.card { width: min(100%, 600px); aspect-ratio: 4 / 5; border: 2px solid var(--ink); padding: 28px; display: flex; flex-direction: column; background: var(--ground);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 12px 12px; }
+.card .ct { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2px solid var(--ink); padding-bottom: 8px; }
+.card .cf { flex: 1; position: relative; display: grid; grid-template-columns: auto 1fr; column-gap: 72px; align-items: center; }
+.card .cf svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.card .cb { display: flex; flex-direction: column; gap: 88px; font: 400 21px/1.3 var(--body); }
+.card .tok { background: var(--cut); color: var(--on-cut); font-weight: 700; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="shell" id="shell">
+  <aside class="shelf" id="shelf" aria-label="Models and behaviors">
+    <div class="rail"><button class="btn btn-sm" id="expand" type="button" aria-label="Open the shelf" aria-controls="shelf">▸</button><span class="meta vt" id="railText"></span></div>
+    <div class="full">
+      <div class="head"><span class="wordmark">lobot</span><button class="btn btn-sm" id="collapse" type="button" aria-label="Collapse the shelf">◂</button></div>
+      <h2>Models <button class="btn btn-sm" type="button" data-go="addModel">+ Add</button></h2>
+      <div id="models"></div>
+      <h2 style="margin-top:28px">Theme <button class="btn btn-sm" id="themeBtn" type="button">Light</button></h2>
+      <p class="meta">Behaviors on the shelf are illustrative. Recorded runs are neuron recipes.</p>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <!-- Workbench -->
+    <section id="vWork" aria-label="Workbench">
+      <div class="ask" id="ask"><h1 class="sentence" id="sentence"></h1><div class="row2" id="row2"></div></div>
+      <div class="work" id="work">
+        <div>
+          <div class="tree" id="tree"><svg class="links" id="links" aria-hidden="true"></svg><div class="root" id="root"></div><div class="runs" id="runs"></div></div>
+          <div class="control">
+            <div class="knob" id="knob"></div>
+            <div><div class="bigdose" id="bigdose"></div><span class="meta" id="knobFor"></span></div>
+            <span class="spacer"></span>
+            <div><span class="state info" id="runState"></span><div class="meta" id="runMsg" style="margin-top:6px;max-width:44ch"></div></div>
+          </div>
+        </div>
+        <aside class="inspector" id="inspector" hidden aria-labelledby="iHead"></aside>
+      </div>
+    </section>
+
+    <section id="vShare" class="page" hidden aria-labelledby="shareH">
+      <div class="top"><h1 id="shareH">Share card</h1><button class="btn" type="button" data-go="work">Back to the tree</button></div>
+      <div style="display:flex;gap:32px;flex-wrap:wrap;margin-top:20px"><div class="card" id="card"></div><div style="max-width:44ch"><span class="label">Post for X</span><p class="meta" id="post" style="white-space:pre-wrap;color:var(--ink)"></p><p class="meta">Built only from recorded runs 1 and 2.</p></div></div>
+    </section>
+
+    <section id="vBehavior" class="page" hidden aria-labelledby="behH"></section>
+    <section id="vAddModel" class="page" hidden aria-labelledby="addH"></section>
+  </main>
+</div>
+<div class="sr" id="live" aria-live="polite"></div>
+
+<script>
+// Recorded run, copied from web/example.json.
+const REC = __REC__;
+// A sweep recorded by scripts/record_sweep.py (web/sweep.json), or null.
+const SWEEP = __SWEEP__;
+
+const $ = (id) => document.getElementById(id);
+const root = document.documentElement;
+const qs = new URLSearchParams(location.search);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("lobot." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("lobot." + k, JSON.stringify(v)); } catch { /* storage blocked: per-viewer convenience only */ } },
+};
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+const fd = (d) => (d > 0 ? "+" : d < 0 ? "−" : "±") + Math.abs(d).toFixed(2);
+const words = (t) => t.match(/\S+\s*/g);
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches || qs.has("still");
+const MODEL = (SWEEP || REC).model_id.split("/").pop();
+
+/* ---------- theme, shelf ---------- */
+root.dataset.theme = qs.get("theme") || store.get("theme3", "dark");
+const syncTheme = () => ($("themeBtn").textContent = root.dataset.theme === "dark" ? "Light" : "Dark");
+$("themeBtn").addEventListener("click", () => { root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark"; store.set("theme3", root.dataset.theme); syncTheme(); layout(); });
+syncTheme();
+function setShelf(open) {
+  $("shell").classList.toggle("collapsed", !open); store.set("shelf", open);
+  (open ? $("collapse") : $("expand")).focus({ preventScroll: true });
+  requestAnimationFrame(layout);
+}
+$("collapse").addEventListener("click", () => setShelf(false));
+$("expand").addEventListener("click", () => setShelf(true));
+if (qs.get("shelf") === "closed" || (!qs.has("shelf") && store.get("shelf", true) === false)) $("shell").classList.add("collapsed");
+
+/* ---------- data ---------- */
+// Illustrative shelf contents. Only the first model's recorded run is real.
+const MODELS = [
+  { id: MODEL, state: "warm", behaviors: [["Hostility", "v2", "ok", "PASS"], ["Sycophancy", "v1", "ok", "PASS"], ["Paranoia", "v1", "warn", "DECREASE FAIL"], ["Formality", "v1", "info", "READ LATER"], ["Refusal", "—", "info", "GUARD", true]] },
+  { id: "Llama-3.2-3B", state: "on disk", behaviors: null, note: "load to use · gated: needs login" },
+];
+// Runs come from the sweep when there is one, else from the single recorded run.
+const toEdits = (rows) => rows.map((r) => ({ kind: "neuron", id: `L${r.layer}N${r.neuron}`, dose: r.dose }));
+const key = (edits) => edits.filter((e) => e.dose !== 0).map((e) => `${e.id}@${e.dose}`).sort().join(" ");
+const PROMPT = SWEEP ? SWEEP.prompt : REC.prompt;
+// Runs are the tree's branches; every one was recorded. split.char is where the answer leaves run 1.
+const RUNS = [{ n: 1, scale: 0, edits: [], text: SWEEP ? SWEEP.baseline.text : REC.baseline.text, split: null }];
+if (SWEEP) SWEEP.runs.forEach((r, i) => RUNS.push({ n: i + 2, scale: r.scale, edits: toEdits(r.rows), text: r.text, split: r.split && { token: r.split.token, char: r.split.steered_char }, seconds: r.seconds }));
+else RUNS.push({ n: 2, scale: 1, edits: toEdits(REC.rows), text: REC.steered.text, split: { token: REC.split.token, char: REC.split.steered_char }, seconds: REC.seconds });
+const BASE = RUNS[0].text;
+// The shared words end at the earliest split, snapped back to a word start.
+const ROOT_CHAR = (() => { const cs = RUNS.filter((r) => r.split).map((r) => r.split.char); let c = cs.length ? Math.min(...cs) : (/^\S+\s+\S+\s*/.exec(BASE) || [""])[0].length; while (c > 0 && !/\s/.test(BASE[c - 1])) c--; return c; })();
+const SHARED = BASE.slice(0, ROOT_CHAR).trim();
+// A run's words after the shared words, with their char offsets; the split word is the one the split char falls in.
+function branchWords(r) {
+  const out = []; const re = /\S+\s*/g; const tail = r.text.slice(ROOT_CHAR); let m;
+  const sc = r.split ? r.split.char + (/^\s*/.exec(r.text.slice(r.split.char))[0].length) : -1;
+  while ((m = re.exec(tail))) { const start = ROOT_CHAR + m.index, core = m[0].trimEnd(); out.push({ w: core, sp: m[0].slice(core.length), start, split: sc >= start && sc < start + core.length }); }
+  return out;
+}
+RUNS.forEach((r) => (r.words = branchWords(r)));
+const TOP_RUN = RUNS.filter((r) => r.split).sort((a, b) => b.scale - a.scale)[0] || RUNS[RUNS.length - 1];
+const S = { edits: TOP_RUN.edits.map((e) => ({ ...e })), sel: 1, view: qs.get("view") || "work", inspect: null, focusEdit: 0 };
+if (qs.get("run") === "1") { S.edits = []; S.focusEdit = -1; }
+
+/* ---------- shelf ---------- */
+function renderShelf() {
+  $("models").innerHTML = MODELS.map((m, i) => `<div class="model${m.off ? " off" : ""}"><button class="mn" type="button" ${m.off ? 'aria-disabled="true"' : ""}><b>${esc(m.id)}</b><span class="meta">${m.state}</span></button>
+    ${m.behaviors ? `<h2 style="margin:10px 0 2px;font-size:12px" class="meta">behaviors <button class="btn btn-sm" type="button" data-go="behavior" data-new="1">+ New</button></h2>` + m.behaviors.map(([b, v, k, st, off]) => `<div class="beh${off ? " off" : ""}"><span class="bn">${b} <span class="meta">${v}</span></span><span class="state ${k}">${st}</span><span class="acts"><button class="btn btn-sm" type="button" data-add="${b}" ${off ? "disabled" : ""}>Use</button><button class="btn btn-sm" type="button" data-go="behavior" data-b="${b}">Edit</button></span></div>`).join("") : `<div class="meta" style="padding:4px 8px">${m.note}</div>`}</div>`).join("");
+  $("railText").textContent = `${MODEL} · ${S.edits.length} edit${S.edits.length === 1 ? "" : "s"}`;
+}
+$("models").addEventListener("click", (e) => {
+  const add = e.target.closest("[data-add]"); if (add) { addEdit({ kind: "behavior", id: add.dataset.add, dose: 1 }); }
+});
+
+/* ---------- sentence ---------- */
+function renderSentence() {
+  const edits = S.edits.map((e, i) => `<span class="edit" aria-current="${i === S.focusEdit}">${i ? (i === S.edits.length - 1 ? " and " : ", ") : ""}<button class="link mono" type="button" data-focus="${i}" style="font-size:20px">${esc(e.id)}</button> at <span class="dose">${fd(e.dose)}</span><button class="x" type="button" data-remove="${i}" aria-label="Remove ${esc(e.id)}">×</button></span>`).join("");
+  $("sentence").innerHTML = `On <button class="link" type="button" id="modelBtn" aria-haspopup="true">${esc(MODEL)} ▾</button>,
+    ${S.edits.length ? `push ${edits}` : "with no edit"} <button class="btn btn-sm" type="button" id="addEditBtn" aria-haspopup="true">+ edit</button>
+    and ask <span class="q">“${esc(PROMPT)}”</span>`;
+  $("row2").innerHTML = `<button class="btn btn-primary" id="runBtn" type="button">Run <kbd id="kbd">⌘ Enter</kbd></button>
+    <button class="btn" type="button" data-go="share">Share card</button><span class="meta" id="plan"></span>`;
+  if (!/Mac|iPhone|iPad/.test(navigator.platform)) $("kbd").textContent = "Ctrl Enter";
+}
+let pop = null;
+function closePop() { pop?.remove(); pop = null; }
+function openPop(anchor, html) {
+  closePop(); pop = document.createElement("div"); pop.className = "pop"; pop.innerHTML = html;
+  const r = anchor.getBoundingClientRect(); pop.style.left = Math.max(8, Math.min(innerWidth - 340, r.left + scrollX)) + "px"; pop.style.top = r.bottom + scrollY + 6 + "px";
+  document.body.append(pop); pop.querySelector(".opt:not([aria-disabled])")?.focus();
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (pop) { closePop(); } else if (S.inspect) { closeInspector(); } } });
+document.addEventListener("click", (e) => { if (pop && !pop.contains(e.target) && !e.target.closest("#modelBtn,#addEditBtn")) closePop(); });
+$("ask").addEventListener("click", (e) => {
+  const t = e.target;
+  if (t.closest("#modelBtn")) openPop(t, MODELS.map((m) => `<button class="opt" type="button" ${m.off ? 'aria-disabled="true"' : ""}><span><b>${esc(m.id)}</b><br><span class="meta">${m.note || "recorded run"}</span></span><span class="meta">${m.state}</span></button>`).join("") + `<div class="meta" style="padding:8px 14px;border-top:2px solid var(--ink)">Switching reloads weights.</div>`);
+  else if (t.closest("#addEditBtn")) openPop(t, MODELS[0].behaviors.map(([b, v, k, st, off]) => `<button class="opt" type="button" data-add="${b}" ${off ? 'aria-disabled="true"' : ""}><span><b>${b}</b> <span class="meta">${v} · behavior</span></span><span class="state ${k}">${st}</span></button>`).join("") + `<div class="meta" style="padding:8px 14px;border-top:2px solid var(--ink)">Or click any word in the tree and push a neuron.</div>`);
+  else if (t.closest("[data-remove]")) { S.edits.splice(+t.closest("[data-remove]").dataset.remove, 1); S.focusEdit = Math.min(S.focusEdit, S.edits.length - 1); update(); }
+  else if (t.closest("[data-focus]")) { S.focusEdit = +t.closest("[data-focus]").dataset.focus; update(); }
+  else if (t.closest("#runBtn")) run();
+});
+document.body.addEventListener("click", (e) => { const o = e.target.closest(".pop [data-add]"); if (o && o.getAttribute("aria-disabled") !== "true") { addEdit({ kind: "behavior", id: o.dataset.add, dose: 1 }); closePop(); } });
+function addEdit(edit) {
+  const i = S.edits.findIndex((e) => e.id === edit.id);
+  if (i >= 0) S.focusEdit = i; else { S.edits.push(edit); S.focusEdit = S.edits.length - 1; }
+  setView("work"); update(); $("live").textContent = `${edit.id} added at ${fd(edit.dose)}. Not run yet.`;
+}
+
+/* ---------- tree ---------- */
+const matching = () => RUNS.find((r) => key(r.edits) === key(S.edits));
+function runHtml(r, current) {
+  const body = r.words ? r.words.slice(0, current ? 22 : 14).map((x, j) => `<span class="w${x.split ? " split" : ""}${S.inspect && S.inspect.run === r.n && S.inspect.i === j ? " inspected" : ""}" data-run="${r.n}" data-i="${j}" tabindex="0" role="button" aria-label="Inspect “${esc(x.w)}”">${esc(x.w)}</span>${x.sp}`).join("") + "…"
+    : Array.from({ length: 7 }, (_, i) => `<span class="redact" style="width:${2.4 + (i * 3 % 5) * .7}em"></span>`).join("") + `<span class="meta"> not run yet</span>`;
+  const edits = r.edits.length ? r.edits.map((e) => `${e.id} ${fd(e.dose)}`).join(", ") : "no edit";
+  const label = r.n ? `run ${r.n}: ${edits}` : `planned: ${edits}`;
+  return `<div class="run" data-n="${r.n}" aria-current="${current}"><div class="k"><button class="pick" type="button" data-pick="${r.n}">${label}</button>${current ? '<span class="state info">SELECTED</span>' : ""}${r.n ? '<span class="meta">recorded</span>' : '<span class="state info">NOT RUN</span>'}</div><div class="t">${body}</div></div>`;
+}
+function renderTree() {
+  const m = matching();
+  const list = [...RUNS];
+  if (!m) list.push({ n: 0, scale: -99, edits: S.edits, words: null });
+  S.sel = m ? m.n : 0;
+  const sel = m && m.split ? m : null;
+  $("root").innerHTML = `${esc(SHARED)}<span class="flag" id="splitFlag">split · token ${sel ? sel.split.token : ""}</span>`;
+  $("splitFlag").hidden = !sel;
+  // Highest dose on top, the no-edit run in its place, a planned setup last.
+  $("runs").innerHTML = list.sort((a, b) => b.scale - a.scale).map((r) => runHtml(r, r.n === S.sel)).join("");
+  const st = $("runState");
+  if (sel) { st.className = "state ok"; st.textContent = "SPLIT"; $("runMsg").textContent = `Run ${sel.n} leaves run 1 at token ${sel.split.token}.${sel.seconds ? ` ${sel.seconds} s,` : ""} greedy, seed 0.`; }
+  else if (m && m.n !== 1) { st.className = "state warn"; st.textContent = "NO SPLIT"; $("runMsg").textContent = `Run ${m.n} matches run 1 token for token.`; }
+  else if (S.sel === 1) { st.className = "state info"; st.textContent = "NO EDIT"; $("runMsg").textContent = "Run 1 is the model with no edit."; }
+  else { st.className = "state warn"; st.textContent = "PLANNED"; $("runMsg").textContent = "This setup has no recorded run. Run records it when the lobot server is on."; }
+  $("plan").textContent = S.sel ? `matches run ${S.sel}` : "changed since the last run";
+  layout();
+}
+function layout() {
+  const tree = $("tree"); if (!tree || $("vWork").hidden) return;
+  const box = tree.getBoundingClientRect(), rb = $("root").getBoundingClientRect();
+  const stacked = matchMedia("(max-width: 860px)").matches;
+  const x0 = stacked ? rb.left - box.left + 12 : rb.right - box.left + 8, y0 = stacked ? rb.bottom - box.top + 4 : rb.top - box.top + rb.height / 2;
+  const cs = getComputedStyle(root);
+  $("links").innerHTML = [...$("runs").children].map((el) => {
+    const n = +el.dataset.n, b = el.getBoundingClientRect(), x1 = b.left - box.left, y1 = b.top - box.top + 12, cur = n === S.sel;
+    const r = RUNS.find((x) => x.n === n), hot = cur && !!(r && r.split), c = hot ? cs.getPropertyValue("--cut") : cur || n === 1 ? cs.getPropertyValue("--ink") : cs.getPropertyValue("--ink-muted");
+    const d = stacked ? `M${x0} ${y0} C ${x0} ${y1}, ${x0} ${y1}, ${x1} ${y1}` : `M${x0} ${y0} C ${x0 + (x1 - x0) * .55} ${y0}, ${x0 + (x1 - x0) * .45} ${y1}, ${x1} ${y1}`;
+    return `<path d="${d}" fill="none" stroke="${c}" stroke-width="${hot ? 4 : cur ? 3 : 2}"${n ? "" : ' stroke-dasharray="5 6"'}/>`;
+  }).join("");
+}
+new ResizeObserver(() => requestAnimationFrame(layout)).observe($("tree"));
+$("runs").addEventListener("click", (e) => {
+  const p = e.target.closest("[data-pick]"); if (p) { const r = RUNS.find((x) => x.n === +p.dataset.pick); if (r) { S.edits = r.edits.map((x) => ({ ...x })); S.focusEdit = S.edits.length - 1; update(); } return; }
+  const w = e.target.closest(".w"); if (w) inspect(+w.dataset.run, +w.dataset.i);
+});
+$("runs").addEventListener("keydown", (e) => { const w = e.target.closest(".w"); if (w && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); inspect(+w.dataset.run, +w.dataset.i); } });
+
+/* ---------- word inspector (token inspector contract: pin, Esc, observed vs applied) ---------- */
+// Neuron rows: the first two are the recorded recipe; the rest are illustrative.
+const TOP = [["L14N8949", "+3.8", "recipe neuron", "harm · conquer · destroy"], ["L13N7956", "−2.9", "recipe neuron", "help · assist · support"], ["L16N2210", "+2.4", "", "goal · aim · plan"], ["L9N507", "+1.9", "", "cause · lead · result"], ["L21N4410", "+1.6", "", "punctuation, many jobs"]];
+function inspect(run, i) {
+  S.inspect = { run, i }; const r = RUNS.find((x) => x.n === run); const x = r.words[i], w = x.w;
+  $("work").classList.add("inspecting"); const el = $("inspector"); el.hidden = false;
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h3 id="iHead">“${esc(w)}”</h3><button class="btn btn-sm" type="button" id="iClose">Close · Esc</button></div>
+    <p class="meta" style="margin:6px 0 0">run ${run}, word ${i + 1} after “${esc(SHARED)}”${x.split ? ", the split" : ""}</p>
+    <div style="display:grid;grid-template-columns:1fr auto;gap:2px 12px;margin-top:12px;font-size:14px"><span class="meta">Applied edits at this run</span><b class="mono">${r.edits.length ? r.edits.map((e) => `${e.id} ${fd(e.dose)}`).join(", ") : "none"}</b><span class="meta">Observed projection</span><b class="mono">n/a</b></div>
+    <span class="label">Top neurons at this token <span class="meta">· illustrative</span></span>
+    ${TOP.map(([id, a, note, top]) => { const inEdits = S.edits.some((e) => e.id === id); return `<div class="nrow"><b>${id}</b><span class="mono" style="font-size:13px">${a}</span><span class="meta" style="font-size:12px">${note ? note + " · " : ""}${top}</span><button class="btn btn-sm" type="button" data-push="${id}" ${inEdits ? "disabled" : ""}>${inEdits ? "In edits" : "Push"}</button></div>`; }).join("")}
+    <p class="meta" style="margin-top:10px">Neurons often mix several jobs. Push adds one to the sentence at +1.00. Run tests what it does.</p>`;
+  renderTree(); $("iClose").focus({ preventScroll: true });
+}
+function closeInspector() { S.inspect = null; $("inspector").hidden = true; $("work").classList.remove("inspecting"); renderTree(); }
+$("inspector").addEventListener("click", (e) => {
+  if (e.target.closest("#iClose")) return closeInspector();
+  const p = e.target.closest("[data-push]"); if (p) { addEdit({ kind: "neuron", id: p.dataset.push, dose: 1 }); inspect(S.inspect.run, S.inspect.i); }
+});
+
+/* ---------- knob: sets the dose of the selected edit in the sentence ---------- */
+const DOSES = [-1, -0.5, 0, 0.5, 1];
+const K = (() => {
+  const host = $("knob"), C = 110, R = 96, A0 = -135, A1 = 135;
+  const ang = (i) => A0 + (A1 - A0) * i / (DOSES.length - 1), pt = (a, r) => [C + r * Math.sin(a * Math.PI / 180), C - r * Math.cos(a * Math.PI / 180)];
+  const minor = Array.from({ length: 41 }, (_, j) => { const a = A0 + (A1 - A0) * j / 40, [x1, y1] = pt(a, R - 2), [x2, y2] = pt(a, R - 7); return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--ink-muted)"/>`; }).join("");
+  const major = DOSES.map((d, i) => { const [x1, y1] = pt(ang(i), R - 2), [x2, y2] = pt(ang(i), R - 18), [tx, ty] = pt(ang(i), R + 15); return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--ink)" stroke-width="${d === 0 ? 4 : 2.5}"/><text x="${tx}" y="${ty + 4}" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="var(--ink-muted)">${fd(d)}</text>`; }).join("");
+  host.innerHTML = `<svg viewBox="-20 -20 260 260" role="slider" tabindex="0" aria-label="Dose of the selected edit" aria-valuemin="-1" aria-valuemax="1"><circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="var(--ink)" stroke-width="2"/>${minor}${major}<circle cx="${C}" cy="${C}" r="62" fill="var(--sheet)" stroke="var(--ink)" stroke-width="2"/><rect class="ptr" x="${C - 4}" y="${C - 60}" width="8" height="36" fill="var(--ink)"/></svg>`;
+  const svg = host.querySelector("svg"), ptr = host.querySelector(".ptr");
+  const nearest = (d) => DOSES.reduce((a, b) => (Math.abs(b - d) < Math.abs(a - d) ? b : a));
+  function show(d, on) { const i = DOSES.indexOf(nearest(d)); ptr.style.transition = reduce ? "none" : "transform 160ms cubic-bezier(.65,0,.35,1)"; ptr.setAttribute("transform", `rotate(${ang(i)} ${C} ${C})`); svg.style.opacity = on ? 1 : .4; svg.setAttribute("aria-valuenow", d); svg.setAttribute("aria-valuetext", fd(d)); }
+  function setTo(d) { const e = S.edits[S.focusEdit]; if (!e || e.dose === d) return; e.dose = d; update(); }
+  const fromEvent = (ev) => { const r = svg.getBoundingClientRect(); let a = Math.atan2(ev.clientX - (r.left + r.width / 2), -(ev.clientY - (r.top + r.height / 2))) * 180 / Math.PI; a = Math.max(A0, Math.min(A1, a)); setTo(DOSES[Math.round((a - A0) / (A1 - A0) * (DOSES.length - 1))]); };
+  let drag = false;
+  svg.addEventListener("pointerdown", (e) => { if (!S.edits.length) return; drag = true; svg.setPointerCapture(e.pointerId); fromEvent(e); });
+  svg.addEventListener("pointermove", (e) => { if (drag) fromEvent(e); });
+  svg.addEventListener("pointerup", () => (drag = false));
+  svg.addEventListener("keydown", (e) => { const e0 = S.edits[S.focusEdit]; if (!e0) return; const s = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key]; if (!s) return; e.preventDefault(); const i = DOSES.indexOf(nearest(e0.dose)); setTo(DOSES[Math.max(0, Math.min(DOSES.length - 1, i + s))]); });
+  return { show };
+})();
+function renderKnob() {
+  const e = S.edits[S.focusEdit];
+  K.show(e ? e.dose : 0, !!e);
+  $("bigdose").textContent = e ? fd(e.dose) : "±0.00";
+  $("knobFor").textContent = e ? `dose of ${e.id} · click an edit in the sentence to turn another` : "no edit · add one in the sentence";
+}
+
+/* ---------- run: replays recorded setups, plans the rest ---------- */
+function run() {
+  const m = matching();
+  if (m) { $("live").textContent = `Replaying run ${m.n}.`; if (!reduce) { const sel = S.sel; S.sel = -1; layout(); setTimeout(() => { renderTree(); }, 300); } }
+  else { $("runState").className = "state err"; $("runState").textContent = "NO SERVER"; $("runMsg").textContent = `This prototype has no backend. With the lobot server on, Run records this setup as run ${RUNS.length + 1}, and the tree grows a branch.`; $("live").textContent = $("runMsg").textContent; }
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run(); } });
+
+/* ---------- pages ---------- */
+function renderBehavior(name) {
+  const isNew = !name;
+  $("vBehavior").innerHTML = `<div class="top"><span class="meta">${esc(MODEL)} › behaviors ›</span><button class="btn" type="button" data-go="work">Back to the tree</button></div>
+    <h1 id="behH">${isNew ? "New behavior" : esc(name)}</h1>
+    ${isNew ? `<p class="meta">Wave 1 builds behaviors from validated families only.</p><span class="label">Family</span>${["hostile vs neutral", "sycophantic vs candid", "formal vs casual", "open description · not supported yet"].map((f, i) => `<div class="rule"><b>${f}</b><span class="meta">${i < 3 ? "120 contrast prompts · about 10-20 min" : "needs the open Create pipeline"}</span>${i < 3 ? '<button class="btn btn-sm" type="button">Create</button>' : '<span class="state info">LATER</span>'}</div>`).join("")}`
+    : `<div class="cols"><div><span class="label">Name</span><input class="field" value="${esc(name)}" aria-label="Behavior name">
+      <span class="label">Versions</span>${[["v2", "2026-10-29", "layer 14", true], ["v1", "2026-10-28", "layer 12", false]].map(([v, d, l, on]) => `<div class="rule"><b>${v}</b><span class="meta">${d} · ${l}</span>${on ? '<span class="state ok">IN USE</span>' : '<button class="btn btn-sm" type="button">Use</button>'}</div>`).join("")}
+      <div style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="btn" type="button">Create new version</button><span class="meta">about 10-20 min · keeps v2 until it passes</span></div></div>
+      <div><span class="label">Evidence · v2 · held-out <span class="meta">· illustrative</span></span>${[["Read", "info", "LATER WAVE", "—"], ["Increase", "ok", "PASS", "+0.31 [+0.22, +0.40]"], ["Decrease", "warn", "FAIL", "−0.04 [−0.11, +0.03]"], ["Remove", "info", "LATER WAVE", "—"]].map(([v, k, st, e]) => `<div class="rule"><b>${v}</b><span class="mono" style="font-size:13px">${e}</span><span class="state ${k}">${st}</span></div>`).join("")}</div></div>
+      <div style="margin-top:28px;padding-top:16px;border-top:1px solid var(--ink-muted);display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="btn btn-danger" type="button">Remove behavior</button><span class="meta">Removes all versions and their saved runs. Asks to confirm.</span></div>`}`;
+}
+function renderAddModel() {
+  $("vAddModel").innerHTML = `<div class="top"><h1 id="addH">Add model</h1><button class="btn" type="button" data-go="work">Cancel</button></div>
+    <div style="max-width:760px"><label class="label" for="hf">Hugging Face model id</label><input class="field" id="hf" value="meta-llama/Llama-3.2-3B-Instruct">
+      <div style="margin-top:16px">${[["Size", "6.4 GB download · 6.9 GB in memory · fits 24 GB", "ok", "OK"], ["Access", "gated: you are logged in, access granted", "ok", "OK"], ["Architecture", "residual hooks found at 28 layers", "ok", "OK"], ["Behaviors", "none yet: create them after the download", "info", "EMPTY"]].map(([k, v, c, s]) => `<div class="rule"><b>${k}</b><span>${v}</span><span class="state ${c}">${s}</span></div>`).join("")}</div>
+      <p class="meta">Checks shown are illustrative.</p>
+      <div style="margin-top:20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="button">Download and add</button><span class="meta">One model in memory at a time; switching reloads weights.</span></div>
+      <span class="label" style="margin-top:40px">Installed</span>${MODELS.map((m) => `<div class="rule"><b style="font:800 20px var(--display);font-stretch:75%">${esc(m.id)}</b><span class="meta">${m.state}</span><span style="display:flex;gap:4px">${m.off ? '<button class="btn btn-sm" type="button">Request access</button>' : '<button class="btn btn-sm" type="button">Reload</button><button class="btn btn-sm" type="button">Remove</button>'}</span></div>`).join("")}</div>`;
+}
+function renderCard() {
+  // The card pairs run 1 with the selected run if it split, else the highest recorded dose that split.
+  const pick = RUNS.find((r) => r.n === S.sel && r.split) || TOP_RUN;
+  const words9 = (r, from, n) => r.words.slice(from, from + n).map((x) => x.w + x.sp).join("").trim();
+  const si = Math.max(0, pick.words.findIndex((x) => x.split));
+  const base = words9(RUNS[0], 0, 9), splitW = pick.words[si] ? pick.words[si].w : "", steer = words9(pick, si + 1, 9), lead = words9(pick, 0, si);
+  const rec = pick.edits.map((e) => `${e.id} ${fd(e.dose)}`).join(", ");
+  const SPLIT = pick.split ? pick.split.token : 0;
+  $("card").innerHTML = `<div class="ct"><span class="wordmark">lobot</span><span class="meta">${esc(MODEL)}</span></div>
+    <p class="meta" style="margin:14px 0 0;font-family:var(--body);font-size:14px">“${esc(PROMPT)}”</p>
+    <div class="cf" id="cf"><svg id="cfl" aria-hidden="true"></svg><div style="font:400 34px var(--body)" id="cr">${esc(SHARED)}</div>
+      <div class="cb"><div id="cb0"><span class="meta" style="display:block">no edit</span>${esc(base)}…</div><div id="cb1"><span class="meta" style="display:block">${pick.edits.length} neuron${pick.edits.length === 1 ? "" : "s"} pushed</span>${lead ? esc(lead) + " " : ""}<span class="tok">${esc(splitW)}</span> ${esc(steer)}…</div></div></div>
+    <div><span class="mono" style="font-size:15px;color:var(--ink)">${rec}</span><br><span class="meta">same prompt, same seed, split at token ${SPLIT}</span></div>`;
+  $("post").textContent = `Same prompt, same seed. I pushed ${pick.edits.length} neuron${pick.edits.length === 1 ? "" : "s"} inside ${MODEL} (${rec}), and its answer forked at token ${SPLIT}.\n\nno edit: "${SHARED} ${base}…"\npushed: "${SHARED} ${lead ? lead + " " : ""}${splitW} ${steer}…"`;
+  requestAnimationFrame(() => {
+    const box = $("cf").getBoundingClientRect(), rb = $("cr").getBoundingClientRect(), cs = getComputedStyle(root), x0 = rb.right - box.left + 6, y0 = rb.top - box.top + rb.height / 2;
+    $("cfl").innerHTML = [["cb0", cs.getPropertyValue("--ink"), 2], ["cb1", cs.getPropertyValue("--cut"), 4]].map(([id, c, w]) => { const b = $(id).getBoundingClientRect(), x1 = b.left - box.left - 6, y1 = b.top - box.top + b.height / 2; return `<path d="M${x0} ${y0} C ${(x0 + x1) / 2} ${y0}, ${(x0 + x1) / 2} ${y1}, ${x1} ${y1}" fill="none" stroke="${c}" stroke-width="${w}"/>`; }).join("");
+  });
+}
+function setView(v, arg) {
+  S.view = v; closePop();
+  $("vWork").hidden = v !== "work"; $("vShare").hidden = v !== "share"; $("vBehavior").hidden = v !== "behavior"; $("vAddModel").hidden = v !== "addModel";
+  if (v === "behavior") renderBehavior(arg); if (v === "addModel") renderAddModel(); if (v === "share") renderCard(); if (v === "work") requestAnimationFrame(layout);
+  $("main").querySelector("h1")?.focus?.();
+}
+document.addEventListener("click", (e) => { const g = e.target.closest("[data-go]"); if (g) setView(g.dataset.go, g.dataset.new ? null : g.dataset.b); });
+
+function update() { renderShelf(); renderSentence(); renderTree(); renderKnob(); }
+update();
+setView(S.view === "behavior" ? "behavior" : S.view, qs.get("b") || (S.view === "behavior" ? "Hostility" : undefined));
+if (qs.has("inspect")) inspect(2, +qs.get("inspect"));
+if (qs.has("push")) { addEdit({ kind: "neuron", id: qs.get("push"), dose: 1 }); }
+</script>
+</body>
+</html>
