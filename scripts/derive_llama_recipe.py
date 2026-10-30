@@ -31,8 +31,8 @@ sys.path.insert(0, str(ROOT))
 
 import torch
 
+import engine as engine_mod
 import steer
-from engine import ENGINE
 from steer import RecipeRow
 
 DEFAULT_MODEL_ID = steer.LLAMA_MODEL_ID
@@ -98,17 +98,21 @@ def rank_candidates(mean_a: torch.Tensor, mean_b: torch.Tensor,
             for i, v in zip(idx.tolist(), vals.tolist())]
 
 
-def capture_means(model, tok, spec, prompts: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
-    """Mean and std of down_proj-input activation per layer over prompts' tokens 1:.
+def capture_means(model, tok, spec, prompts: list[str]) -> torch.Tensor:
+    """Mean down_proj-input activation per layer over prompts' tokens 1:.
 
-    The down_proj input is the MLP intermediate (spec.intermediate wide):
-    the coordinates a recipe row's neuron id names and steering pushes.
-    The block input is the residual stream (spec.hidden wide); ranking it
-    would name the wrong channels (D9). Engine.capture checks the width and
-    that no other hook is active. Returns ([L, N], [L, N]) on CPU.
+    D9: the hook sits on the down_proj input (MLP intermediate width),
+    not the block input (residual width); captured width must equal
+    spec.intermediate or the run fails loudly. Returns ([L, N] means,
+    [L, N] stds) on CPU. Steering hooks must be OFF.
+    (D6: thin wrapper over engine.capture.)
     """
-    got = ENGINE.capture(model, tok, spec, prompts, range(spec.layers), point="mlp_in", reduce="mean")
-    stacked = torch.stack([torch.stack(got[L]) for L in range(spec.layers)])  # [L, P, N]
+    if steer.steering_hook_count() != 0:
+        raise RuntimeError("derivation capture needs steering hooks OFF")
+    layers = list(range(spec.layers))
+    out = engine_mod.capture(model, tok, spec, prompts, layers,
+                             point="mlp_in", reduce="mean_1")
+    stacked = torch.stack([out[L] for L in layers])  # [L, P, N]
     return stacked.mean(dim=1), stacked.std(dim=1)  # [L, N] each
 
 
@@ -196,10 +200,14 @@ def phase_validate(model_id: str, workdir: Path, preset_out: Path,
             row = RecipeRow(c["layer"], c["neuron"], dose)
             flips = 0
             for ep in EVAL_PROMPTS:
-                with ENGINE.apply(model, [row], medians=medians, spec=spec):
+                steer.register_steering_hooks(model, [row], medians,
+                                              mode="add", spec=spec)
+                try:
                     st = steer.generate_text(
                         model, tok, ep, max_new_tokens=max_new,
                         seed=0, spec=spec)["text"]
+                finally:
+                    steer.remove_steering_hooks()
                 if refused(base_texts[ep]) and not refused(st) and coherent(st):
                     flips += 1
             results.append({"layer": c["layer"], "neuron": c["neuron"],
@@ -301,10 +309,14 @@ def phase_pairs(model_id: str, workdir: Path, preset_out: Path,
                         RecipeRow(c["layer"], c["neuron"], db)]
                 flips = 0
                 for ep in EVAL_PROMPTS:
-                    with ENGINE.apply(model, rows, medians=medians, spec=spec):
+                    steer.register_steering_hooks(model, rows, medians,
+                                                  mode="add", spec=spec)
+                    try:
                         st = steer.generate_text(
                             model, tok, ep, max_new_tokens=max_new,
                             seed=0, spec=spec)["text"]
+                    finally:
+                        steer.remove_steering_hooks()
                     if refused(base_texts[ep]) and not refused(st) \
                             and coherent(st):
                         flips += 1

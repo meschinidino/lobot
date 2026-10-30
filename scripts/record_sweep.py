@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 import app as engine
 import steer
-from engine import ENGINE
+from engine import EMPTY_EDITS, EditSet, get_engine
 from server import _split_char
 from steer import RecipeRow
 
@@ -72,26 +72,28 @@ def main() -> int:
     max_new = int(preset["decode"]["max_new_tokens"])
 
     t_all = time.perf_counter()
-    model, tok, _ = engine.load_engine()
+    # Same engine, calibration and seed as the server's /api/run.
+    eng = get_engine()
+    if eng.model is None or eng.model_id != args.model:
+        eng.load(args.model)
+    steer.check_preset_binding(preset, args.model)
+    model, tok = eng.model, eng.tokenizer
     key = steer.calibration_cache_key(
-        args.model, engine._revision, tok, str(steer.DTYPE), steer.DEVICE)
-    medians, cal_info = steer.calibrate_layer_medians(
-        model, tok, calib_prompts, sorted({r.layer for r in rows}),
-        cache_path=ROOT / steer.calibration_path_for(args.model), key=key, spec=spec)
+        args.model, eng.revision, tok, str(steer.DTYPE), steer.DEVICE)
+    with eng.clean():
+        medians, cal_info = steer.calibrate_layer_medians(
+            model, tok, calib_prompts, sorted({r.layer for r in rows}),
+            cache_path=ROOT / steer.calibration_path_for(args.model), key=key, spec=spec)
 
-    base = steer.generate_text(model, tok, prompt, max_new_tokens=max_new,
-                               seed=engine.SEED, spec=spec)
+    base = eng.run(prompt, EMPTY_EDITS, medians=medians, max_new_tokens=max_new, seed=engine.SEED)
     print(f"[sweep] baseline: {base['new_tokens']} tokens, {base['seconds']} s", flush=True)
     runs = []
     for s in scales:
         scaled = [RecipeRow(r.layer, r.neuron, round(r.dose * s, 4)) for r in rows]
         t0 = time.perf_counter()
-        steer.reset_hook_call_count()
-        with ENGINE.apply(model, scaled, medians=medians, spec=spec):
-            out = steer.generate_text(model, tok, prompt, max_new_tokens=max_new,
-                                      seed=engine.SEED, spec=spec)
-            hook_calls = steer.hook_call_count()
-        if hook_calls < 1:
+        out = eng.run(prompt, EditSet.from_rows(scaled), medians=medians,
+                      max_new_tokens=max_new, seed=engine.SEED)
+        if out["hook_calls"] < 1:
             print(f"[sweep] x{s:+}: steering hooks did not fire; stopping", flush=True)
             return 4
         div = engine.first_divergence(base["token_ids"], out["token_ids"])

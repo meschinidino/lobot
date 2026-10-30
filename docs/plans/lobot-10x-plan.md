@@ -1014,8 +1014,8 @@ Execution order: launch A + B. Merge both. Then wave-0 gates (model runs). Confl
 
 ## Implementation Tasks (eng)
 
-- [ ] **E1 (P1, human: ~1 day / CC: ~2h)** — engine — Create Engine class owning model, lock and one hook registry with two sites per layer
-  - Status 2026-10-30: engine.py done for the hooks: one registry of every kind, two sites per layer in the D13 order, clean(), capture() (D6); server, app and the scripts route through it; tests/test_engine.py. Remaining: move model, tokenizer and run lock from app.py globals into the Engine (needs one real-model run to verify the load path).
+- [x] **E1 (P1, human: ~1 day / CC: ~2h)** — engine — Create Engine class owning model, lock and one hook registry with two sites per layer
+  - Status 2026-10-30: done on backend-w01 (Engine owns model, tokenizer, lock and the hook registry; EditSet; run, batched, stream, prefill, capture, fingerprint), merged into the frontend branch.
   - Surfaced by: Scope challenge 1 (D2), OV5 (D13)
   - Files: engine.py, app.py, server.py, tests/test_server.py
   - Verify: `uv run python -m unittest discover -s tests -t .`; existing stream and steering-loop tests unchanged
