@@ -203,6 +203,20 @@ class ReplayModeTest(unittest.TestCase):
         self.assertEqual(events[-1], {"stage": "stopped", "after": "weights"})
         self.assertFalse(app._run_lock.locked())
 
+    def test_every_sweep_file_is_replayable(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            web = Path(d)
+            (web / "example.json").write_text(json.dumps(self.ex))
+            row = {"layer": 11, "neuron": 1343, "dose": 0.5}
+            sweep = {"model_id": "meta-llama/Llama-3.2-3B-Instruct", "prompt": "p", "baseline": {"text": "a b", "tokens": 2},
+                     "runs": [{"rows": [row], "text": "a c", "tokens": 2, "split": None, "seconds": 1.0}]}
+            (web / "sweep.llama-32-3b-instruct.json").write_text(json.dumps(sweep))
+            with mock.patch.object(server, "WEB", web):
+                self.assertEqual(len(server._recordings()), 2)
+                rec = server._find_recording("meta-llama/Llama-3.2-3B-Instruct", "p", [row])
+        self.assertEqual(rec["steered"]["text"], "a c")
+
     def test_state_reports_replay(self):
         self.assertTrue(self.client.get("/api/state").json()["replay"])
 
