@@ -37,11 +37,21 @@ VOCAB = BASE_WORDS + STEER_WORDS
 class FakeTokenizer:
     """Token id i decodes to VOCAB[i]; words join with single spaces."""
 
+    def __init__(self):
+        self.wrapped_chats: list = []
+
     def decode(self, ids, skip_special_tokens=True):
         return " ".join(VOCAB[i] for i in ids)
 
     def encode(self, s, add_special_tokens=False):
         return [0]
+
+    def __call__(self, text, **kw):
+        return {"input_ids": [[0, 1, 2, 3, 4]]}
+
+    def apply_chat_template(self, messages, **kw):
+        self.wrapped_chats.append(messages)
+        return "CHAT:" + "|".join(m["content"] for m in messages)
 
 
 def _gen(words, hook_calls=3):
@@ -70,6 +80,9 @@ class FakeEngine:
         self.loads = []
         self.guard_block = False
         self.stream_script = []
+        self.stream_script_single = []
+        self.capture_script = {}
+        self.capture_calls: list = []
         self.spec = None
 
     def load(self, model_id):
@@ -100,6 +113,21 @@ class FakeEngine:
         self.runs.append((prompt, edit_sets, kw))
         for ev in self.stream_script:
             yield ev
+
+    def run_stream(self, prompt, edits, **kw):
+        self.runs.append((prompt, edits, kw))
+        for ev in self.stream_script_single:
+            yield ev
+
+    def capture(self, texts, layers, point="mlp_in", reduce="mean_1"):
+        self.capture_calls.append((texts, layers, point, reduce))
+        return self.capture_script
+
+    def capture_with_edits(self, texts, layers, edits, medians,
+                           point="mlp_in", reduce="none"):
+        self.capture_calls.append((texts, layers, point, reduce))
+        self.runs.append(("capture", edits, {}))
+        return self.capture_script
 
 
 class ServerStreamTest(unittest.TestCase):
@@ -618,6 +646,202 @@ class UpdateApiTest(unittest.TestCase):
                 self.assertEqual(
                     self.client.post("/api/update", json=body).status_code,
                     code)
+
+
+class _Wave2Base(unittest.TestCase):
+    def setUp(self):
+        self.eng = FakeEngine([_gen(BASE_WORDS), _gen(STEER_WORDS)])
+        self.patches = [
+            mock.patch.object(server, "NO_MODEL", False),
+            mock.patch.object(server, "get_engine", return_value=self.eng),
+            mock.patch.object(steer, "calibration_cache_key", return_value={}),
+            mock.patch.object(steer, "calibrate_layer_medians",
+                              return_value=({}, {"cache_hit": True,
+                                                 "key": {"prompts_sha256": "abc123"}})),
+        ]
+        for p in self.patches:
+            p.start()
+        self.client = TestClient(server.api)
+
+    def tearDown(self):
+        for p in reversed(self.patches):
+            p.stop()
+        server._cancel.clear()
+
+
+class DialStreamTest(_Wave2Base):
+    def _script(self):
+        done = _gen(STEER_WORDS)
+        self.eng.stream_script_single = [
+            {"type": "token", "text": "Hi",
+             "dial": {"blunt": 0.7}},
+            {"type": "token", "text": " there"},
+            {"type": "done", "result": done}]
+
+    def test_token_events_carry_dial(self):
+        self._script()
+        spec = {"trait": "blunt", "layer": 5, "unit": [1.0],
+                "b0": 0.0, "b1": 2.0, "job_id": "j"}
+        with mock.patch.object(server, "_dial_spec", return_value=spec):
+            r = self.client.post("/api/run", json={
+                "prompt": "Who are you?", "rows": [ROW],
+                "dial_trait": "blunt"})
+        self.assertEqual(r.status_code, 200, r.text)
+        ev = [json.loads(line) for line in r.text.splitlines() if line]
+        self.assertEqual([e["stage"] for e in ev],
+                         ["weights", "guard", "baseline", "steered",
+                          "token", "token", "complete"])
+        self.assertEqual(ev[4]["dial"], {"blunt": 0.7})
+        self.assertNotIn("dial", ev[5])
+        res = ev[-1]["result"]
+        self.assertEqual(res["dial"], {"trait": "blunt", "layer": 5,
+                                      "neutral": 0.0, "trait_mean": 2.0})
+        run_kw = self.eng.runs[-1][2]
+        self.assertEqual(run_kw["dial"], spec)
+
+    def test_unknown_dial_trait_is_error_event(self):
+        with mock.patch.object(server, "_dial_spec",
+                               side_effect=KeyError("ghost")):
+            r = self.client.post("/api/run", json={
+                "prompt": "Who are you?", "rows": [ROW],
+                "dial_trait": "ghost"})
+        ev = [json.loads(line) for line in r.text.splitlines() if line]
+        self.assertEqual(ev[-1]["stage"], "error")
+        self.assertIn("ghost", ev[-1]["message"])
+
+    def test_no_dial_keeps_old_contract(self):
+        ev = [json.loads(line) for line in self.client.post(
+            "/api/run", json={"prompt": "Who are you?", "rows": [ROW]}
+        ).text.splitlines() if line]
+        self.assertEqual([e["stage"] for e in ev],
+                         ["weights", "guard", "baseline", "steered",
+                          "complete"])
+        self.assertIsNone(ev[-1]["result"]["dial"])
+
+
+class NeuronsApiTest(_Wave2Base):
+    def _script(self):
+        import app as engine_mod
+        n_layers = engine_mod.active_spec().layers
+        script = {}
+        for L in range(n_layers):
+            script[L] = [torch.zeros(5, 8)]
+        script[3][0][1, 5] = 9.0
+        script[7][0][1, 1] = -7.0
+        self.eng.capture_script = script
+
+    def test_top_neurons_and_contexts(self):
+        self._script()
+        r = self.client.post("/api/neurons", json={
+            "prompt": "Say hi.", "rows": [ROW], "token_index": 2,
+            "top_k": 2})
+        self.assertEqual(r.status_code, 200, r.text)
+        d = r.json()
+        self.assertFalse(d["blocked"])
+        self.assertEqual(len(d["tokens"]), 5)
+        self.assertEqual(
+            [(n["layer"], n["neuron"]) for n in d["neurons"]],
+            [(3, 5), (7, 1)])
+        self.assertAlmostEqual(d["neurons"][0]["activation"], 9.0)
+        ctx = d["neurons"][0]["top_contexts"][0]
+        self.assertEqual((ctx["position"], ctx["activation"]), (2, 9.0))
+        self.assertTrue(ctx["text"])
+        texts, layers, point, reduce = self.eng.capture_calls[0]
+        self.assertEqual(texts, ["Say hi."])
+        self.assertEqual((point, reduce), ("mlp_in", "none"))
+
+    def test_capture_runs_with_edits(self):
+        self._script()
+        self.client.post("/api/neurons", json={
+            "prompt": "Say hi.", "rows": [ROW], "token_index": 1})
+        kinds = [c[2] for c in self.eng.capture_calls]
+        self.assertIn("mlp_in", kinds)
+        cap_runs = [run for run in self.eng.runs
+                    if run[0] == "capture"]
+        self.assertEqual(len(cap_runs), 1)
+        self.assertEqual(len(cap_runs[0][1].neuron), 1)
+
+    def test_bad_index_and_busy(self):
+        self._script()
+        for bad in (0, 9):
+            r = self.client.post("/api/neurons", json={
+                "prompt": "Say hi.", "token_index": bad})
+            self.assertEqual(r.status_code, 400, bad)
+        self.eng.lock.acquire()
+        try:
+            r = self.client.post("/api/neurons", json={
+                "prompt": "Say hi.", "token_index": 0})
+        finally:
+            self.eng.lock.release()
+        self.assertEqual(r.status_code, 409)
+
+    def test_unknown_trait_is_404(self):
+        with mock.patch.object(server, "_latest_knob", return_value=None):
+            r = self.client.post("/api/neurons", json={
+                "prompt": "Say hi.", "trait": "ghost", "token_index": 0})
+        self.assertEqual(r.status_code, 404)
+
+
+class ChatApiTest(_Wave2Base):
+    def setUp(self):
+        super().setUp()
+        server._chats.clear()
+        self.addCleanup(server._chats.clear)
+        self.eng.stream_script_single = [
+            {"type": "token", "text": "Hi"},
+            {"type": "done", "result": {"text": "Hi", "token_ids": [1],
+                                       "new_tokens": 1,
+                                       "cancelled": False}}]
+
+    def _events(self, body):
+        r = self.client.post("/api/chat", json=body)
+        self.assertEqual(r.status_code, 200, r.text)
+        return [json.loads(line) for line in r.text.splitlines() if line]
+
+    def test_two_turns_keep_history_and_edits(self):
+        r = self.client.post("/api/chat/start", json={"rows": [ROW]})
+        sid = r.json()["session_id"]
+        ev1 = self._events({"session_id": sid, "message": "hello"})
+        self.assertEqual([e["stage"] for e in ev1], ["token", "done"])
+        self.assertEqual(ev1[-1]["result"]["turn"], 1)
+        ev2 = self._events({"session_id": sid, "message": "again"})
+        self.assertEqual(ev2[-1]["result"]["turn"], 2)
+        wraps = self.eng.tokenizer.wrapped_chats
+        self.assertEqual(len(wraps[0]), 1)
+        self.assertEqual(len(wraps[1]), 3)
+        self.assertEqual(wraps[1][1], {"role": "assistant",
+                                      "content": "Hi"})
+        turns = [run for run in self.eng.runs if "wrapped" in run[2]]
+        self.assertEqual(len(turns), 2)
+        self.assertEqual(turns[0][1], turns[1][1])
+        hist = self.client.get(f"/api/chat/{sid}").json()["turns"]
+        self.assertEqual([(m["role"], m["content"]) for m in hist],
+                         [("user", "hello"), ("assistant", "Hi"),
+                          ("user", "again"), ("assistant", "Hi")])
+
+    def test_rows_replace_mid_chat(self):
+        r = self.client.post("/api/chat/start", json={"rows": [ROW]})
+        sid = r.json()["session_id"]
+        self._events({"session_id": sid, "message": "hi"})
+        other = {"layer": 13, "neuron": 7956, "dose": -1.0}
+        self._events({"session_id": sid, "message": "hi", "rows": [other]})
+        turns = [run for run in self.eng.runs if "wrapped" in run[2]]
+        first = turns[0][1].neuron[0]
+        second = turns[1][1].neuron[0]
+        self.assertEqual((first.layer, first.neuron), (14, 8949))
+        self.assertEqual((second.layer, second.neuron), (13, 7956))
+
+    def test_unknown_chat_and_model_pin(self):
+        r = self.client.post("/api/chat", json={"session_id": "nope",
+                                                "message": "hi"})
+        self.assertEqual(r.status_code, 404)
+        r = self.client.post("/api/chat/start", json={})
+        sid = r.json()["session_id"]
+        import app as engine_mod
+        with mock.patch.object(engine_mod, "_active_model_id", "other"):
+            r = self.client.post("/api/chat", json={"session_id": sid,
+                                                   "message": "hi"})
+        self.assertEqual(r.status_code, 409)
 
 
 if __name__ == "__main__":
