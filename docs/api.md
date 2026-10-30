@@ -163,14 +163,19 @@ missing explicit field, layer/direction shape), 404 (no finished
 Create job with a saved direction for the trait), 409 busy, 503
 NO_MODEL.
 
-## POST /api/neurons (R1 click-a-word)
+## POST /api/neurons (R1 click-a-word, R2 reply words)
 
-Top neurons at one prompt token, measured with the run's edits on.
+Top neurons at one prompt or reply token, measured with the run's
+edits on.
 
 Request: `{"prompt": str, "rows": [...], "trait": null, "dose":
 null, "token_index": int, "top_k": 8, "window": 4, "guard": false,
-"research_mode": false}`. `dose` defaults to the knob's frozen
-dose; `top_k` clamps to 1–32, `window` to 0–16 tokens.
+"research_mode": false, "reply": null}`. `dose` defaults to the
+knob's frozen dose; `top_k` clamps to 1–32, `window` to 0–16
+tokens. When `reply` holds a generated answer, it is appended
+after the wrapped prompt and `token_index` may address its
+tokens. Base sends `rows: []` with the baseline text; steered
+sends the run's rows with the steered text.
 
 Response (one JSON object, not a stream):
 
@@ -189,18 +194,64 @@ Response (one JSON object, not a stream):
 }
 ```
 
-`tokens` is the wrapped prompt's token split; `token_index`
-addresses it starting at 1 (position 0 is the BOS slot and has
-no captured row). `neurons` ranks every layer's MLP-input
+`tokens` is the wrapped prompt's token split (plus the reply
+split when `reply` is set); `token_index` addresses it starting
+at 1 (position 0 is the BOS slot and has no captured row).
+`reply_start` is the index of the first reply token, or null
+without a reply. `neurons` ranks every layer's MLP-input
 activations
 at that token by absolute value. Each entry's `top_contexts` are
-that neuron's 3 highest-activating positions in this prompt with
-a ±`window` decoded span. Guard blocks return `{"blocked": true,
-"guard": {...}}` with no neurons.
+that neuron's 3 highest-activating positions in this run with
+a ±`window` decoded span, and `pushes_toward_top` holds its top
+3 pushed tokens (null without the reader). Guard blocks return
+`{"blocked": true, "guard": {...}}` with no neurons.
 
 Errors: 400 (empty prompt, too many rows, bad row, bad
 `token_index`), 404 (trait without a finished Create job), 409
 busy, 503 NO_MODEL.
+
+## GET /api/neuron/{layer}/{neuron} (R2 neuron card)
+
+One neuron card: what it pushes toward plus cached contexts.
+
+`GET /api/neuron/11/1343?k=12` → `{"model_id", "layer",
+"neuron", "pushes_toward": {"up", "down", "coherence",
+"layer_frac"}, "fires_on": [{"activation", "token", "context",
+"mark"}], "fires_on_cache": {"built", "tokens"}}`. `k` clamps
+to 1–50. `fires_on` is null and `built` is false when no cache
+exists for the model. In replay mode the card comes from
+`store/reader/<model-slug>/cards.json`.
+
+Errors: 400 (neuron out of bounds), 404 (no recorded card in
+replay mode), 409 busy, 503 NO_MODEL (or no cards file in
+replay mode).
+
+## GET /api/find (R2 find a neuron)
+
+Neurons that push one word hardest.
+
+`GET /api/find?word=pirate&layers=8-27&k=20` → `{"word",
+"token_ids", "results": [{"layer", "neuron", "score",
+"rank"}]}`. `layers` takes `all`, one layer (`14`), or an
+inclusive range (`8-27`); it defaults to all layers. `k`
+defaults to 20 (1–50). `rank` is the 1-based position of the
+word in the neuron's own up list, or null past 100.
+
+Errors: 400 (empty word, bad layer range, word with no
+tokens), 409 busy, 503 NO_MODEL or replay mode.
+
+## POST /api/lift (R2 steering lift)
+
+How much steering one neuron lifts its predicted words.
+
+Request: `{"layer", "neuron", "dose", "words": ["pirate"],
+"prompts": null}`. `dose` stays in the state bounds;
+`prompts: null` uses the 8 fixed lift prompts. Response:
+`{"words", "base_p", "steered_p", "lift"}` (per-word next-token
+means and their geometric-mean ratio).
+
+Errors: 400 (neuron out of bounds, bad word), 422 (dose out
+of range, no words), 409 busy, 503 NO_MODEL or replay mode.
 
 ## Chat (E2)
 

@@ -16,7 +16,10 @@ Endpoints:
     POST /api/create/{id}/stop  stop a Create job
     GET  /api/jobs            list Create jobs
     POST /api/update  vector Update filmstrip, per-column token NDJSON
-    POST /api/neurons click-a-word: top neurons at one token (R1)
+    POST /api/neurons click-a-word: top neurons at one token (R1, R2 reply)
+    GET  /api/neuron/{layer}/{neuron} one neuron card (R2)
+    GET  /api/find    neurons that push one word (R2)
+    POST /api/lift    steering lift for one neuron (R2)
     POST /api/chat/start  open a chat session (edits persist, E2)
     POST /api/chat         one chat turn, streamed tokens
     GET  /api/chat/{id}    chat history (reattach)
@@ -40,7 +43,7 @@ from pathlib import Path
 
 import torch
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -52,8 +55,13 @@ import guard as guard_mod
 import steer
 import trait_eval
 import trait_store
-from engine import EMPTY_EDITS, EditSet, VectorEdit, get_engine
+from engine import EMPTY_EDITS, EditSet, VectorEdit, apply_edits, get_engine
 from steer import RecipeRow
+
+try:
+    import reader
+except ImportError:
+    reader = None
 
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
@@ -169,6 +177,15 @@ class NeuronsRequest(BaseModel):
     window: int = 4
     guard: bool = False
     research_mode: bool = False
+    reply: str | None = None
+
+
+class LiftRequest(BaseModel):
+    layer: int
+    neuron: int
+    dose: float = Field(ge=engine.DOSE_MIN, le=engine.DOSE_MAX)
+    words: list[str] = Field(min_length=1)
+    prompts: list[str] | None = None
 
 
 class ChatStartRequest(BaseModel):
@@ -436,9 +453,127 @@ def _token_ids(tok, wrapped: str) -> list[int]:
     return [int(i) for i in ids]
 
 
+def _calibrate(eng, layers):
+    """(medians, info) for the active model. One helper for every route."""
+    preset = engine.active_preset()
+    spec = engine.active_spec()
+    key = steer.calibration_cache_key(
+        engine._active_model_id, eng.revision, eng.tokenizer,
+        str(steer.DTYPE), steer.DEVICE)
+    with eng.clean():
+        return steer.calibrate_layer_medians(
+            eng.model, eng.tokenizer, list(preset["calibration_prompts"]),
+            layers or [0],
+            cache_path=ROOT / steer.calibration_path_for(
+                engine._active_model_id),
+            key=key, spec=spec)
+
+
+def _model_slug(model_id: str) -> str:
+    return model_id.lower().replace("/", "-").replace("_", "-")
+
+
+def _parse_layers(text, spec):
+    """'8-27' to an inclusive layer list; None means all layers."""
+    if text is None or text == "all":
+        return list(range(spec.layers))
+    layers = None
+    try:
+        if "-" in text:
+            lo_s, hi_s = text.split("-", 1)
+            layers = list(range(int(lo_s), int(hi_s) + 1))
+        else:
+            layers = [int(text)]
+    except (ValueError, AttributeError):
+        layers = None
+    if not layers or any(not 0 <= layer < spec.layers for layer in layers):
+        raise HTTPException(
+            400, f"Bad layers {text!r}. Use 'all', '14', or '8-27' "
+                 f"inside [0,{spec.layers}).")
+    return layers
+
+
+def _pushes_top(eng, layer: int, neuron: int):
+    """Top 3 up tokens for one neuron, or null without the reader."""
+    if reader is None:
+        return None
+    up = reader.pushes_toward(eng, layer, neuron, k=3)["up"]
+    return [e["token"] for e in up]
+
+
+def _rank_neurons(eng, mats, ids, token_index, top_k, window):
+    """Top neurons at one row, with top contexts. mats: {L: [T-1, N]}."""
+    tok = eng.tokenizer
+    row = token_index - 1
+    per_layer = []
+    for layer, mat in mats.items():
+        mat = mat.float()
+        vals, idx = torch.topk(mat[row].abs(), top_k)
+        per_layer.append((layer, mat, vals, idx))
+    cands = []
+    for layer, mat, vals, idx in per_layer:
+        for v, n in zip(vals.tolist(), idx.tolist()):
+            cands.append((v, layer, int(n),
+                          float(mat[row, int(n)].item())))
+    cands.sort(key=lambda c: -c[0])
+    neurons = []
+    for _, layer, n, val in cands[:top_k]:
+        mat = mats[layer].float()
+        col = mat[:, n]
+        k = min(3, col.numel())
+        _, pos = torch.topk(col, k)
+        contexts = []
+        for p in pos.tolist():
+            t = int(p) + 1
+            a, b = max(0, t - window), min(len(ids), t + window + 1)
+            contexts.append({
+                "position": t,
+                "activation": float(col[int(p)].item()),
+                "text": tok.decode(ids[a:b], skip_special_tokens=True)})
+        neurons.append({"layer": layer, "neuron": n, "activation": val,
+                        "top_contexts": contexts,
+                        "pushes_toward_top": _pushes_top(eng, layer, n)})
+    return neurons
+
+
+def _reply_grabber(grabbed, layer):
+    def _pre(_mod, args):
+        grabbed[layer] = args[0].detach().float().cpu()
+    return _pre
+
+
+def _capture_reply_mats(eng, edits, medians, ids, spec):
+    """{layer: [T-1, N] mlp_in} for raw ids with edits on (reply path).
+
+    capture_with_edits re-wraps text, so it cannot address reply
+    tokens. This taps every down_proj input over one forward pass of
+    the exact ids and always removes its hooks. Position 0 is dropped
+    like reduce="none".
+    """
+    try:
+        device = next(eng.model.parameters()).device
+    except StopIteration:
+        device = "cpu"
+    tensor = torch.tensor([ids]).to(device)
+    grabbed = {}
+    with apply_edits(eng.model, eng.tokenizer, spec, edits, medians):
+        handles = []
+        for layer in range(spec.layers):
+            mod = steer.resolve_down_proj(eng.model, layer, spec)
+            handles.append(mod.register_forward_pre_hook(
+                _reply_grabber(grabbed, layer)))
+        try:
+            with torch.no_grad():
+                eng.model(tensor)
+        finally:
+            for handle in handles:
+                handle.remove()
+    return {layer: grabbed[layer][0][1:] for layer in range(spec.layers)}
+
+
 @api.post("/api/neurons")
 def neurons(req: NeuronsRequest):
-    """Click-a-word (R1): top neurons at one prompt token, with edits on."""
+    """Click-a-word (R1, R2): top neurons at one prompt or reply token."""
     prompt = req.prompt.strip()
     if not prompt:
         raise HTTPException(400, "The prompt is empty. Type a prompt first.")
@@ -478,15 +613,7 @@ def neurons(req: NeuronsRequest):
         steer.check_preset_binding(preset, engine._active_model_id)
         layers = sorted({r.layer for r in rows}
                         | ({int(knob["layer"])} if knob else set()))
-        key = steer.calibration_cache_key(
-            engine._active_model_id, eng.revision, eng.tokenizer,
-            str(steer.DTYPE), steer.DEVICE)
-        with eng.clean():
-            medians, _ = steer.calibrate_layer_medians(
-                eng.model, eng.tokenizer, list(preset["calibration_prompts"]),
-                layers or [0],
-                cache_path=ROOT / steer.calibration_path_for(engine._active_model_id),
-                key=key, spec=spec)
+        medians, _ = _calibrate(eng, layers)
         vec = ()
         if knob is not None:
             vec = (_trait_vector(
@@ -500,49 +627,145 @@ def neurons(req: NeuronsRequest):
             return {"blocked": True, "guard": _guard_event_dict(gv)}
         wrapped = steer.wrap_prompt_notk(eng.tokenizer, prompt, spec)
         ids = _token_ids(eng.tokenizer, wrapped)
+        reply_start = None
+        if req.reply:
+            full = _token_ids(eng.tokenizer, wrapped + req.reply)
+            reply_start = len(ids)
+            for i, (a, b) in enumerate(zip(full, ids)):
+                if a != b:
+                    reply_start = i
+                    break
+            ids = full
         if not 1 <= req.token_index < len(ids):
             raise HTTPException(400, f"token_index {req.token_index} out of "
                                      f"bounds [1,{len(ids)}).")
-        # capture() wraps once itself and drops position 0 (BOS):
-        # matrix row r is wrapped token r + 1.
-        activ = eng.capture_with_edits(
-            [prompt], list(range(spec.layers)), edits, medians,
-            point="mlp_in", reduce="none")
-        row = req.token_index - 1
-        per_layer = []
-        for L in range(spec.layers):
-            mat = activ[L][0].float()
-            vals, idx = torch.topk(mat[row].abs(), top_k)
-            per_layer.append((L, mat, vals, idx))
-        cands = []
-        for L, mat, vals, idx in per_layer:
-            for v, n in zip(vals.tolist(), idx.tolist()):
-                cands.append((v, L, int(n),
-                              float(mat[row, int(n)].item())))
-        cands.sort(key=lambda c: -c[0])
-        neurons = []
-        for _, L, n, val in cands[:top_k]:
-            mat = activ[L][0].float()
-            col = mat[:, n]
-            k = min(3, col.numel())
-            _, pos = torch.topk(col, k)
-            contexts = []
-            for p in pos.tolist():
-                t = int(p) + 1
-                a, b = max(0, t - window), min(len(ids), t + window + 1)
-                contexts.append({
-                    "position": t,
-                    "activation": float(col[int(p)].item()),
-                    "text": eng.tokenizer.decode(ids[a:b],
-                                                 skip_special_tokens=True)})
-            neurons.append({"layer": L, "neuron": n, "activation": val,
-                            "top_contexts": contexts})
+        if req.reply:
+            mats = _capture_reply_mats(eng, edits, medians, ids, spec)
+        else:
+            # capture() wraps once itself and drops position 0 (BOS):
+            # matrix row r is wrapped token r + 1.
+            activ = eng.capture_with_edits(
+                [prompt], list(range(spec.layers)), edits, medians,
+                point="mlp_in", reduce="none")
+            mats = {L: activ[L][0] for L in range(spec.layers)}
+        neurons = _rank_neurons(
+            eng, mats, ids, req.token_index, top_k, window)
         return {"blocked": False, "model_id": engine._active_model_id,
                 "prompt": prompt,
                 "tokens": [eng.tokenizer.decode([i],
                                                 skip_special_tokens=True)
                            for i in ids],
-                "token_index": req.token_index, "neurons": neurons}
+                "token_index": req.token_index, "reply_start": reply_start,
+                "neurons": neurons}
+    finally:
+        eng.lock.release()
+
+
+@api.get("/api/neuron/{layer}/{neuron}")
+def neuron_card(layer: int, neuron: int, k: int = Query(12, ge=1, le=50)):
+    """One neuron card: pushes_toward plus cached fires_on (R2)."""
+    spec = engine.active_spec()
+    if not 0 <= layer < spec.layers or not 0 <= neuron < spec.intermediate:
+        raise HTTPException(400, f"Neuron L{layer}N{neuron} is out of "
+                                 f"bounds [0,{spec.layers})x"
+                                 f"[0,{spec.intermediate}).")
+    cache_dir = ROOT / "store" / "reader" / _model_slug(
+        engine._active_model_id)
+    if REPLAY:
+        cards_path = cache_dir / "cards.json"
+        if not cards_path.exists():
+            raise HTTPException(
+                503, "Neuron cards need the model, or a recorded "
+                     "cards.json for replay mode.")
+        cards = json.loads(cards_path.read_text())
+        card = cards.get(f"{layer}:{neuron}")
+        if card is None:
+            raise HTTPException(
+                404, f"No recorded card for neuron L{layer}N{neuron}.")
+        return card
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        pushes = reader.pushes_toward(eng, layer, neuron, k=k)
+        fires, built, tokens = None, False, 0
+        if ((cache_dir / "fires_on.npz").exists()
+                and (cache_dir / "sample.json").exists()):
+            sample = json.loads((cache_dir / "sample.json").read_text())
+            tokens = len(sample.get("tokens", []))
+            fires = reader.fires_on(cache_dir, layer, neuron, k=k)
+            built = True
+        return {"model_id": engine._active_model_id, "layer": layer,
+                "neuron": neuron, "pushes_toward": pushes,
+                "fires_on": fires,
+                "fires_on_cache": {"built": built, "tokens": tokens}}
+    finally:
+        eng.lock.release()
+
+
+@api.get("/api/find")
+def find(word: str = "", layers: str | None = None,
+         k: int = Query(20, ge=1, le=50)):
+    """Neurons that push one word hardest (R2)."""
+    spec = engine.active_spec()
+    layer_list = _parse_layers(layers, spec)
+    if not word or not word.strip():
+        raise HTTPException(400, "The word is empty. Type a word first.")
+    if REPLAY:
+        raise HTTPException(503, "Find needs the model. Replay mode has no recordings for it.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        try:
+            return reader.find_neurons(eng, word, layer_list, k=k)
+        except ValueError as e:
+            raise HTTPException(400, f"{e}.") from None
+    finally:
+        eng.lock.release()
+
+
+@api.post("/api/lift")
+def lift(req: LiftRequest):
+    """Steering lift for one neuron (R2)."""
+    spec = engine.active_spec()
+    if not 0 <= req.layer < spec.layers or not 0 <= req.neuron < spec.intermediate:
+        raise HTTPException(400, f"Neuron L{req.layer}N{req.neuron} is out of "
+                                 f"bounds [0,{spec.layers})x"
+                                 f"[0,{spec.intermediate}).")
+    prompts = req.prompts
+    if prompts is None:
+        path = ROOT / "store" / "reader" / "lift_prompts.json"
+        if not path.exists():
+            raise HTTPException(500, "The lift prompts are missing from the server.")
+        prompts = json.loads(path.read_text())
+    if REPLAY:
+        raise HTTPException(503, "Lift needs the model. Replay mode has no recordings for it.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        medians, _ = _calibrate(eng, [req.layer])
+        try:
+            return reader.steer_lift(eng, req.layer, req.neuron, req.dose,
+                                     req.words, prompts, medians)
+        except ValueError as e:
+            raise HTTPException(400, f"{e}.") from None
     finally:
         eng.lock.release()
 
@@ -671,15 +894,7 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
                 f"No finished Create job for trait '{sess['trait']}' "
                 f"with a saved direction. Create the trait first."))
             return
-        key = steer.calibration_cache_key(
-            engine._active_model_id, eng.revision, eng.tokenizer,
-            str(steer.DTYPE), steer.DEVICE)
-        with eng.clean():
-            medians, _ = steer.calibrate_layer_medians(
-                eng.model, eng.tokenizer, list(preset["calibration_prompts"]),
-                layers or [0],
-                cache_path=ROOT / steer.calibration_path_for(engine._active_model_id),
-                key=key, spec=spec)
+        medians, _ = _calibrate(eng, layers)
         scale = None
         if sess["trait"] is not None:
             knob = _latest_knob(sess["trait"])
@@ -874,13 +1089,7 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
                 return
         layers = sorted({r.layer for r in rows}
                         | ({dial_spec["layer"]} if dial_spec else set()))
-        key = steer.calibration_cache_key(
-            engine._active_model_id, eng.revision, tok, str(steer.DTYPE), steer.DEVICE)
-        with eng.clean():
-            medians, cal_info = steer.calibrate_layer_medians(
-                model, tok, calib_prompts, layers,
-                cache_path=ROOT / steer.calibration_path_for(engine._active_model_id),
-                key=key, spec=spec)
+        medians, cal_info = _calibrate(eng, layers)
         calib_id = cal_info["key"]["prompts_sha256"]
         if _cancel.is_set():
             yield _event(stage="stopped", after="weights")
@@ -998,13 +1207,7 @@ def _update_stream(prompt: str, layer: int, direction: list,
             eng.load(engine._active_model_id)
         steer.check_preset_binding(preset, engine._active_model_id)
         model, tok = eng.model, eng.tokenizer
-        key = steer.calibration_cache_key(
-            engine._active_model_id, eng.revision, tok, str(steer.DTYPE), steer.DEVICE)
-        with eng.clean():
-            medians, cal_info = steer.calibrate_layer_medians(
-                model, tok, calib_prompts, [layer],
-                cache_path=ROOT / steer.calibration_path_for(engine._active_model_id),
-                key=key, spec=spec)
+        medians, cal_info = _calibrate(eng, [layer])
         if scale is None:
             scale = float(medians[layer])
         if _cancel.is_set():
