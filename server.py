@@ -15,6 +15,9 @@ Endpoints:
     GET  /api/create/{id}     job status (reattach)
     POST /api/create/{id}/stop  stop a Create job
     GET  /api/jobs            list Create jobs
+    GET  /api/traits          finished traits with evidence (E1)
+    GET  /api/traits/{id}/report(.md)  trait report JSON (Markdown)
+    GET  /api/traits/{id}/patch  trait .lobot patch download (E1)
     POST /api/update  vector Update filmstrip, per-column token NDJSON
     POST /api/neurons click-a-word: top neurons at one token (R1, R2 reply)
     GET  /api/neuron/{layer}/{neuron} one neuron card (R2)
@@ -35,6 +38,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -47,7 +51,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from starlette.responses import JSONResponse
+from starlette.responses import FileResponse, JSONResponse
 
 import app as engine
 import create_job
@@ -400,6 +404,138 @@ def create_stop(job_id: str):
 @api.get("/api/jobs")
 def jobs():
     return {"jobs": _get_runner().list_jobs()}
+
+
+_JOB_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def _trait_job_dir(job_id: str) -> Path:
+    """jobs/<id>/ for a safe id, else 404. Never leaves jobs/."""
+    runner = _get_runner()
+    if not _JOB_ID_RE.fullmatch(job_id or ""):
+        raise HTTPException(404, f"Unknown trait {job_id}.")
+    cand = (runner.jobs_dir / job_id).resolve()
+    try:
+        cand.relative_to(runner.jobs_dir.resolve())
+    except (OSError, ValueError):
+        raise HTTPException(404, f"Unknown trait {job_id}.") from None
+    if not (runner.jobs_dir / job_id / "job.json").is_file():
+        raise HTTPException(404, f"Unknown trait {job_id}.")
+    return runner.jobs_dir / job_id
+
+
+def _card_summary(card: dict | None) -> dict | None:
+    """Contract summary of one report card (passed, mean, CI)."""
+    if card is None:
+        return None
+    return {"passed": card["passed"], "trait_mean": card["trait_mean"],
+            "trait_ci": list(card["trait_ci"])}
+
+
+def _trait_items() -> list[dict]:
+    """One list item per done job with a readable report, newest first.
+
+    version counts finished runs per (family, model), oldest first:
+    the first finished run is v1, the next is v2. Jobs without a
+    readable report.json are skipped: they hold no evidence to serve.
+    """
+    runner = _get_runner()
+    items = []
+    for job in runner.list_jobs():
+        if job.get("status") != "done":
+            continue
+        trait_dir = runner.jobs_dir / job["id"] / "trait"
+        try:
+            rep = json.loads((trait_dir / "report.json").read_text())
+        except (OSError, ValueError):
+            continue
+        frozen = rep.get("frozen") or {}
+        fin = rep.get("final") or {}
+        base = rep.get("prompt_baseline") or {}
+        guard = rep.get("guard")
+        items.append({
+            "id": job["id"],
+            "family": rep.get("trait", job.get("trait")),
+            "model_id": job.get("model_id"),
+            "version": 0,
+            "verdict": rep.get("verdict"),
+            "layer": frozen.get("layer"),
+            "dose": frozen.get("dose"),
+            "created": job.get("created"),
+            "cards": {
+                "update_up": _card_summary(
+                    (fin.get("update_up") or {}).get("card")),
+                "update_down": _card_summary(
+                    (fin.get("update_down") or {}).get("card")),
+                "delete": _card_summary(
+                    (fin.get("delete") or {}).get("card")),
+                "prompt_baseline": _card_summary(base.get("card")),
+            },
+            "guard": ({"blocked": guard["blocked"],
+                       "would_block": guard["would_block"],
+                       "verified": guard["verified"]}
+                      if guard is not None else None),
+            "patch": (f"/api/traits/{job['id']}/patch"
+                      if (trait_dir / "knob.lobot").is_file() else None),
+        })
+    items.sort(key=lambda t: (t["created"] or 0, t["id"]))
+    seen: dict = {}
+    for item in items:
+        key = (item["family"], item["model_id"])
+        seen[key] = seen.get(key, 0) + 1
+        item["version"] = seen[key]
+    items.sort(key=lambda t: (t["created"] or 0, t["id"]), reverse=True)
+    return items
+
+
+@api.get("/api/traits")
+def traits(model_id: str | None = None):
+    """Finished traits with evidence summaries (E1). No model needed."""
+    items = _trait_items()
+    if model_id is not None:
+        items = [t for t in items if t["model_id"] == model_id]
+    return {"traits": items}
+
+
+@api.get("/api/traits/{job_id}/report")
+def trait_report(job_id: str):
+    """One trait's report.json as is (E1)."""
+    path = _trait_job_dir(job_id) / "trait" / "report.json"
+    if not path.is_file():
+        raise HTTPException(404, f"Unknown trait {job_id}.")
+    return json.loads(path.read_text())
+
+
+@api.get("/api/traits/{job_id}/report.md")
+def trait_report_md(job_id: str):
+    """One trait's report.md as Markdown (E1)."""
+    path = _trait_job_dir(job_id) / "trait" / "report.md"
+    if not path.is_file():
+        raise HTTPException(404, f"Unknown trait {job_id}.")
+    return FileResponse(path, media_type="text/markdown")
+
+
+@api.get("/api/traits/{job_id}/patch")
+def trait_patch(job_id: str):
+    """One trait's knob.lobot patch as a download (E1)."""
+    job_dir = _trait_job_dir(job_id)
+    path = job_dir / "trait" / "knob.lobot"
+    if not path.is_file():
+        raise HTTPException(404, f"Unknown trait {job_id}.")
+    item = next((t for t in _trait_items() if t["id"] == job_id), None)
+    if item is not None:
+        family, version = item["family"], item["version"]
+    else:
+        family, version = job_id, 1
+        rep_path = job_dir / "trait" / "report.json"
+        if rep_path.is_file():
+            try:
+                family = json.loads(rep_path.read_text()).get(
+                    "trait", job_id)
+            except ValueError:
+                pass
+    return FileResponse(path, media_type="application/zip",
+                        filename=f"{family}-v{version}.lobot")
 
 
 @api.post("/api/update")

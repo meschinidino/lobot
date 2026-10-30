@@ -120,6 +120,36 @@ granularity). Returns the status. 404 unknown job.
 
 `{"jobs": [status, ...]}` — every job on disk, oldest first.
 
+## GET /api/traits (E1 evidence)
+
+`{"traits": [item, ...]}` — one item per finished (`done`) Create
+job with a readable report, newest first. No model needed.
+`?model_id=...` keeps one model only.
+
+Item: `{"id", "family", "model_id", "version", "verdict", "layer",
+"dose", "created", "cards", "guard", "patch"}`. `version` counts
+finished runs per family and model, oldest first (v1, v2, ...).
+`layer`/`dose` are the frozen choice (null without one). `cards`
+holds `update_up`, `update_down`, `delete`, `prompt_baseline`,
+each `{"passed", "trait_mean", "trait_ci"}` or null. `guard` is
+`{"blocked", "would_block", "verified"}` or null. `patch` is the
+download URL, or null without a saved patch.
+
+## GET /api/traits/{id}/report (E1 evidence)
+
+The job's `report.json` as is. 404 unknown id or no report.
+
+## GET /api/traits/{id}/report.md (E1 evidence)
+
+The job's `report.md` as `text/markdown`. 404 unknown id or no
+report.
+
+## GET /api/traits/{id}/patch (E1 evidence)
+
+The job's `knob.lobot` patch as `application/zip`, download name
+`<family>-v<version>.lobot`. 404 unknown id or no patch. The file
+loads with `patch.load_patch`.
+
 ## POST /api/update → NDJSON tokens
 
 Vector Update filmstrip: one batched generate across doses (E6 hook;
