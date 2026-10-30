@@ -3,10 +3,15 @@
 Owner: backend agent. Lane: no-model. Depends on: contracts only (R1 for the
 real functions; stub them until R1 merges). Time: half a day.
 
+## Status
+
+Click-a-word on the **prompt** is already built (wave 2): `POST /api/neurons`.
+Do not rebuild it. R2 extends it to reply words and adds three routes.
+
 ## Goal
 
-Four routes that expose the reader to the UI: neuron card, find, word
-neurons, lift. Exact shapes: `contracts.md` section 2.
+Expose the reader to the UI: click a word in either answer, neuron card,
+find, lift. Exact shapes: `contracts.md` section 2.
 
 ## Read first
 
@@ -18,9 +23,11 @@ neurons, lift. Exact shapes: `contracts.md` section 2.
 
 ## Deliverables
 
-- Routes in `server.py`:
-  `GET /api/neuron/{layer}/{neuron}`, `GET /api/find`,
-  `POST /api/word-neurons`, `POST /api/lift`.
+- `POST /api/neurons` extension: optional `reply` (appended after the wrapped
+  prompt; `token_index` may address it; response adds `reply_start`) and
+  `pushes_toward_top` on each neuron (null until R1 merges).
+- New routes in `server.py`:
+  `GET /api/neuron/{layer}/{neuron}`, `GET /api/find`, `POST /api/lift`.
 - Replay support for `GET /api/neuron/...`: serve from
   `store/reader/<model-slug>/cards.json` when present; otherwise 503 with
   "Neuron cards need the model, or a recorded cards.json for replay mode."
@@ -35,17 +42,19 @@ neurons, lift. Exact shapes: `contracts.md` section 2.
    take the lock, load the active model if cold (same as `/api/run`), call the
    `reader` function, release in `finally`.
 3. `layers=8-27` parsing: inclusive range, validated against the spec.
-4. `word-neurons` needs calibration medians for the run's rows: reuse the
-   calibration path from `_run_stream` (same cache key); factor it into a
-   helper and use it in both places.
-5. Wire `pushes_toward_top` (top 3 up tokens) into each `word-neurons` result.
+4. `/api/neurons` and `/api/run` both calibrate medians the same way. Factor
+   that into one helper and use it in both places (no behavior change).
+5. `reply`: tokenize wrapped prompt + reply as one sequence, so token ids
+   match what generation produced. Keep the BOS rule (index 0 has no row).
+6. Wire `pushes_toward_top` (top 3 up tokens) into each `/api/neurons` result.
 
 ## Tests (fake engine and a patched `reader` module)
 
 - `test_neuron_card_shape` and `test_neuron_out_of_bounds_400`.
 - `test_neuron_card_without_cache_has_null_fires_on`.
 - `test_find_parses_layer_range` and `test_find_bad_range_400`, `test_find_empty_word_400`.
-- `test_word_neurons_shape_and_lock_released`.
+- `test_neurons_reply_tokens_addressable` and `test_neurons_without_reply_unchanged`.
+- `test_neurons_pushes_toward_top_null_without_reader`.
 - `test_lift_shape` and `test_lift_dose_out_of_range_422`.
 - `test_model_routes_503_without_weights` (NO_MODEL), `test_model_routes_409_when_busy`.
 - `test_neuron_card_replay_from_cards_json` and `test_neuron_card_replay_without_cards_503`.

@@ -69,6 +69,22 @@ def steer_lift(eng, layer: int, neuron: int, dose: float, words: list[str],
 
 ## 2. Reader API [R2]
 
+**Already built (wave 2, Muse):** `POST /api/neurons` (click-a-word). See
+`docs/api.md`. Do not rebuild it. It ranks every layer's MLP-input activations
+at one token of the wrapped prompt, with the run's edits on. R2 extends it and
+adds three routes.
+
+Extension of `POST /api/neurons` [R2]:
+- Request adds `"reply": str | null` (default null). When set, the reply text
+  is appended after the wrapped prompt, and `token_index` can address its
+  tokens. Response adds `"reply_start": int` (index of the first reply token
+  in `tokens`). This is how the UI clicks a word in a generated answer.
+  "base" vs "steered" is chosen by the caller: base sends `rows: []` and the
+  baseline text; steered sends the run's rows and the steered text.
+- Each entry in `neurons` adds `"pushes_toward_top": [3 strings] | null`
+  (top 3 up tokens from `reader.pushes_toward`; null until R1 merges).
+- Old requests (no `reply`) return exactly what they return today.
+
 `GET /api/neuron/{layer}/{neuron}?k=12` → needs the model, except in replay mode
 (served from `store/reader/<model-slug>/cards.json` when present, else 503).
 ```json
@@ -82,30 +98,30 @@ def steer_lift(eng, layer: int, neuron: int, dose: float, words: list[str],
 `GET /api/find?word=pirate&layers=8-27&k=20` → the `find_neurons` dict.
 400 when the word is empty or encodes to no tokens.
 
-`POST /api/word-neurons` body
-`{"prompt", "rows": [{layer, neuron, dose}], "run": "base"|"steered", "token_index": 0, "k": 10}`
-→ the `word_neurons` dict, plus `"pushes_toward_top": ["...", "...", "..."]`
-(top 3 up tokens) on each result.
-
 `POST /api/lift` body
 `{"layer", "neuron", "dose", "words": ["pirate"], "prompts": null}` →
 the `steer_lift` dict. `prompts: null` uses the 8 fixed lift prompts in
 `store/reader/lift_prompts.json` [R1 writes that file].
 
+(The earlier `POST /api/word-neurons` contract is dropped: `/api/neurons`
+with `reply` replaces it. `reader.word_neurons` stays as the library function
+the route may call.)
+
 ## 3. Read dials in /api/run [D1]
 
-Request adds `"read": ["<trait name>", ...]` (saved traits with verdict knob,
-same model). Unknown or other-model trait → 404 before any generation.
+**Already built (wave 2, Muse):** `/api/run` accepts `"dial_trait":
+"<family>"`; each steered `token` event carries `dial: {trait: value}`, and
+`complete.result.dial` is `{trait, layer, neutral, trait_mean}`. Scale:
+0 = neutral-template mean projection, 1 = trait-template mean. Cached in
+`jobs/{id}/trait/dial.json`. See `docs/api.md`. Do not rebuild it.
 
-`complete.result` adds:
-```json
-"reads": {"hostility": {"layer": 14, "baseline": [0.05, 0.11, ...],
-                        "steered": [0.07, 0.9, 1.3, ...]}}
-```
-One value per generated token. Scale: 0 = neutral mean, 1 = trait mean, as
-the trait's report defines them (projection on the unit direction at the
-trait's layer, normalized by the contrast-set means). Missing value → null.
-Replay mode returns `reads` only if the recording has them.
+D1 extension (what the tree needs to compare the two answers):
+- `complete.result.dial` adds `"baseline": [float|null, ...]` and
+  `"steered": [float|null, ...]`, one value per generated token of each pass.
+  The baseline pass gets the same `Read` edit (it must not change its tokens).
+- Replay mode returns `dial` only if the recording has it.
+- One trait per run. Several traits is later (CH).
+- Requests without `dial_trait` are unchanged.
 
 ## 4. Evidence and patch API [E1]
 
@@ -148,8 +164,8 @@ is". No harmful or political content.
 `"lobot_version"`. `load_patch` rejects a mismatch. Old v1 patches without
 these fields still load, flagged `"unverified": true`.
 
-Recording with reads (optional) [V1]: a sweep run may carry
-`"reads": {...}` in the same shape as section 3.
+Recording with dials (optional) [V1]: a sweep run may carry
+`"dial": {...}` in the same shape as `complete.result.dial` (section 3).
 
 ## 6. Guard additions [S1]
 
