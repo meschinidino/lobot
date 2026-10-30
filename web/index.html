@@ -186,6 +186,46 @@ button, input, textarea { font: inherit; color: inherit; }
 .card .tok { background: var(--cut); color: var(--on-cut); font-weight: 700; }
 .copyrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 0; border-top: 1px solid var(--grid); }
 .copyrow .v { overflow-wrap: anywhere; white-space: pre-wrap; }
+
+/* Behaviors on the shelf */
+.beh { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; border-top: 1px solid var(--grid); }
+.beh .open { all: unset; box-sizing: border-box; cursor: pointer; display: block; padding: 8px; min-height: 44px; min-width: 0; }
+.beh .open:focus-visible { outline: 3px solid var(--ink); outline-offset: -3px; }
+.beh .open b { font: 800 20px var(--display); font-stretch: 75%; margin-right: 8px; }
+.beh.dim .open b { opacity: .55; }
+.beh[aria-current="true"] .open { outline: 2px solid var(--ink); outline-offset: -2px; }
+
+/* Research mode banner (design decision 6A) */
+.banner { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; background: var(--warn-tint); color: var(--warn); padding: 8px 12px; margin: 0 0 12px; font: 700 12px var(--mono); }
+.banner .btn { color: var(--warn); border-color: var(--warn); }
+.banner .btn:hover:not([disabled]) { background: var(--warn); color: var(--warn-tint); }
+
+/* Pages that replace the workbench: New behavior, Create progress, behavior evidence */
+.page .lead { max-width: 62ch; margin: 8px 0 0; }
+.ruled { list-style: none; margin: 24px 0 0; padding: 0; border-bottom: 1px solid var(--grid); max-width: 900px; }
+.ruled > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; align-items: center; padding: 16px 0; border-top: 1px solid var(--grid); }
+.ruled > li b.name { font: 800 28px/1 var(--display); font-stretch: 75%; }
+.ruled > li.off b.name { opacity: .5; }
+.stages > li { grid-template-columns: 40px minmax(0, 1fr) auto; }
+.stages > li .no { font: 800 28px/1 var(--display); font-stretch: 75%; color: var(--ink-muted); }
+.stages > li[aria-current="step"] .no, .stages > li.done .no { color: var(--ink); }
+.stages > li.wait { color: var(--ink-muted); }
+.stroke { width: 48px; height: 12px; display: block; }
+.ev { width: 100%; max-width: 1000px; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
+.ev th { text-align: left; font: 700 13px var(--body); padding: 8px 12px 8px 0; border-bottom: 2px solid var(--ink); }
+.ev td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+.ev td.verb { font: 800 22px/1 var(--display); font-stretch: 75%; white-space: nowrap; }
+.ev td.verb .stroke { display: inline-block; vertical-align: middle; margin-right: 12px; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+.evwrap { overflow-x: auto; }
+.kv2 { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 24px; margin-top: 16px; max-width: 900px; font-size: 14px; }
+.kv2 > :nth-child(odd) { color: var(--ink-muted); }
+.kv2 > :nth-child(even) { overflow-wrap: anywhere; }
+
+/* Confirm dialog */
+dialog { background: var(--sheet); color: var(--ink); border: 2px solid var(--ink); border-radius: 0; padding: 24px; max-width: min(520px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgb(0 0 0 / .55); }
+dialog h2 { font: 800 28px/1 var(--display); font-stretch: 75%; margin: 0 0 12px; }
 </style>
 </head>
 <body>
@@ -194,11 +234,12 @@ button, input, textarea { font: inherit; color: inherit; }
   <aside class="shelf" id="shelf" aria-label="Models and experiments">
     <div class="rail"><button class="btn btn-sm" id="expand" type="button" aria-label="Open the shelf" aria-controls="shelf">▸</button><span class="meta vt" id="railText"></span></div>
     <div class="full">
+      <p class="banner" data-research hidden>RESEARCH MODE · GUARD OFF</p>
       <div class="head"><span class="wordmark">lobot</span><button class="btn btn-sm" id="collapse" type="button" aria-label="Collapse the shelf">◂</button></div>
       <h2>Models</h2>
       <div id="models"></div>
-      <h2>Behaviors</h2>
-      <p class="empty">No behaviors yet. Create builds them from validated families in wave 1. Until then, push neurons.</p>
+      <h2>Behaviors <button class="btn btn-sm" id="newBeh" type="button">+ New</button></h2>
+      <div id="behaviors"></div>
       <h2>Experiments <span class="meta" id="expCount"></span></h2>
       <div id="exps"></div>
       <h2>Theme <button class="btn btn-sm" id="themeBtn" type="button">Light</button></h2>
@@ -208,12 +249,16 @@ button, input, textarea { font: inherit; color: inherit; }
   <main class="main" id="main">
     <section id="vWork" aria-label="Workbench">
       <div class="ask" id="ask">
+        <p class="banner" data-research hidden>RESEARCH MODE: the guard is off, and every run records it. <button class="btn btn-sm" type="button" data-guard-on>Turn the guard back on</button></p>
         <h1 class="sentence" id="sentence"></h1>
         <label class="label" for="prompt" style="margin-top:12px">Prompt</label>
         <textarea id="prompt" class="field" rows="2" spellcheck="true"></textarea>
         <div class="row2">
           <button class="btn btn-primary" id="runBtn" type="button">Run <kbd class="kbd">⌘ Enter</kbd></button>
           <button class="btn btn-stop" id="stopBtn" type="button" hidden>Stop <kbd>Esc</kbd></button>
+          <button class="btn" type="button" id="fanBtn" hidden>Run at 5 doses</button>
+          <span class="state info" id="guardKey"></span>
+          <button class="link meta" type="button" id="researchBtn">Research mode…</button>
           <button class="btn" type="button" id="shareBtn" disabled>Share card</button>
           <span class="meta" id="plan"></span>
         </div>
@@ -243,8 +288,12 @@ button, input, textarea { font: inherit; color: inherit; }
         </div>
       </div>
     </section>
+
+    <section id="vPage" class="page" hidden aria-labelledby="pageH"></section>
   </main>
 </div>
+<dialog id="dlg" aria-labelledby="dlgH"><form method="dialog"><h2 id="dlgH"></h2><p id="dlgP" style="max-width:52ch"></p>
+  <div class="row2"><button class="btn" value="ok" id="dlgOk"></button><button class="btn" value="cancel" autofocus>Cancel</button></div></form></dialog>
 <div class="sr" id="live" aria-live="polite"></div>
 
 <script type="module">
@@ -258,7 +307,14 @@ const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 const fd = (d) => (d > 0 ? "+" : d < 0 ? "−" : "±") + Math.abs(d).toFixed(2);
 // Accepts "+1.5", "-1,5", "−1.50": the typographic minus and a decimal comma both parse.
 const parseDose = (s) => { const t = String(s).trim().replace("−", "-").replace(",", "."); return /^[+-]?\d*\.?\d+$/.test(t) ? parseFloat(t) : NaN; };
+const at = (sp) => (sp.token != null ? `token ${sp.token}` : "this word");
 const nid = (r) => `L${r.layer}N${r.neuron}`;
+// An edit is a neuron row {layer, neuron, dose} or a behavior {trait, dose}. A run uses neurons or one behavior.
+const isB = (r) => r.trait != null;
+const eid = (r) => (isB(r) ? r.trait : nid(r));
+const editsText = (rows) => (rows.length ? rows.map((x) => `${eid(x)} ${fd(x.dose)}`).join(", ") : "no edit");
+const getJSON = async (url) => { const r = await fetch(url); if (!r.ok) throw Object.assign(new Error(`HTTP ${r.status}`), { status: r.status }); return r.json(); };
+const postJSON = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 if (!/Mac|iPhone|iPad/.test(navigator.platform)) document.querySelectorAll(".kbd").forEach((k) => (k.textContent = "Ctrl Enter"));
 
@@ -281,18 +337,21 @@ const S = {
   api: false, state: null, running: false, view: "work", inspect: null, focusEdit: 0, sel: null,
   limits: { layers: 32, neurons: 9216, dose_min: -3, dose_max: 3, max_rows: 4 },
   model: null, rows: [], example: false,
+  // Guard: on unless research mode (session only, confirmed in a dialog). guardSeen: last guard result per setup.
+  guard: true, research: false, guardSeen: {}, checking: false,
+  jobs: [], traits: null, families: null, live: null, page: null,
 };
 // Experiments: one per (model, prompt). Run 1 is the baseline; every steered result adds a run.
 const expKey = (model, prompt) => `${model}\n${prompt.trim()}`;
 let EXPS = store.get("exps", {});
 const saveExps = () => store.set("exps", EXPS);
 const curExp = () => EXPS[expKey(S.model, $("prompt").value)] || null;
-const rowsKey = (rows) => rows.filter((r) => r.dose !== 0).map((r) => `${nid(r)}@${r.dose}`).sort().join(" ");
+const rowsKey = (rows) => rows.filter((r) => r.dose !== 0).map((r) => `${eid(r)}@${r.dose}`).sort().join(" ");
 
-function addResult(res) {
+function addResult(res, soft = false) {
   const k = expKey(res.model_id, res.prompt);
   let e = EXPS[k];
-  if (e && e.baseline.text !== res.baseline.text) {
+  if (e && e.baseline.text !== res.baseline.text && !soft) {
     // Greedy decoding with a fixed seed gives the same baseline; if it changed, the settings changed. Start over.
     $("runMsg").textContent = "The baseline differs from this experiment's run 1, so a new experiment starts.";
     e = null;
@@ -302,7 +361,7 @@ function addResult(res) {
   const prev = e.runs.findIndex((r) => rowsKey(r.rows) === key);
   const run = { n: prev >= 0 ? e.runs[prev].n : e.runs.length + 2, rows: res.rows, text: res.steered.text, tokens: res.steered.tokens,
     split: res.split && { token: res.split.token, char: res.split.steered_char, base_char: res.split.base_char },
-    seconds: res.seconds, recipe: res.recipe, post: res.post, at: Date.now() };
+    seconds: res.seconds, recipe: res.recipe, post: res.post, research: !!res.research, at: Date.now() };
   if (prev >= 0) e.runs[prev] = run; else e.runs.push(run);
   e.at = Date.now();
   saveExps();
@@ -321,7 +380,56 @@ function renderShelf() {
   $("exps").innerHTML = list.length ? list.map((e) => `<button class="exp" type="button" data-prompt="${esc(e.prompt)}" aria-current="${e.prompt === $("prompt").value.trim()}"><span class="p">${esc(e.prompt.length > 70 ? e.prompt.slice(0, 69) + "…" : e.prompt)}</span><span class="meta">${e.runs.length + 1} runs</span></button>`).join("")
     : `<p class="empty">No experiments for this model yet. Type a prompt and press Run.</p>`;
   $("railText").textContent = `${(S.model || "").split("/").pop()} · ${S.rows.length} edit${S.rows.length === 1 ? "" : "s"}`;
+  renderBehaviors();
 }
+
+/* ---------- behaviors: saved traits (evidence API, else finished Create jobs) and running Creates ---------- */
+const STAGES = [["extract", "Contrast prompts and capture"], ["tune", "Tune layer and dose"], ["read_gate", "Read check"], ["final", "Final check"], ["baseline", "Prompt baseline"], ["verdict", "Report card"]];
+const active = (j) => j.status === "queued" || j.status === "running";
+function behaviors() {
+  const mine = S.jobs.filter((j) => j.model_id === S.model);
+  const ver = {}, out = [];
+  if (S.traits) for (const t of S.traits) out.push({ id: t.id, name: t.family, version: t.version, verdict: t.verdict, guard: t.guard || {}, cards: t.cards || {}, dose: t.dose, layer: t.layer, patch: t.patch, created: t.created });
+  else for (const j of mine.filter((j) => j.status === "done").sort((a, b) => a.created - b.created)) {
+    ver[j.trait] = (ver[j.trait] || 0) + 1;
+    out.push({ id: j.id, name: j.trait, version: ver[j.trait], verdict: j.verdict, guard: j.guard || {}, cards: {}, dose: j.frozen?.dose, layer: j.frozen?.layer, patch: null, created: j.created });
+  }
+  // Only the newest version of each family is offered in the sentence; older ones stay on the evidence page.
+  const newest = {};
+  for (const b of out) if (!newest[b.name] || b.version > newest[b.name].version) newest[b.name] = b;
+  for (const b of out) {
+    b.newest = newest[b.name] === b;
+    [b.kind, b.key, b.usable] = b.verdict === "blocked" || b.guard.blocked ? ["err", "GUARD", false]
+      : b.verdict !== "knob" ? ["warn", "NO KNOB", false]
+      : b.cards.update_down && !b.cards.update_down.passed ? ["warn", "DECREASE FAIL", true] : ["ok", "PASS", true];
+  }
+  return { saved: out.filter((b) => b.newest).sort((a, b) => b.created - a.created), all: out, running: mine.filter(active) };
+}
+function renderBehaviors() {
+  const B = behaviors(), cur = S.page && S.page.id;
+  const run = B.running.map((j) => { const i = STAGES.findIndex(([k]) => k === j.stage) + 1;
+    return `<div class="beh"><button class="open" type="button" data-job="${esc(j.id)}" aria-current="${cur === j.id}"><b>${esc(j.trait)}</b><span class="state info">${j.status === "queued" ? "QUEUED" : `CREATING ${i}/6`}</span></button><span></span></div>`; });
+  const saved = B.saved.map((b) => `<div class="beh${b.usable ? "" : " dim"}"><button class="open" type="button" data-beh="${esc(b.id)}" aria-current="${cur === b.id}" aria-label="Evidence for ${esc(b.name)} v${b.version}"><b>${esc(b.name)}</b><span class="meta">v${b.version}</span> <span class="state ${b.kind}">${b.key}</span></button>
+    <button class="btn btn-sm" type="button" data-use="${esc(b.id)}" ${!b.usable || S.running || S.rows.some((r) => r.trait === b.name) ? "disabled" : ""} aria-label="Use ${esc(b.name)} in the sentence">Use</button></div>`);
+  const noCreate = S.state?.replay ? "Replay mode loads no weights, so Create is off." : S.state?.no_model ? "The server runs without weights, so Create is off." : "";
+  $("behaviors").innerHTML = run.join("") + saved.join("") || (!S.api ? `<p class="empty">Behaviors load from the server.</p>`
+    : `<p class="empty">No validated behavior for this model yet. ${noCreate || `<button class="link" type="button" data-new>Create one from a family</button>.`}</p>`);
+  $("newBeh").disabled = !S.api || !!S.state?.replay || !!S.state?.no_model;
+}
+function useBehavior(id) {
+  const b = behaviors().all.find((x) => x.id === id); if (!b || !b.usable) return;
+  // A run uses neurons or one behavior: using a behavior replaces the edits, at its frozen dose.
+  S.rows = [{ trait: b.name, dose: b.dose ?? 1 }]; S.focusEdit = 0; setView("work"); update();
+  setStatus("info", "READY", `${b.name} is in the sentence at its tested dose ${fd(b.dose ?? 1)}. Press Run, or Run at 5 doses.`);
+}
+$("behaviors").addEventListener("click", (e) => {
+  const t = e.target;
+  if (t.closest("[data-use]")) useBehavior(t.closest("[data-use]").dataset.use);
+  else if (t.closest("[data-beh]")) openPage({ kind: "behavior", id: t.closest("[data-beh]").dataset.beh });
+  else if (t.closest("[data-job]")) openPage({ kind: "create", id: t.closest("[data-job]").dataset.job });
+  else if (t.closest("[data-new]")) openPage({ kind: "new" });
+});
+$("newBeh").addEventListener("click", () => openPage({ kind: "new" }));
 $("models").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-model]"); if (!b || b.getAttribute("aria-disabled") === "true" || b.dataset.model === S.model) return;
   b.querySelector(".meta").textContent = "switching";
@@ -329,7 +437,7 @@ $("models").addEventListener("click", async (e) => {
     const r = await fetch("api/model", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model_id: b.dataset.model }) });
     const body = await r.json();
     if (!r.ok) throw new Error(body.detail || `HTTP ${r.status}`);
-    applyState(body);
+    applyState(body); await loadBehaviors();
     S.rows = body.preset_rows.map((x) => ({ ...x })); S.focusEdit = 0;
     setStatus("info", "SWITCHED", "Switching reloads weights. The next run loads them.");
     update();
@@ -339,9 +447,21 @@ $("exps").addEventListener("click", (e) => { const b = e.target.closest("[data-p
 
 /* ---------- sentence ---------- */
 function renderSentence() {
-  const edits = S.rows.map((r, i) => `<span class="edit" aria-current="${i === S.focusEdit}">${i ? (i === S.rows.length - 1 ? " and " : ", ") : ""}<button class="link mono" type="button" data-focus="${i}" style="font-size:20px" aria-label="Select ${nid(r)} for the knob; press again to edit">${nid(r)}</button> at <span class="dose">${fd(r.dose)}</span><button class="x" type="button" data-remove="${i}" aria-label="Remove ${nid(r)}" ${S.running ? "disabled" : ""}>×</button></span>`).join("");
+  const edits = S.rows.map((r, i) => `<span class="edit" aria-current="${i === S.focusEdit}">${i ? (i === S.rows.length - 1 ? " and " : ", ") : ""}<button class="link${isB(r) ? "" : " mono"}" type="button" data-focus="${i}" style="font-size:20px" aria-label="Select ${esc(eid(r))} for the knob${isB(r) ? "" : "; press again to edit"}">${esc(eid(r))}</button> at <span class="dose">${fd(r.dose)}</span><button class="x" type="button" data-remove="${i}" aria-label="Remove ${esc(eid(r))}" ${S.running ? "disabled" : ""}>×</button></span>`).join("");
+  const full = S.rows.length >= S.limits.max_rows || S.rows.some(isB);
   $("sentence").innerHTML = `On <span class="mono" style="font-size:20px">${esc((S.model || "").split("/").pop())}</span>,
-    ${S.rows.length ? `push ${edits}` : "with no edit"} <button class="btn btn-sm" type="button" id="addBtn" ${S.rows.length >= S.limits.max_rows || S.running ? "disabled" : ""}>+ neuron</button> and ask:`;
+    ${S.rows.length ? `push ${edits}` : "with no edit"} <button class="btn btn-sm" type="button" id="addBtn" ${full || S.running ? "disabled" : ""} ${full ? 'title="A run uses up to 4 neurons, or one behavior."' : ""}>+ edit</button> and ask:`;
+}
+// "+ edit": push a neuron, or use a saved behavior. A run uses neurons or one behavior, not both.
+function addMenu(anchor) {
+  const B = behaviors().saved, hasN = S.rows.length > 0;
+  const beh = B.map((b) => { const why = !b.usable ? b.key.toLowerCase() : hasN ? "remove the neurons first" : "";
+    return `<button class="opt" type="button" data-addb="${esc(b.id)}" ${why ? 'aria-disabled="true"' : ""}><span><b>${esc(b.name)}</b> <span class="meta">v${b.version} · tested at ${fd(b.dose ?? 1)}</span></span><span class="meta">${why || "behavior"}</span></button>`; }).join("");
+  openPop(anchor, `<button class="opt" type="button" data-addn><span><b>Push a neuron</b></span><span class="meta">layer, neuron, dose</span></button>${beh || `<button class="opt" type="button" data-addnew><span><b>New behavior</b></span><span class="meta">Create from a family</span></button>`}`);
+  pop.addEventListener("click", (e) => {
+    const t = e.target.closest(".opt"); if (!t || t.getAttribute("aria-disabled") === "true") return;
+    if (t.hasAttribute("data-addn")) rowForm(anchor); else if (t.hasAttribute("data-addnew")) { closePop(); openPage({ kind: "new" }); } else { closePop(); useBehavior(t.dataset.addb); }
+  });
 }
 let pop = null;
 function closePop() { pop?.remove(); pop = null; }
@@ -376,9 +496,9 @@ function rowForm(anchor, i) {
 }
 $("sentence").addEventListener("click", (e) => {
   const t = e.target;
-  if (t.closest("#addBtn")) rowForm(t.closest("#addBtn"));
+  if (t.closest("#addBtn")) addMenu(t.closest("#addBtn"));
   else if (t.closest("[data-remove]")) { S.rows.splice(+t.closest("[data-remove]").dataset.remove, 1); S.focusEdit = Math.max(0, Math.min(S.focusEdit, S.rows.length - 1)); update(); }
-  else if (t.closest("[data-focus]")) { const i = +t.closest("[data-focus]").dataset.focus; if (i === S.focusEdit && !S.running) rowForm(t.closest("[data-focus]"), i); else { S.focusEdit = i; update(); } }
+  else if (t.closest("[data-focus]")) { const i = +t.closest("[data-focus]").dataset.focus; if (i === S.focusEdit && !S.running) { if (!isB(S.rows[i])) rowForm(t.closest("[data-focus]"), i); } else { S.focusEdit = i; update(); } }
 });
 $("prompt").addEventListener("input", () => { S.sel = null; renderShelf(); renderTree(); });
 
@@ -388,6 +508,8 @@ function treeRuns() {
   const runs = [{ n: 1, rows: [], text: e.baseline.text, split: null }, ...e.runs];
   const cs = runs.filter((r) => r.split).map((r) => r.split.char);
   let c = cs.length ? Math.min(...cs) : (/^\S+\s+\S+\s*/.exec(e.baseline.text) || [""])[0].length;
+  // A split offset can point at the space before a word (BPE tokens carry it): step onto the word, then back to its start.
+  while (c < e.baseline.text.length && /\s/.test(e.baseline.text[c])) c++;
   while (c > 0 && !/\s/.test(e.baseline.text[c - 1])) c--;
   runs.forEach((r) => {
     const out = [], re = /\S+\s*/g, tail = r.text.slice(c); let m;
@@ -400,10 +522,15 @@ function treeRuns() {
 const matching = (T) => T && T.runs.find((r) => rowsKey(r.rows) === rowsKey(S.rows));
 let expanded = new Set();
 function runHtml(r, current, inspect) {
+  if (r.live) {
+    // A column of a running filmstrip: real streamed text, not clickable until it completes.
+    const text = r.words.map((x) => x.w + x.sp).join("");
+    return `<div class="run generating" data-n="${r.n}" aria-current="false"><div class="k"><span class="pick">running: ${esc(editsText(r.rows))}</span><span class="state info">RUNNING</span></div><div class="t">${text ? esc(text) : Array.from({ length: 5 }, (_, i) => `<span class="redact" style="width:${2.4 + (i * 3 % 5) * .7}em"></span>`).join("")}</div></div>`;
+  }
   const full = expanded.has(r.n), n = full ? Infinity : current ? 26 : 16;
   const body = r.words ? r.words.slice(0, n).map((x, j) => `<span class="w${x.split ? " split" : ""}${inspect && inspect.run === r.n && inspect.i === j ? " inspected" : ""}" data-run="${r.n}" data-i="${j}" tabindex="0" role="button" aria-label="Inspect “${esc(x.w)}”">${esc(x.w)}</span>${x.sp}`).join("") + (r.words.length > n ? `… <button class="more" type="button" data-more="${r.n}">show all</button>` : "")
     : Array.from({ length: 7 }, (_, i) => `<span class="redact" style="width:${2.4 + (i * 3 % 5) * .7}em"></span>`).join("") + `<span class="meta"> ${S.running ? "generating" : "not run yet"}</span>`;
-  const edits = r.rows.length ? r.rows.map((x) => `${nid(x)} ${fd(x.dose)}`).join(", ") : "no edit";
+  const edits = editsText(r.rows) + (r.research ? ", research mode" : "");
   const label = r.n ? `run ${r.n}: ${edits}` : `next: ${edits}`;
   const tag = !r.n ? `<span class="state ${S.running ? "info" : "warn"}">${S.running ? "RUNNING" : "NOT RUN"}</span>` : r.n > 1 && !r.split ? '<span class="state warn">NO SPLIT</span>' : "";
   return `<div class="run${!r.n && S.running ? " generating" : ""}" data-n="${r.n}" aria-current="${current}"><div class="k"><button class="pick" type="button" data-pick="${r.n}" ${!r.n || S.running ? "disabled" : ""}>${label}</button>${current ? '<span class="state info">SELECTED</span>' : ""}${tag}</div><div class="t">${body}</div></div>`;
@@ -413,20 +540,26 @@ function renderTree() {
   const T = treeRuns(), m = matching(T);
   S.sel = m ? m.n : 0;
   const list = T ? [...T.runs] : [];
-  if (!m && (T || S.running)) list.push({ n: 0, rows: S.rows, words: null, score: -1e9 });
+  if (S.live) S.live.cols.forEach((c, i) => {
+    if (c.dose === 0 && T) return;
+    const text = c.pieces.join(""), from = T ? Math.min(T.rootChar, text.length) : 0, out = [], re = /\S+\s*/g; let mm;
+    while ((mm = re.exec(text.slice(from)))) { const core = mm[0].trimEnd(); out.push({ w: core, sp: mm[0].slice(core.length) }); }
+    list.push({ n: -(i + 1), live: true, rows: c.dose === 0 ? [] : [{ trait: S.live.trait, dose: c.dose }], words: out, score: c.dose });
+  });
+  else if (!m && (T || S.running)) list.push({ n: 0, rows: S.rows, words: null, score: -1e9 });
   if (!T && !S.running) {
     $("root").innerHTML = ""; $("runs").innerHTML = `<p class="empty tree-empty">${S.api ? "No runs for this prompt yet. Set the edits in the sentence, then press Run. The baseline and your edited answer appear here, and every later run adds a branch." : "The lobot server is not reachable. Start it with: uv run python server.py"}</p>`;
     $("links").innerHTML = ""; $("shareBtn").disabled = true; $("plan").textContent = ""; return;
   }
   const sel = m && m.split ? m : null;
-  $("root").innerHTML = `${esc(T ? T.shared : $("prompt").value ? "…" : "")}<span class="flag" id="splitFlag">split · token ${sel ? sel.split.token : ""}</span>`;
+  $("root").innerHTML = `${esc(T ? T.shared : $("prompt").value ? "…" : "")}<span class="flag" id="splitFlag">split · ${sel ? at(sel.split) : ""}</span>`;
   $("splitFlag").hidden = !sel;
   // Highest total dose on top, the no-edit run in its place, the next setup last.
   $("runs").innerHTML = list.sort((a, b) => b.score - a.score).map((r) => runHtml(r, r.n === S.sel, S.inspect)).join("");
   $("plan").textContent = m ? `matches run ${m.n}` : T ? "changed since the last run" : "";
   $("shareBtn").disabled = !(T && T.runs.some((r) => r.split));
   if (!S.running) {
-    if (sel) setStatus("ok", "SPLIT", `Run ${sel.n} leaves run 1 at token ${sel.split.token}. ${sel.seconds} s, greedy, seed 0.`);
+    if (sel) setStatus("ok", "SPLIT", `Run ${sel.n} leaves run 1 at ${at(sel.split)}. ${sel.seconds} s, greedy, seed 0.${sel.research ? " Research mode: the guard was off." : ""}`);
     else if (m && m.n > 1) setStatus("warn", "NO SPLIT", `Run ${m.n} matches run 1 token for token. Try a larger dose.`);
     else if (m) setStatus("info", "NO EDIT", "Run 1 is the model with no edit.");
     else setStatus("info", "READY", T ? "This setup has no run yet. Press Run." : "Press Run.");
@@ -463,12 +596,12 @@ function inspect(n, i) {
   S.inspect = { run: n, i }; $("work").classList.add("inspecting"); const el = $("inspector"); el.hidden = false;
   el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h3 id="iHead">“${esc(x.w)}”</h3><button class="btn btn-sm" type="button" id="iClose">Close · Esc</button></div>
     <p class="meta" style="margin:6px 0 0">run ${n}, word ${i + 1} after “${esc(T.shared)}”${x.split ? ", the split" : ""}</p>
-    <div class="kv"><span class="meta">Applied edits in this run</span><b class="mono">${r.rows.length ? r.rows.map((y) => `${nid(y)} ${fd(y.dose)}`).join(", ") : "none"}</b>
+    <div class="kv"><span class="meta">Applied edits in this run</span><b class="mono">${r.rows.length ? esc(editsText(r.rows)) : "none"}</b>
       <span class="meta">Observed projection</span><b class="mono">n/a</b></div>
     <span class="label" style="margin-top:16px">Top neurons at this word</span>
     <p class="meta" style="margin:0">Not available yet. Listing the neurons that fired at a word needs a server endpoint, planned for wave 2 (R1).</p>
     <span class="label" style="margin-top:16px">Push a neuron you know</span>
-    <button class="btn btn-sm" type="button" id="iPush" ${S.rows.length >= S.limits.max_rows || S.running ? "disabled" : ""}>+ neuron</button>
+    <button class="btn btn-sm" type="button" id="iPush" ${S.rows.length >= S.limits.max_rows || S.rows.some(isB) || S.running ? "disabled" : ""}>+ neuron</button>
     <p class="meta" style="margin-top:12px">Neurons often mix several jobs. Run tests what one actually does.</p>`;
   renderTree(); $("iClose").focus({ preventScroll: true });
 }
@@ -509,7 +642,7 @@ const K = (() => {
     const svg = host.querySelector("svg"), r = S.rows[S.focusEdit], d = r ? r.dose : 0;
     const ptr = host.querySelector(".ptr"); ptr.style.transition = reduce ? "none" : "transform 160ms cubic-bezier(.65,0,.35,1)";
     ptr.setAttribute("transform", `rotate(${toA(d)} ${C} ${C})`); svg.style.opacity = r && !S.running ? 1 : .45;
-    svg.setAttribute("aria-valuenow", d); svg.setAttribute("aria-valuetext", r ? `${nid(r)} ${fd(d)}` : "no edit selected");
+    svg.setAttribute("aria-valuenow", d); svg.setAttribute("aria-valuetext", r ? `${eid(r)} ${fd(d)}` : "no edit selected");
   }
   return { draw, show };
 })();
@@ -517,7 +650,7 @@ function renderKnob() {
   const r = S.rows[S.focusEdit];
   K.show();
   $("bigdose").textContent = r ? fd(r.dose) : "±0.00"; $("bigdose").disabled = !r || S.running;
-  $("knobFor").textContent = r ? `dose of ${nid(r)} · arrows step 0.05, Page Up/Down 0.5` : "no edit · add a neuron in the sentence";
+  $("knobFor").textContent = r ? `dose of ${eid(r)} · arrows step 0.05, Page Up/Down 0.5` : "no edit · add one in the sentence";
 }
 $("bigdose").addEventListener("click", () => { const r = S.rows[S.focusEdit]; if (!r) return; $("bigdose").hidden = true; const i = $("doseIn"); i.hidden = false; i.value = fd(r.dose); i.focus(); i.select(); });
 function commitDose(save) {
@@ -533,67 +666,255 @@ function setStatus(kind, key, msg) { $("runState").className = `state ${kind}`; 
 function setRunning(on) {
   S.running = on;
   const had = document.activeElement === $(on ? "runBtn" : "stopBtn");
-  $("runBtn").hidden = on; $("stopBtn").hidden = !on; $("stopBtn").disabled = false;
+  $("runBtn").hidden = on; $("stopBtn").hidden = !on; $("stopBtn").disabled = false; $("fanBtn").disabled = on;
   if (had) $(on ? "stopBtn" : "runBtn").focus();
   $("prompt").readOnly = on;
   update();
 }
-async function run() {
+// Reads an NDJSON stream; onEvent returns true when the stream is finished for the caller.
+async function stream(url, body, onEvent) {
+  const r = await postJSON(url, body);
+  if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(typeof b.detail === "string" ? b.detail : `The server returned HTTP ${r.status}.`); }
+  const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "", done = false;
+  while (!done) {
+    const c = await reader.read(); done = c.done; buf += dec.decode(c.value || new Uint8Array(), { stream: !done });
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const ev = JSON.parse(buf.slice(0, nl)); buf = buf.slice(nl + 1);
+      if (ev.stage === "error") throw new Error(ev.message);
+      if (onEvent(ev)) return true;
+    }
+  }
+  return false;
+}
+const setupKey = () => `${S.model}|${rowsKey(S.rows)}`;
+const creating = () => S.jobs.find(active);
+function blockedMsg(g) {
+  const pct = (x) => Math.round(x * 100) + "%", where = g.display_prompt ? ` on “${g.display_prompt}”` : "";
+  return `The refusal guard blocked ${editsText(S.rows)}. With these edits, the model's chance of refusing fell to ${g.min_ratio != null ? pct(g.min_ratio) : "under half"} of its usual level${where}; the limit is ${pct(g.limit ?? 0.5)}. Lower the dose, or use Research mode.`;
+}
+async function run(fan = false) {
   if (S.running) return;
-  const prompt = $("prompt").value.trim();
+  const prompt = $("prompt").value.trim(), job = creating();
   if (!S.api) return setStatus("err", "OFFLINE", "The lobot server is not reachable. Start it with: uv run python server.py");
+  if (job) return setStatus("info", "CREATE RUNNING", `Run is off while Create builds ${job.trait} (stage ${STAGES.findIndex(([k]) => k === job.stage) + 1} of 6). Open it on the shelf to stop it.`);
   if (!prompt) { $("prompt").focus(); return setStatus("err", "ERROR", "Type a prompt first."); }
-  if (!S.rows.length) return setStatus("err", "ERROR", "Add at least one neuron. Run compares the baseline with your edits.");
+  if (!S.rows.length) return setStatus("err", "ERROR", "Add an edit first. Run compares the answer with no edit and the answer with your edits.");
+  const beh = S.rows.find(isB);
+  if (fan && !beh) return;
   closePop(); setRunning(true);
-  const t0 = performance.now(), msgs = { weights: "Loading weights and calibration.", guard: "Checking the refusal guard.", baseline: "Baseline pass.", steered: "Edited pass." };
+  const key = setupKey(), research = S.research, guardBody = { guard: !research, research_mode: research };
+  const t0 = performance.now(), msgs = { weights: "Loading weights and calibration.", guard: "Checking the refusal guard.", baseline: "Baseline pass.", steered: "Edited pass.", columns: "Generating every dose at once." };
   const tick = setInterval(() => ($("runMsg").textContent = `${$("runMsg").textContent.split(" · ")[0]} · ${((performance.now() - t0) / 1000).toFixed(1)} s`), 100);
   setStatus("info", "RUNNING", msgs.weights);
+  const end = () => { clearInterval(tick); S.live = null; S.checking = false; setRunning(false); };
+  const onCommon = (ev) => {
+    if (ev.stage === "weights") { S.checking = !research; renderGuard(); }
+    if (ev.stage === "guard" || ev.stage === "columns" && !research) { S.checking = false; if (!research) S.guardSeen[key] = "passed"; renderGuard(); }
+    if (ev.stage === "stopped") { end(); setStatus("info", "STOPPED", "Stopped. The tree keeps the runs it had."); return true; }
+    if (ev.stage === "blocked") {
+      S.guardSeen[key] = "blocked"; end(); setStatus("err", "BLOCKED", blockedMsg(ev.guard || {}));
+      $("live").textContent = "Blocked by the refusal guard."; return true;
+    }
+    if (msgs[ev.stage]) setStatus("info", "RUNNING", msgs[ev.stage]);
+    return false;
+  };
+  const after = (n, g) => {
+    if (g && g.would_block && !g.enforced && !research) $("runMsg").textContent += " The refusal guard would block these edits.";
+    const T = treeRuns(), got = T && T.runs.find((x) => x.n === n);
+    if (got) $("live").textContent = got.split ? `Run ${n} complete. It leaves run 1 at ${at(got.split)}.` : `Run ${n} complete. It matches run 1 token for token.`;
+    $("runs").querySelector(`[data-pick="${n}"]`)?.focus({ preventScroll: false });
+  };
   try {
-    const r = await fetch("api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, rows: S.rows }) });
-    if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(typeof b.detail === "string" ? b.detail : `The server returned HTTP ${r.status}.`); }
-    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "", done = false;
-    while (!done) {
-      const c = await reader.read(); done = c.done; buf += dec.decode(c.value || new Uint8Array(), { stream: !done });
-      let nl;
-      while ((nl = buf.indexOf("\n")) >= 0) {
-        const ev = JSON.parse(buf.slice(0, nl)); buf = buf.slice(nl + 1);
-        if (ev.stage === "error") throw new Error(ev.message);
-        if (ev.stage === "stopped") { clearInterval(tick); setRunning(false); setStatus("info", "STOPPED", "Stopped. The tree keeps the runs it had."); return; }
-        if (ev.stage === "blocked") {
-          clearInterval(tick); setRunning(false);
-          const g = ev.guard || {};
-          setStatus("err", "BLOCKED", `The refusal guard blocked these edits. With them, the model's chance of refusing fell to ${g.min_ratio != null ? Math.round(g.min_ratio * 100) + "%" : "under half"} of its usual level${g.worst_prompt ? ` on “${g.worst_prompt}”` : ""}; the limit is 50%. Lower the doses and run again.`);
-          $("live").textContent = "Blocked by the refusal guard."; return;
+    let finished;
+    if (beh) {
+      // A behavior runs through /api/update: dose 0 is the baseline column, the others are branches.
+      const doses = fan ? [0, ...[1, 2, 3, 4, 5].map((i) => Math.round(beh.dose * i / 5 * 100) / 100)] : [0, beh.dose];
+      finished = await stream("api/update", { prompt, trait: beh.trait, doses, ...guardBody }, (ev) => {
+        if (onCommon(ev)) return true;
+        if (ev.stage === "columns") { S.live = { trait: beh.trait, cols: ev.doses.map((d) => ({ dose: d, pieces: [] })) }; renderTree(); }
+        else if (ev.stage === "token" && S.live) { S.live.cols[ev.col].pieces.push(ev.text); renderTree(); }
+        else if (ev.stage === "complete") {
+          const res = ev.result, cols = S.live ? S.live.cols : res.columns.map((c) => ({ dose: c.dose, pieces: [c.text] }));
+          const bi = res.columns.findIndex((c) => c.dose === 0), base = res.columns[bi];
+          const e = curExp(), differs = e && e.baseline.text !== base.text;
+          let last = 0;
+          res.columns.forEach((c, i) => {
+            if (i === bi) return;
+            last = addResult({ model_id: res.model_id, prompt: res.prompt, rows: [{ trait: beh.trait, dose: c.dose }], baseline: { text: base.text, tokens: base.tokens },
+              steered: { text: c.text, tokens: c.tokens }, split: splitOf(cols[bi].pieces, cols[i].pieces, base.text, c.text, res.fallback_used),
+              seconds: res.seconds, recipe: `update trait=${beh.trait} layer=${res.layer} dose=${c.dose} scale=${res.scale}`, post: "", research }, true);
+          });
+          drawN = last; end();
+          if (differs) $("runMsg").textContent = "Note: the batched baseline differs from this experiment's run 1. Splits are measured against the batched baseline.";
+          after(last, res.guard); return true;
         }
-        if (ev.stage === "complete") {
-          clearInterval(tick); const n = addResult(ev.result); drawN = n; setRunning(false);
-          const g = ev.result.guard;
-          if (g && g.would_block && !g.enforced) $("runMsg").textContent += " The refusal guard would block these edits; it only records that until it is turned on.";
-          const T = treeRuns(), got = T.runs.find((x) => x.n === n);
-          $("live").textContent = got.split ? `Run ${n} complete. It leaves run 1 at token ${got.split.token}.` : `Run ${n} complete. It matches run 1 token for token.`;
-          $("runs").querySelector(`[data-pick="${n}"]`)?.focus({ preventScroll: false });
-          return;
-        }
-        if (msgs[ev.stage]) setStatus("info", "RUNNING", msgs[ev.stage]);
-      }
+        return false;
+      });
+    } else {
+      finished = await stream("api/run", { prompt, rows: S.rows, ...guardBody }, (ev) => {
+        if (onCommon(ev)) return true;
+        if (ev.stage === "complete") { const n = addResult({ ...ev.result, research }); drawN = n; end(); after(n, ev.result.guard); return true; }
+        return false;
+      });
     }
     // The stream ended without a final event (server restart, dropped connection).
-    if (S.running) { setRunning(false); setStatus("err", "ERROR", "The run ended early, with no result. Try again."); }
+    if (!finished && S.running) { end(); setStatus("err", "ERROR", "The run ended early, with no result. Try again."); }
   } catch (err) {
-    clearInterval(tick); setRunning(false); setStatus("err", "ERROR", String(err.message || err));
+    if (S.checking) S.guardSeen[key] = "failed";
+    end(); setStatus("err", "ERROR", String(err.message || err));
   } finally { clearInterval(tick); }
+}
+// First differing token between the baseline column and a dose column. With the singles fallback each column is one piece, so only the character is known.
+function splitOf(bp, cp, bt, ct, fallback) {
+  if (bt === ct) return null;
+  let c = 0; while (c < bt.length && c < ct.length && bt[c] === ct[c]) c++;
+  let tok = null;
+  if (!fallback) { tok = 0; let acc = 0; while (tok < bp.length && tok < cp.length && bp[tok] === cp[tok]) acc += bp[tok++].length; c = acc; }
+  return { token: tok, base_char: c, steered_char: c };
 }
 async function stop() {
   if (!S.running || $("stopBtn").disabled) return;
   $("stopBtn").disabled = true; setStatus("info", "STOPPING", "Stops after the current token.");
   try { await fetch("api/stop", { method: "POST" }); } catch { setStatus("err", "ERROR", "The stop request did not reach the server."); $("stopBtn").disabled = false; }
 }
-$("runBtn").addEventListener("click", run);
+$("runBtn").addEventListener("click", () => run());
+$("fanBtn").addEventListener("click", () => run(true));
 $("stopBtn").addEventListener("click", stop);
 document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run(); }
   else if (e.key === "Escape") { if (pop) closePop(); else if (S.running) stop(); else if (S.inspect) closeInspector(); }
 });
+
+/* ---------- refusal guard key and research mode (design decision 6A) ---------- */
+function renderGuard() {
+  const seen = S.guardSeen[setupKey()];
+  document.querySelectorAll("[data-research]").forEach((x) => (x.hidden = !S.research));
+  $("researchBtn").hidden = S.research || !S.api;
+  const [kind, text] = S.research ? ["warn", "RESEARCH MODE · GUARD OFF"] : S.checking ? ["info", "CHECKING EDITS"] : !S.rows.length ? ["info", "GUARD ON"]
+    : seen === "passed" ? ["ok", "CHECK PASSED"] : seen === "blocked" ? ["err", "BLOCKED"] : seen === "failed" ? ["err", "CHECK FAILED"] : ["info", "GUARD ON · NOT CHECKED"];
+  $("guardKey").className = `state ${kind}`; $("guardKey").textContent = text;
+  const beh = S.rows.find(isB), job = creating();
+  $("fanBtn").hidden = !beh; $("fanBtn").disabled = S.running || !beh || beh.dose === 0;
+  $("runBtn").disabled = !S.api || !!job;
+  if (job && !S.running) $("plan").textContent = `Run is off: Create is building ${job.trait}, stage ${STAGES.findIndex(([k]) => k === job.stage) + 1} of 6.`;
+}
+function confirmDlg(title, text, ok) {
+  return new Promise((res) => {
+    const d = $("dlg"); $("dlgH").textContent = title; $("dlgP").textContent = text; $("dlgOk").textContent = ok; d.returnValue = "";
+    d.addEventListener("close", () => res(d.returnValue === "ok"), { once: true }); d.showModal();
+  });
+}
+$("researchBtn").addEventListener("click", async () => {
+  const yes = await confirmDlg("Turn the guard off?", "Research mode turns the refusal guard off until you reload this page. Edits that weaken the model's refusals will run. Every run records research mode, and the share card shows it.", "Turn the guard off");
+  if (yes) { S.research = true; update(); setStatus("warn", "RESEARCH MODE", "The refusal guard is off for this session. Every run records it."); }
+  $(yes ? "runBtn" : "researchBtn").focus();
+});
+document.querySelector("[data-guard-on]").addEventListener("click", () => { S.research = false; update(); setStatus("info", "GUARD ON", "The refusal guard is on again."); $("researchBtn").focus(); });
+
+/* ---------- pages: New behavior, Create progress, behavior evidence ---------- */
+const short = (m) => (m || "").split("/").pop();
+const num = (x, d = 2) => (x == null ? "n/a" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(d));
+const ci = (c) => (c ? `[${num(c[0])}, ${num(c[1])}]` : "");
+const mins = (sec) => `${Math.floor(sec / 60)} min ${String(Math.round(sec % 60)).padStart(2, "0")} s`;
+const STROKE = {
+  read: `<line x1="0" y1="6" x2="48" y2="6" stroke="var(--ink)" stroke-width="2"/>`,
+  update: `<line x1="0" y1="3" x2="48" y2="3" stroke="var(--ink-muted)" stroke-width="1.5"/><line x1="0" y1="9" x2="48" y2="9" stroke="var(--ink)" stroke-width="3"/>`,
+  delete: `<line x1="0" y1="6" x2="14" y2="6" stroke="var(--ink)" stroke-width="2"/><line x1="34" y1="6" x2="48" y2="6" stroke="var(--ink)" stroke-width="2"/><path d="M14 1 V11 M34 1 V11 M18 11 L22 1 M24 11 L28 1 M30 11 L33 4" stroke="var(--ink)" stroke-width="1.5" fill="none"/>`,
+};
+const stroke = (k) => `<svg class="stroke" viewBox="0 0 48 12" aria-hidden="true">${STROKE[k]}</svg>`;
+const RULES = { trait_ci_excludes_zero: "the effect's interval includes 0", trait_mean_ge_min: "the mean effect is under 0.30", control_upper_lt_max: "the random-direction control moved it too", paired_ci_excludes_zero: "it is not clearly above the control" };
+const reports = {};
+function openPage(p) { S.page = p; closePop(); if (S.inspect) closeInspector(); setView("page"); renderPage(true); }
+async function renderPage(first = false) {
+  const el = $("vPage"), p = S.page; if (!p || el.hidden) return;
+  const keep = document.activeElement && el.contains(document.activeElement) ? document.activeElement.id : null;
+  const top = (h) => `<div class="top"><h1 id="pageH" tabindex="-1">${h}</h1><button class="btn" type="button" data-back>Back to the tree</button></div>`;
+  if (p.kind === "new") {
+    if (!S.families) { el.innerHTML = top("New behavior") + `<p class="meta">Loading the families.</p>`; try { S.families = (await getJSON("api/families")).families; } catch (e) { el.innerHTML = top("New behavior") + `<p class="empty">The families did not load (${esc(e.message)}).</p>`; return; } }
+    const job = creating(), llama = /llama-3\.2-3b/i.test(S.model || "");
+    el.innerHTML = top("New behavior") + `<p class="lead">Create builds a behavior on <span class="mono">${esc(short(S.model))}</span> from a validated family: contrast prompts, a direction, a layer and dose, a held-out final check, and a report card. Only families with a hand-validated judge can pass.</p>
+      <p class="meta">${llama ? "About 50 min on Llama 3.2 3B, measured on one run." : "Not measured on this model yet."} The server keeps working if you close this page. Run is off while Create works.${job ? ` One Create at a time: ${esc(job.trait)} is running.` : ""}</p>
+      <ol class="ruled">${S.families.map((f) => { const ok = f.hand_validated, v = f.validation || {};
+        return `<li class="${ok ? "" : "off"}"><div><b class="name">${esc(f.name)}</b>${f.aliases?.length ? ` <span class="meta">also ${esc(f.aliases.join(", "))}</span>` : ""}<br>
+          <span class="meta">${ok ? `judge asks: “${esc(f.judge)}” · agreement ${v.agreement != null ? v.agreement.toFixed(2) : "n/a"} on ${v.hand_labels ?? "?"} hand labels` : "not supported yet: its judge has no hand-validated labels"}</span></div>
+          <button class="btn" type="button" data-create="${esc(f.name)}" ${!ok || job ? "disabled" : ""}>Create</button></li>`; }).join("")}</ol><p class="err meta" id="newErr" role="alert" style="color:var(--error)"></p>`;
+  } else if (p.kind === "create") {
+    let j = S.jobs.find((x) => x.id === p.id);
+    if (!j || active(j)) { try { j = await getJSON(`api/create/${encodeURIComponent(p.id)}`); const i = S.jobs.findIndex((x) => x.id === j.id); if (i >= 0) S.jobs[i] = j; else S.jobs.push(j); } catch { if (!j) { el.innerHTML = top("Create") + `<p class="empty">This Create job is not on the server.</p>`; return; } } }
+    const si = STAGES.findIndex(([k]) => k === j.stage), live = active(j), doneAll = j.status === "done";
+    const el2 = ((live ? Date.now() / 1000 : j.updated) - j.created);
+    const head = live ? `Creating ${esc(j.trait)}` : `${esc(j.trait)}: ${doneAll ? "done" : j.status}`;
+    const rows = STAGES.map(([k, label], i) => { const st = doneAll || i < si ? "done" : i === si && live ? "now" : "wait", pr = j.progress || {};
+      return `<li class="${st === "done" ? "done" : st === "wait" ? "wait" : ""}" ${st === "now" ? 'aria-current="step"' : ""}><span class="no">${i + 1}</span><div><b>${label}</b><br><span class="meta">${st === "now" ? `${pr.done ?? 0} of ${pr.total ?? "?"} units` : st === "done" ? "done" : i === si && !live ? `${j.status} here` : "waiting"}</span></div>
+        <span class="state ${st === "done" ? "ok" : st === "now" ? "info" : "info"}">${st === "done" ? "DONE" : st === "now" ? "NOW" : i === si && !live ? j.status.toUpperCase() : "WAITING"}</span></li>`; }).join("");
+    const verdict = !doneAll ? "" : j.verdict === "knob" ? `<p><span class="state ok">KNOB</span> A layer and dose passed the gates: layer <span class="mono">${j.frozen?.layer}</span>, dose <span class="mono">${fd(j.frozen?.dose ?? 0)}</span>.</p><div class="row2"><button class="btn" type="button" data-beh="${esc(j.id)}">Open evidence</button><button class="btn" type="button" data-use="${esc(j.id)}">Use in the sentence</button></div>`
+      : j.verdict === "blocked" ? `<p><span class="state err">GUARD</span> The refusal guard blocked the frozen direction. It cannot be used.</p>` : `<p><span class="state warn">NO KNOB</span> No layer and dose passed the gates. Nothing was saved as a knob.</p><button class="btn" type="button" data-beh="${esc(j.id)}">Open evidence</button>`;
+    el.innerHTML = top(head) + `<p class="meta"><span class="mono">${esc(short(j.model_id))}</span>, seed ${j.seed}, ${live ? "elapsed" : "took"} <span class="mono">${mins(Math.max(0, el2))}</span>${j.research_mode ? ", research mode" : ""}</p>
+      <ol class="ruled stages" aria-label="Create stages">${rows}</ol>
+      ${live ? `<div class="row2"><button class="btn" type="button" id="stopCreate">Stop Create</button><span class="meta">${si >= 3 ? "Stopping now uses up this version's final check." : "Stopping before the final check costs nothing."}</span></div><p class="meta">The server keeps working if you close this page. The page reattaches when you open it again.</p>` : ""}
+      ${j.status === "failed" ? `<p class="empty" style="color:var(--error)">Create failed: ${esc((j.error || "").split("\n").filter(Boolean).pop() || "no reason given")}</p>` : ""}${verdict}`;
+  } else if (p.kind === "behavior") {
+    const b = behaviors().all.find((x) => x.id === p.id), j = S.jobs.find((x) => x.id === p.id), name = b ? b.name : j ? j.trait : "Behavior";
+    if (!(p.id in reports)) { el.innerHTML = top(esc(name)) + `<p class="meta">Loading the evidence.</p>`; try { reports[p.id] = await getJSON(`api/traits/${encodeURIComponent(p.id)}/report`); } catch (e) { reports[p.id] = { missing: e.status || e.message }; } if (S.page !== p) return; }
+    if (!S.families) S.families = await getJSON("api/families").then((x) => x.families).catch(() => []);
+    const R = reports[p.id], fam = (S.families || []).find((f) => f.name === name), fr = R.frozen || (b && { layer: b.layer, dose: b.dose }) || {};
+    const actions = `<div class="row2">${b && b.usable ? `<button class="btn" type="button" data-use="${esc(b.id)}">Use in the sentence</button>` : ""}${b && b.patch ? `<a class="btn" href="${esc(b.patch)}" download>Download patch</a>` : `<button class="btn" type="button" disabled>Download patch</button><span class="meta">${b && b.verdict === "knob" ? "Patch download needs the evidence API." : "Only a passing knob has a patch."}</span>`}</div>`;
+    let body;
+    if (R.missing) body = `<p class="empty">The evidence needs the evidence API (E1), which this server does not have yet. Verdict from the Create job: ${esc(b ? b.key : j?.verdict || "unknown")}.</p>`;
+    else {
+      const F = R.final || {}, el_ = R.eligibility || {}, d = fr.dose;
+      const verb = (label, k, card, eligible, doses) => { const c = card || null, fails = c && !c.passed ? Object.entries(c.rules || {}).filter(([, v]) => !v).map(([r]) => RULES[r] || r) : [];
+        return `<tr><td class="verb">${stroke(k === "delete" ? "delete" : "update")}${label}</td><td>${c ? `<span class="state ${c.passed ? "ok" : "warn"}">${c.passed ? "PASS" : "FAIL"}</span>${fails.length ? `<br><span class="meta">${esc(fails.join("; "))}</span>` : ""}${c.passed && !eligible ? `<br><span class="meta">not offered: read check failed</span>` : ""}` : `<span class="state info">NOT TESTED</span>`}</td>
+          <td class="mono">${c ? `${num(c.trait_mean)} ${ci(c.trait_ci)}` : ""}</td><td class="mono">${c ? `under ${num(c.control_ci?.[1])}` : ""}</td><td class="meta">not measured yet</td><td class="mono">${doses}</td></tr>`; };
+      const rg = R.read_gate;
+      body = `<p class="meta">Held-out evaluation · ${esc(name)} v${b ? b.version : "?"} · layer <span class="mono">${fr.layer ?? "?"}</span> · dose <span class="mono">${d != null ? fd(d) : "?"}</span>. Effects are judge-score gains on held-out prompts, with 95% bootstrap intervals.</p>
+        <div class="evwrap"><table class="ev"><thead><tr><th scope="col">Verb</th><th scope="col">Result</th><th scope="col">Effect (95% CI)</th><th scope="col">Control bound</th><th scope="col">Side effects</th><th scope="col">Tested doses</th></tr></thead><tbody>
+        <tr><td class="verb">${stroke("read")}Read</td><td>${rg ? `<span class="state ${rg.pass ? "ok" : "warn"}">${rg.pass ? "PASS" : "FAIL"}</span>${rg.pass ? "" : `<br><span class="meta">the reading does not track the judge (margin under 0.10)</span>`}` : `<span class="state info">NOT TESTED</span>`}</td><td class="mono">${rg ? `margin ${num(rg.agreement?.margin)}` : ""}</td><td></td><td class="meta">none (reading only)</td><td class="mono">none</td></tr>
+        ${verb("Increase", "up", F.update_up?.card, el_.update_up, d != null ? fd(d) : "")}${verb("Decrease", "down", F.update_down?.card, el_.update_down, d != null ? fd(-d) : "")}${verb("Delete", "delete", F.delete?.card, el_.delete, "ablation")}
+        </tbody></table></div>
+        <div class="kv2"><span>Prompt only</span><span>${R.prompt_baseline?.card ? `<span class="mono">${num(R.prompt_baseline.card.trait_mean)} ${ci(R.prompt_baseline.card.trait_ci)}</span> with the instruction “${esc(R.prompt_baseline.top || "")}”` : "not measured"}</span>
+          <span>Refusal guard</span><span>${R.guard ? `${R.guard.blocked ? '<span class="state err">BLOCKED</span>' : '<span class="state ok">PASSED</span>'} refusal kept at <span class="mono">${R.guard.min_ratio != null ? Math.round(R.guard.min_ratio * 100) + "%" : "n/a"}</span> of its usual level${R.guard.verified ? ", confirmed by full generation" : ", first-token check only"}${R.guard.research_mode ? ", research mode" : ""}` : "not recorded"}</span>
+          <span>Judge</span><span>${fam ? `“${esc(fam.judge)}” · agreement <span class="mono">${fam.validation?.agreement?.toFixed(2) ?? "n/a"}</span> on ${fam.validation?.hand_labels ?? "?"} hand labels` : "unknown"}</span>
+          <span>Model fingerprint</span><span class="mono">${esc(R.fingerprint || "not recorded")}</span>
+          <span>Create time</span><span class="mono">${R.seconds ? mins(R.seconds) : "n/a"}</span></div>`;
+    }
+    el.innerHTML = top(esc(name) + (b ? ` <span class="meta">v${b.version}</span>` : "")) + (b ? `<p><span class="state ${b.kind}">${b.key}</span> <span class="meta"><span class="mono">${esc(short(S.model))}</span>${b.created ? `, created ${new Date(b.created * 1000).toLocaleDateString()}` : ""}</span></p>` : "") + actions + body;
+  }
+  if (first) $("pageH")?.focus(); else if (keep && $(keep)) $(keep).focus();
+}
+$("vPage").addEventListener("click", async (e) => {
+  const t = e.target;
+  if (t.closest("[data-back]")) { S.page = null; setView("work"); update(); }
+  else if (t.closest("[data-use]")) useBehavior(t.closest("[data-use]").dataset.use);
+  else if (t.closest("[data-beh]")) openPage({ kind: "behavior", id: t.closest("[data-beh]").dataset.beh });
+  else if (t.closest("[data-create]")) {
+    const b = t.closest("[data-create]"); b.disabled = true;
+    try {
+      const r = await postJSON("api/create", { description: b.dataset.create, guard: !S.research, research_mode: S.research }), body = await r.json();
+      if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : `HTTP ${r.status}`);
+      S.jobs.push(body); openPage({ kind: "create", id: body.job_id }); update();
+    } catch (err) { b.disabled = false; $("newErr").textContent = `Create did not start: ${err.message}`; }
+  } else if (t.closest("#stopCreate")) {
+    const j = S.jobs.find((x) => x.id === S.page.id), late = j && STAGES.findIndex(([k]) => k === j.stage) >= 3;
+    if (late && !(await confirmDlg("Stop during the final check?", "The final check uses this version's held-out prompts once. If you stop now, they count as used, and this version cannot be checked again.", "Stop Create"))) return;
+    try { const r = await postJSON(`api/create/${encodeURIComponent(S.page.id)}/stop`, {}); if (r.ok) Object.assign(j, await r.json()); } catch { /* the next poll shows the state */ }
+    renderPage();
+  }
+});
+async function loadBehaviors() {
+  if (!S.api) return;
+  try { S.jobs = (await getJSON("api/jobs")).jobs; } catch { S.jobs = []; }
+  try { S.traits = (await getJSON(`api/traits?model_id=${encodeURIComponent(S.model)}`)).traits; } catch { S.traits = null; }
+}
+// Poll every 2 s while a Create runs; the server keeps working when the page is closed, so this also reattaches.
+setInterval(async () => {
+  if (!S.api || !(S.jobs.some(active) || S.page?.kind === "create")) return;
+  const was = S.jobs.filter(active).map((j) => j.id).join();
+  await loadBehaviors();
+  if (S.jobs.filter(active).map((j) => j.id).join() !== was && !S.running) update(); else { renderShelf(); renderGuard(); }
+  if (S.page?.kind === "create") renderPage();
+}, 2000);
 
 /* ---------- share card ---------- */
 function renderCard() {
@@ -602,12 +923,12 @@ function renderCard() {
   const words = (r, from, n) => r.words.slice(from, from + n).map((x) => x.w + x.sp).join("").trim();
   const si = Math.max(0, pick.words.findIndex((x) => x.split)), model = T.e.model.split("/").pop();
   const base = words(T.runs[0], 0, 9), lead = words(pick, 0, si), splitW = pick.words[si]?.w || "", tail = words(pick, si + 1, 9);
-  const edits = pick.rows.map((x) => `${nid(x)} ${fd(x.dose)}`).join(", ");
+  const edits = editsText(pick.rows);
   $("card").innerHTML = `<div class="ct"><span class="wordmark">lobot</span><span class="meta">${esc(model)}</span></div>
     <p class="meta" style="margin:14px 0 0;font-family:var(--body);font-size:14px">“${esc(T.e.prompt)}”</p>
     <div class="cf" id="cf"><svg id="cfl" aria-hidden="true"></svg><div style="font:400 34px var(--body)" id="cr">${esc(T.shared)}</div>
-      <div class="cb"><div id="cb0"><span class="meta" style="display:block">no edit</span>${esc(base)}…</div><div id="cb1"><span class="meta" style="display:block">${pick.rows.length} neuron${pick.rows.length === 1 ? "" : "s"} pushed</span>${lead ? esc(lead) + " " : ""}<span class="tok">${esc(splitW)}</span> ${esc(tail)}…</div></div></div>
-    <div><span class="mono" style="font-size:15px;color:var(--ink)">${esc(edits)}</span><br><span class="meta">same prompt, same seed, split at token ${pick.split.token}</span></div>`;
+      <div class="cb"><div id="cb0"><span class="meta" style="display:block">no edit</span>${esc(base)}…</div><div id="cb1"><span class="meta" style="display:block">${pick.rows.some(isB) ? `${esc(pick.rows[0].trait)} pushed` : `${pick.rows.length} neuron${pick.rows.length === 1 ? "" : "s"} pushed`}</span>${lead ? esc(lead) + " " : ""}<span class="tok">${esc(splitW)}</span> ${esc(tail)}…</div></div></div>
+    <div><span class="mono" style="font-size:15px;color:var(--ink)">${esc(edits)}</span><br><span class="meta">same prompt, same seed, split at ${at(pick.split)}${pick.research ? " · research mode, guard off" : ""}</span></div>`;
   $("post").textContent = pick.post || ""; $("postCount").textContent = pick.post ? `${[...pick.post].length}/280` : "";
   $("recipe").textContent = pick.recipe || "";
   requestAnimationFrame(() => {
@@ -616,7 +937,9 @@ function renderCard() {
   });
 }
 function setView(v) {
-  S.view = v; closePop(); $("vWork").hidden = v !== "work"; $("vShare").hidden = v !== "share";
+  S.view = v; closePop(); $("vWork").hidden = v !== "work"; $("vShare").hidden = v !== "share"; $("vPage").hidden = v !== "page";
+  if (v !== "page") S.page = null;
+  if (v === "page") return;
   if (v === "share") { renderCard(); $("shareH").setAttribute("tabindex", "-1"); $("shareH").focus(); } else { requestAnimationFrame(layout); $("shareBtn").focus(); }
 }
 $("shareBtn").addEventListener("click", () => setView("share"));
@@ -634,7 +957,7 @@ function applyState(st) {
   S.limits = { layers: st.layers, neurons: st.neurons, dose_min: st.dose_min, dose_max: st.dose_max, max_rows: st.max_rows };
   K.draw();
 }
-function update() { renderShelf(); renderSentence(); renderTree(); renderKnob(); }
+function update() { renderShelf(); renderSentence(); renderTree(); renderKnob(); renderGuard(); }
 // Seed the browser's experiments with every recording (example.json, sweep*.json) once per file version,
 // so the tree is not empty on first visit and a newly recorded sweep shows up.
 async function seedRecorded() {
@@ -656,6 +979,7 @@ K.draw();
 try {
   const r = await fetch("api/state"); if (!r.ok) throw new Error();
   applyState(await r.json()); S.api = true;
+  await loadBehaviors();
 } catch { S.api = false; }
 await seedRecorded();
 const last = Object.values(EXPS).filter((e) => !S.model || e.model === S.model).sort((a, b) => b.at - a.at)[0];
@@ -663,7 +987,6 @@ if (!S.model) S.model = last ? last.model : "Qwen/Qwen3.5-4B";
 $("prompt").value = last ? last.prompt : "";
 const lastRun = last && last.runs.filter((x) => x.split).sort((a, b) => b.at - a.at)[0];
 S.rows = lastRun ? lastRun.rows.map((x) => ({ ...x })) : (S.state ? S.state.preset_rows.map((x) => ({ ...x })) : []);
-if (!S.api) $("runBtn").disabled = true;
 update();
 if (!S.api) setStatus("err", "OFFLINE", "The lobot server is not reachable. The tree shows saved runs. Start the server with: uv run python server.py");
 else if (S.state.replay) setStatus("info", "REPLAY", "Replay mode: no weights are loaded. Run answers only setups that were recorded.");
