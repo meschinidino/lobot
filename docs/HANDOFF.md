@@ -18,7 +18,7 @@ the ordered list of what is left (starting with the real-model pass on Llama).
 1. `docs/roadmap/README.md` — stages, decisions, lanes, schedule, rules for agents.
 2. `docs/roadmap/contracts.md` — shared routes, signatures and file formats.
 3. `docs/roadmap/specs/` — one spec per workstream (R1-R3, D1, E1, S1, P1, J1, U1-U3, V1).
-4. `DESIGN.md` — "the fork" workbench. All UI follows it.
+4. `docs/DESIGN.md` — "the fork" workbench. All UI follows it.
 5. `docs/api.md` — the routes as built.
 6. `docs/plans/lobot-10x-plan.md` — the reviewed plan; decisions D1-D14 still bind.
 
