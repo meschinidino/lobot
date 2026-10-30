@@ -246,6 +246,42 @@ class CacheRoundTripTest(unittest.TestCase):
         self.assertFalse(info["cache_hit"])
         self.assertIn(14, med)
 
+    def test_recompute_merges_earlier_layers_same_key(self):
+        # A subset run must not drop layers calibrated earlier (repo
+        # clobber 2026-10-29: a layer-11-only run erased layers 10-17).
+        prompts = ["a prompt here"]
+        key = {"model_id": "m"}
+        payload = self._payload(prompts, key, {"13": 9.5})
+        fixture = hidden_with_norms([999.0, 3.0, 4.0, 5.0])
+        with tempfile.TemporaryDirectory() as td:
+            cp = Path(td) / "c.json"
+            cp.write_text(json.dumps(payload))
+            med, info = steer.calibrate_layer_medians(
+                FakeModel([14], [fixture]), FakeTok(), prompts,
+                [14], cache_path=cp, key=dict(key))
+            stored = json.loads(cp.read_text())
+        self.assertFalse(info["cache_hit"])
+        self.assertAlmostEqual(med[14], 4.0, places=5)
+        self.assertEqual(stored["medians"]["13"], 9.5)
+        self.assertAlmostEqual(stored["medians"]["14"], 4.0, places=5)
+        self.assertEqual(stored["token_counts"]["13"], [3])
+        self.assertEqual(stored["token_counts"]["14"], [3])
+
+    def test_recompute_drops_old_layers_on_key_change(self):
+        # Different prompts: no merge, the stale layers go away.
+        payload = self._payload(["old prompt here"], {"model_id": "m"},
+                                {"13": 9.5})
+        fixture = hidden_with_norms([999.0, 3.0, 4.0, 5.0])
+        with tempfile.TemporaryDirectory() as td:
+            cp = Path(td) / "c.json"
+            cp.write_text(json.dumps(payload))
+            steer.calibrate_layer_medians(
+                FakeModel([14], [fixture]), FakeTok(), ["new prompt here"],
+                [14], cache_path=cp, key={"model_id": "m"})
+            stored = json.loads(cp.read_text())
+        self.assertNotIn("13", stored["medians"])
+        self.assertIn("14", stored["medians"])
+
     def test_stored_repo_cache_has_full_key(self):
         stored = json.loads((ROOT / "calibration.json").read_text())
         for field in ("model_id", "revision", "template_sha256", "thinking",

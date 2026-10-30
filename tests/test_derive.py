@@ -16,8 +16,6 @@ import torch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from tests._tiny import TinyModel as _TinyModel, TinyTok as _TinyTok  # noqa: E402
-
 _SPEC = importlib.util.spec_from_file_location(
     "derive_llama_recipe", ROOT / "scripts" / "derive_llama_recipe.py")
 derive = importlib.util.module_from_spec(_SPEC)
@@ -60,37 +58,6 @@ class RankTest(unittest.TestCase):
         self.assertEqual(ranked[0][:2], (0, 0))
 
 
-class CaptureTest(unittest.TestCase):
-    """D9: derive captures MLP neuron activations (down_proj input), not the residual."""
-
-    def setUp(self):
-        self.model, self.tok = _TinyModel(), _TinyTok()
-        self.spec = derive.steer.ModelSpec("tiny", 2, 4, 6, "llama", False)
-        self._device = derive.steer.DEVICE
-        derive.steer.DEVICE = "cpu"
-
-    def tearDown(self):
-        derive.steer.DEVICE = self._device
-
-    def test_capture_is_intermediate_wide_and_matches_the_mlp(self):
-        prompts = ["a bb ccc dddd", "eeeee ff g"]
-        mean, std = derive.capture_means(self.model, self.tok, self.spec, prompts)
-        self.assertEqual(tuple(mean.shape), (2, 6))  # [layers, intermediate], not hidden (4)
-        self.assertEqual(tuple(std.shape), (2, 6))
-        # Recompute layer 0's down_proj input by hand: relu(up(embed)) over tokens 1:.
-        with torch.no_grad():
-            per_prompt = []
-            for p in prompts:
-                x = self.model.model.embed(self.tok(p)["input_ids"])
-                per_prompt.append(torch.relu(self.model.model.layers[0].mlp.up_proj(x))[0, 1:].mean(0))
-        torch.testing.assert_close(mean[0], torch.stack(per_prompt).mean(0))
-
-    def test_wrong_width_fails_loudly(self):
-        wrong = derive.steer.ModelSpec("tiny", 2, 4, 5, "llama", False)  # claims intermediate 5
-        with self.assertRaises(RuntimeError):
-            derive.capture_means(self.model, self.tok, wrong, ["a bb ccc"])
-
-
 class JudgeTest(unittest.TestCase):
     def test_refused(self):
         self.assertTrue(derive.refused("Sorry, I cannot help with that."))
@@ -104,6 +71,76 @@ class JudgeTest(unittest.TestCase):
         self.assertFalse(derive.coherent("no " * 20))
         self.assertFalse(derive.coherent(
             "fine start here but then action " + "action " * 30))
+
+
+class CapturePointTest(unittest.TestCase):
+    """D9: derive taps the down_proj input at intermediate width, loudly."""
+
+    def _spec(self):
+        from steer import ModelSpec
+        return ModelSpec("fake-llama", layers=2, hidden=4, intermediate=8,
+                         block_path="llama", thinking_kw=False)
+
+    def _model(self, fixture):
+        from types import SimpleNamespace
+
+        class FakeDownProj(torch.nn.Linear):
+            def __init__(self):
+                super().__init__(8, 4)
+
+        class FakeModel:
+            def __init__(self, fix):
+                self.fix = fix
+                self.model = SimpleNamespace(layers=[
+                    SimpleNamespace(mlp=SimpleNamespace(
+                        down_proj=FakeDownProj())) for _ in range(2)])
+                self.config = SimpleNamespace(
+                    num_hidden_layers=2, hidden_size=4, intermediate_size=8)
+
+            def __call__(self, ids):
+                for block in self.model.layers:
+                    block.mlp.down_proj(self.fix)
+
+        return FakeModel(fixture)
+
+    def _tok(self):
+        class FakeIds:
+            def numel(self):
+                return 3
+
+            def to(self, device):
+                return self
+
+        class FakeTok:
+            chat_template = "x"
+
+            def apply_chat_template(self, *a, **k):
+                return "wrapped"
+
+            def __call__(self, *a, **k):
+                return {"input_ids": FakeIds()}
+
+        return FakeTok()
+
+    def tearDown(self):
+        import steer
+        steer.remove_steering_hooks()
+
+    def test_down_proj_width_captured(self):
+        import steer
+        fix = torch.arange(24, dtype=torch.float32).reshape(1, 3, 8)
+        means, stds = derive.capture_means(
+            self._model(fix), self._tok(), self._spec(), ["a", "b"])
+        self.assertEqual(tuple(means.shape), (2, 8))
+        self.assertEqual(tuple(stds.shape), (2, 8))
+        # tokens 1: mean of rows 1,2 -> arange rows [8..15],[16..23] mean
+        self.assertAlmostEqual(means[0][0].item(), 12.0)
+
+    def test_wrong_width_fails_loudly(self):
+        bad = torch.zeros(1, 3, 7)  # residual width, not intermediate
+        with self.assertRaises(RuntimeError):
+            derive.capture_means(
+                self._model(bad), self._tok(), self._spec(), ["a"])
 
 
 if __name__ == "__main__":

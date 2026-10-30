@@ -376,11 +376,25 @@ def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[i
     for L in layers:
         norms = torch.cat(pooled[L])
         medians[L] = float(norms.median().item())
+    merged_medians = {str(k): v for k, v in medians.items()}
+    merged_counts = {str(k): v for k, v in counts.items()}
+    if cache_path.exists():
+        try:
+            old = json.loads(cache_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            old = None
+        if old and old.get("key") == full_key:
+            # Same prompts: keep layers calibrated by earlier runs so a
+            # subset run never drops them (clobber fixed 2026-10-29).
+            for k, v in old.get("medians", {}).items():
+                merged_medians.setdefault(k, v)
+            for k, v in old.get("token_counts", {}).items():
+                merged_counts.setdefault(k, v)
     payload = {
         "key": full_key,
-        "medians": {str(k): v for k, v in medians.items()},
+        "medians": merged_medians,
         "prompt_hashes": prompt_hashes,
-        "token_counts": {str(k): v for k, v in counts.items()},
+        "token_counts": merged_counts,
     }
     cache_path.write_text(json.dumps(payload, indent=2))
     return medians, {"cache_hit": False, "key": full_key}
@@ -397,6 +411,36 @@ class CancelCriteria(StoppingCriteria):
     def __call__(self, input_ids, scores, **kwargs):
         return torch.full((input_ids.shape[0],), self.event.is_set(),
                           dtype=torch.bool, device=input_ids.device)
+
+
+class RowStreamer:
+    """Per-row token queue for one generate call (single or batched).
+
+    generate() calls put() once per step with the new token ids of
+    every row, shape (batch,) or (batch, 1); consumers take (row,
+    token_id) events from the queue until the (None, None) sentinel
+    from end(). Duck-typed as a transformers streamer (put/end only).
+    """
+
+    def __init__(self):
+        import queue
+        self.queue: queue.Queue = queue.Queue()
+
+    def put(self, values):
+        toks = values.tolist() if hasattr(values, "tolist") else list(values)
+        if toks and isinstance(toks[0], list):
+            # generate() first echoes the whole prompt (rows longer
+            # than one token); only single-token rows are new tokens.
+            # Row order is preserved: row r keeps index r.
+            for r, row in enumerate(toks):
+                if len(row) == 1:
+                    self.queue.put((r, int(row[0])))
+            return
+        for r, t in enumerate(toks):
+            self.queue.put((r, int(t)))
+
+    def end(self):
+        self.queue.put((None, None))
 
 
 def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed: int,
@@ -437,6 +481,60 @@ def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed
         stop = StoppingCriteriaList([CancelCriteria(cancel)]) if cancel is not None else None
         out = model.generate(input_ids, max_new_tokens=max_new_tokens, do_sample=False,
                              stopping_criteria=stop)
+    _sync_device()
+    total_s = time.perf_counter() - t0
+    mem_samples.append(mps_current_mib() or 0.0)
+    decode_s = max(0.0, total_s - prefill_s)
+    new_ids = out[0][input_ids.shape[1]:]
+    n_new = len(new_ids)
+    return {
+        "text": tokenizer.decode(new_ids, skip_special_tokens=True),
+        "new_tokens": n_new,
+        "token_ids": new_ids.tolist(),
+        "seconds": round(total_s, 1),
+        "prefill_s": round(prefill_s, 2),
+        "decode_s": round(decode_s, 2),
+        "tok_per_s": round(n_new / total_s, 1) if total_s > 0 else 0.0,
+        "peak_mib": round(max(mem_samples), 1),
+        "driver_mib": mps_driver_mib(),
+        "cancelled": bool(cancel is not None and cancel.is_set()),
+    }
+
+
+def generate_text_with_streamer(model, tokenizer, user_text: str, *,
+                                max_new_tokens: int, seed: int,
+                                spec: ModelSpec | None = None,
+                                cancel=None, streamer=None):
+    """generate_text that also feeds a streamer (same result keys).
+
+    The returned dict is built from the generate output exactly like
+    generate_text, so streamed runs carry identical token ids; the
+    caller consumes streamer events concurrently in another thread.
+    """
+    max_new_tokens = min(max_new_tokens, MAX_NEW_TOKENS_CAP)
+    torch.manual_seed(seed)
+    try:
+        if torch.backends.mps.is_available():
+            torch.mps.manual_seed(seed)
+    except Exception:
+        pass
+    wrapped = wrap_prompt_notk(tokenizer, user_text, spec)
+    device = str(next(model.parameters()).device)
+    input_ids = tokenizer(wrapped, return_tensors="pt")["input_ids"].to(device)
+    mem_samples: list[float] = []
+    with torch.no_grad():
+        _sync_device()
+        t0 = time.perf_counter()
+        model(input_ids)
+        _sync_device()
+        prefill_s = time.perf_counter() - t0
+    mem_samples.append(mps_current_mib() or 0.0)
+    _sync_device()
+    t0 = time.perf_counter()
+    with torch.no_grad():
+        stop = StoppingCriteriaList([CancelCriteria(cancel)]) if cancel is not None else None
+        out = model.generate(input_ids, max_new_tokens=max_new_tokens, do_sample=False,
+                             stopping_criteria=stop, streamer=streamer)
     _sync_device()
     total_s = time.perf_counter() - t0
     mem_samples.append(mps_current_mib() or 0.0)
@@ -587,10 +685,12 @@ def load_with_ladder(*, revision: str | None = None) -> tuple:
     """
     attempts = []
     for rung in LADDER:
-        result = attempt_rung(rung, revision=revision if rung.n == 1 else None)
+        pin = revision if rung.n == 1 else None
+        result = attempt_rung(rung, revision=pin)
         attempts.append(result)
         if result["ok"]:
-            model = load_model(rung.model_id, device=rung.device)
+            # O8: the pinned revision rides the final load, not just the probe.
+            model = load_model(rung.model_id, revision=pin, device=rung.device)
             tok = load_tokenizer(rung.model_id)
             return model, tok, rung.n, attempts
     lines = "; ".join(f"rung {a['rung']}: {a['detail']}" for a in attempts)

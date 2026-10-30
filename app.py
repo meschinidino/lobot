@@ -27,11 +27,9 @@ import time
 from pathlib import Path
 
 import gradio as gr
-import torch
-from huggingface_hub import HfApi
 
+import engine as engine_mod
 import steer
-from engine import ENGINE
 from steer import RecipeRow
 
 ROOT = Path(__file__).resolve().parent
@@ -55,15 +53,26 @@ def _load_presets() -> dict:
 
 _PRESETS = _load_presets()
 
-# Warm engine state (one model warm at a time; switching unloads first).
-_model = None
-_tokenizer = None
-_model_id: str | None = None
-_rung_n: int | None = None
-_revision: str | None = None
-_run_lock = threading.Lock()
+# Warm engine state lives in the Engine (D2); this module keeps UI state plus
+# read-only aliases (_model, _run_lock, ...) for server.py and tests.
+_ENGINE = engine_mod.get_engine()
 _last_artifact: str = ""
 _active_model_id: str = steer.MODEL_ID  # Qwen default; dropdown switches
+
+_ENGINE_ALIASES = {
+    "_model": "model",
+    "_tokenizer": "tokenizer",
+    "_model_id": "model_id",
+    "_rung_n": "rung",
+    "_revision": "revision",
+    "_run_lock": "lock",
+}
+
+
+def __getattr__(name: str):
+    if name in _ENGINE_ALIASES:
+        return getattr(_ENGINE, _ENGINE_ALIASES[name])
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def active_preset() -> dict:
@@ -76,48 +85,23 @@ def active_spec():
 
 def unload_engine() -> None:
     """Drop the warm model and free device memory (model switch)."""
-    global _model, _tokenizer, _model_id, _rung_n, _revision
-    _model, _tokenizer, _model_id, _rung_n, _revision = None, None, None, None, None
-    import gc
-    gc.collect()
-    try:
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
-    except Exception:
-        pass
+    _ENGINE.unload()
 
 
 def load_engine(model_id: str | None = None):
-    """Load the selected model once; keep it warm. Qwen rides the ladder."""
-    global _model, _tokenizer, _model_id, _rung_n, _revision
+    """Load the selected model once; keep it warm. Qwen rides the ladder.
+
+    Thin UI wrapper: loading + revision pin live in Engine.load; preset
+    binding and the dims assert stay here (UI preset concern).
+    """
     model_id = model_id or _active_model_id
-    if _model is not None and _model_id == model_id:
-        return _model, _tokenizer, _rung_n
-    if _model is not None:
-        unload_engine()
-    _revision = HfApi().model_info(model_id).sha
-    if model_id == steer.MODEL_ID:
-        _model, _tokenizer, _rung_n, attempts = steer.load_with_ladder()
-        for a in attempts:
-            print(f"[engine] rung {a['rung']}: ok={a['ok']} {a['detail']}", flush=True)
-        if _rung_n != 1:
-            # Presets bind to model id (D2); non-rung-1 needs re-derivation (D8).
-            raise RuntimeError(
-                f"ladder stopped at rung {_rung_n}, not rung 1; preset rows are "
-                f"invalid until re-derived ({steer.RECOVERY_PROCEDURE})"
-            )
-    else:
-        spec = steer.get_spec(model_id)
-        _model = steer.load_model(model_id)
-        _tokenizer = steer.load_tokenizer(model_id)
-        _rung_n = 1
-        print(f"[engine] {model_id} loaded direct "
-              f"(dims {spec.layers}/{spec.hidden}/{spec.intermediate})", flush=True)
-    _model_id = model_id
+    if _ENGINE.model is not None and _ENGINE.model_id == model_id:
+        return _ENGINE.model, _ENGINE.tokenizer, _ENGINE.rung
+    rung = _ENGINE.load(model_id)
     preset = _PRESETS[model_id]
     steer.check_preset_binding(preset, model_id)
-    steer.assert_text_dims(_model, steer.get_spec(model_id))
-    return _model, _tokenizer, _rung_n
+    steer.assert_text_dims(_ENGINE.model, steer.get_spec(model_id))
+    return _ENGINE.model, _ENGINE.tokenizer, rung
 
 
 # -- diff + highlight ---------------------------------------------------------
@@ -231,8 +215,9 @@ def run_loop(prompt: str, n: int, *row_vals):
         model, tok, _ = load_engine()
         layers = sorted({r.layer for r in rows})
         key = steer.calibration_cache_key(
-            _active_model_id, _revision, tok, str(steer.DTYPE), steer.DEVICE)
-        with ENGINE.clean():
+            _active_model_id, _ENGINE.revision, tok, str(steer.DTYPE),
+            steer.DEVICE)
+        with _ENGINE.clean():
             medians, cal_info = steer.calibrate_layer_medians(
                 model, tok, calib_prompts, layers,
                 cache_path=ROOT / steer.calibration_path_for(_active_model_id),
@@ -240,14 +225,12 @@ def run_loop(prompt: str, n: int, *row_vals):
         calib_id = cal_info["key"]["prompts_sha256"]
 
         t0 = time.perf_counter()
-        steer.reset_hook_call_count()
-        with ENGINE.clean():
-            base = steer.generate_text(model, tok, prompt.strip(),
-                                       max_new_tokens=max_new, seed=SEED, spec=spec)
-        with ENGINE.apply(model, rows, medians=medians, spec=spec):
-            steered = steer.generate_text(model, tok, prompt.strip(),
-                                          max_new_tokens=max_new, seed=SEED, spec=spec)
-            hook_calls = steer.hook_call_count()
+        base = _ENGINE.run(prompt.strip(), engine_mod.EMPTY_EDITS,
+                           medians=medians, max_new_tokens=max_new, seed=SEED)
+        steered = _ENGINE.run(
+            prompt.strip(), engine_mod.EditSet.from_rows(rows),
+            medians=medians, max_new_tokens=max_new, seed=SEED)
+        hook_calls = steered["hook_calls"]
         wall = round(time.perf_counter() - t0, 1)
         if hook_calls < 1:
             return ("Steering hooks did not fire; outputs untrusted.",) + empty[1:]

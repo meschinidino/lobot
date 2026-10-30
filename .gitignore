@@ -15,6 +15,9 @@ logs/
 # Local run outputs (regenerate via scripts/run_artifact.py)
 artifacts/
 
+# Create job outputs (served from disk by /api/create; runtime state)
+jobs/
+
 # Logs
 *.log
 
