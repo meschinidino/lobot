@@ -163,6 +163,28 @@ missing explicit field, layer/direction shape), 404 (no finished
 Create job with a saved direction for the trait), 409 busy, 503
 NO_MODEL.
 
+## Traits: evidence and patches (E1)
+
+Finished Create jobs as saved traits. No model needed.
+
+`GET /api/traits?model_id=...` → `{"traits": [{"id", "family",
+"model_id", "version", "verdict", "layer", "dose", "created",
+"cards": {"update_up", "update_down", "delete", "prompt_baseline"},
+"guard": {"blocked", "would_block", "verified"}, "patch"}]}`.
+Only `status: done` jobs, newest first; `model_id` filters.
+`version` counts finished jobs per family and model (1 = oldest).
+Each card holds `{passed, trait_mean, trait_ci}`; a card the report
+lacks is left out. `patch` is the download path, or null without a
+`knob.lobot`.
+
+`GET /api/traits/{id}/report` → the job's `report.json` as is.
+`GET /api/traits/{id}/report.md` → `text/markdown`.
+`GET /api/traits/{id}/patch` → `application/zip`, attachment
+`<family>-v<version>.lobot`.
+
+Errors: 404 for a malformed id (only letters, digits, `-`, `_`), an
+unknown or unfinished job, or a missing file. Paths never leave `jobs/`.
+
 ## POST /api/neurons (R1 click-a-word, R2 reply words)
 
 Top neurons at one prompt or reply token, measured with the run's
