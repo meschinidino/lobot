@@ -79,3 +79,15 @@ fake. Never show them as results.
 DESIGN.md for every UI change (one pink event per screen: the split; no
 dashboard; plain words). Simplified Technical English. No attribution lines in
 commits. Never force-push. No event references in repo files.
+
+## Fixes after the model pass (model-pass.md)
+
+- R1: the inspector's "Applied edits in this run" links each neuron to its card,
+  so replay mode reaches the recorded cards; a word click in replay says why
+  no neurons are measured.
+- B2: a block from the full-answer confirm says so, instead of quoting the
+  passing first-token ratio.
+- B3: Run is off while the model reads the neurons at a word.
+- B4: an unenforced would-block shows WOULD BLOCK (evidence) and GUARD (shelf), never PASSED.
+- B5: the model fingerprint prints as key: value pairs.
+- "Pushes toward" lists drop repeats that differ only in spacing or case.
