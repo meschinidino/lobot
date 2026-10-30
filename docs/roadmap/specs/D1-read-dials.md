@@ -27,8 +27,9 @@ show "the steered answer is N× more <trait>".
 
 - The baseline pass gets the same `Read` edit as the steered pass. It must not
   change the baseline's tokens.
-- `complete.result.dial` adds `"baseline": [...]` and `"steered": [...]`
-  (float or null per generated token, same scale as the streamed values).
+- `complete.result.dial` adds `"baseline": [...]` and `"steered": [...]`:
+  one `{"text", "value"}` per generated token (value float or null, same
+  scale as the streamed values; texts join to the pass's text).
   The streamed `steered` list and the final list are equal.
 - Replay: when a recording has `dial`, replay returns it; else `dial` is null.
   `scripts/record_sweep.py --dial-trait <family>` records it (skip the flag

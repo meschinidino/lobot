@@ -120,8 +120,10 @@ the route may call.)
 `jobs/{id}/trait/dial.json`. See `docs/api.md`. Do not rebuild it.
 
 D1 extension (what the tree needs to compare the two answers):
-- `complete.result.dial` adds `"baseline": [float|null, ...]` and
-  `"steered": [float|null, ...]`, one value per generated token of each pass.
+- `complete.result.dial` adds `"baseline": [{"text": str, "value": float|null}, ...]`
+  and `"steered": [...]` in the same shape: one entry per generated token of
+  each pass, with the token's decoded text, so the joined texts equal the
+  pass's text. The UI places each value under its word with these texts.
   The baseline pass gets the same `Read` edit (it must not change its tokens).
 - Replay mode returns `dial` only if the recording has it.
 - One trait per run. Several traits is later (CH).
