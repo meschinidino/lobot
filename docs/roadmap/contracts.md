@@ -79,6 +79,10 @@ Extension of `POST /api/neurons` [R2]:
   is appended after the wrapped prompt, and `token_index` can address its
   tokens. Response adds `"reply_start": int` (index of the first reply token
   in `tokens`). This is how the UI clicks a word in a generated answer.
+- Request may give `"reply_char": int` instead of `token_index` (needs
+  `reply`). The server uses the reply token that covers that character of
+  `reply` (the first token at or after it when it falls on a space). The UI
+  knows characters, not tokens. Response `token_index` is the index used.
   "base" vs "steered" is chosen by the caller: base sends `rows: []` and the
   baseline text; steered sends the run's rows and the steered text.
 - Each entry in `neurons` adds `"pushes_toward_top": [3 strings] | null`
