@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT))
 
 import app as engine
 import steer
+from engine import ENGINE
 from server import _split_char
 from steer import RecipeRow
 
@@ -80,13 +81,10 @@ def main() -> int:
         scaled = [RecipeRow(r.layer, r.neuron, round(r.dose * s, 4)) for r in rows]
         t0 = time.perf_counter()
         steer.reset_hook_call_count()
-        steer.register_steering_hooks(model, scaled, medians, mode="add", spec=spec)
-        try:
+        with ENGINE.apply(model, scaled, medians=medians, spec=spec):
             out = steer.generate_text(model, tok, prompt, max_new_tokens=max_new,
                                       seed=engine.SEED, spec=spec)
             hook_calls = steer.hook_call_count()
-        finally:
-            steer.remove_steering_hooks()
         if hook_calls < 1:
             print(f"[sweep] x{s:+}: steering hooks did not fire; stopping", flush=True)
             return 4

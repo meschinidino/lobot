@@ -34,6 +34,7 @@ from starlette.responses import JSONResponse
 
 import app as engine
 import steer
+from engine import ENGINE
 from steer import RecipeRow
 
 ROOT = Path(__file__).resolve().parent
@@ -264,10 +265,11 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec):
         layers = sorted({r.layer for r in rows})
         key = steer.calibration_cache_key(
             engine._active_model_id, engine._revision, tok, str(steer.DTYPE), steer.DEVICE)
-        medians, cal_info = steer.calibrate_layer_medians(
-            model, tok, calib_prompts, layers,
-            cache_path=ROOT / steer.calibration_path_for(engine._active_model_id),
-            key=key, spec=spec)
+        with ENGINE.clean():
+            medians, cal_info = steer.calibrate_layer_medians(
+                model, tok, calib_prompts, layers,
+                cache_path=ROOT / steer.calibration_path_for(engine._active_model_id),
+                key=key, spec=spec)
         calib_id = cal_info["key"]["prompts_sha256"]
         if _cancel.is_set():
             yield _event(stage="stopped", after="weights")
@@ -275,20 +277,18 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec):
 
         yield _event(stage="baseline")
         steer.reset_hook_call_count()
-        base = steer.generate_text(model, tok, prompt, max_new_tokens=max_new,
-                                   seed=engine.SEED, spec=spec, cancel=_cancel)
+        with ENGINE.clean():
+            base = steer.generate_text(model, tok, prompt, max_new_tokens=max_new,
+                                       seed=engine.SEED, spec=spec, cancel=_cancel)
         if _cancel.is_set():
             yield _event(stage="stopped", after="baseline")
             return
 
         yield _event(stage="steered")
-        steer.register_steering_hooks(model, rows, medians, mode="add", spec=spec)
-        try:
+        with ENGINE.apply(model, rows, medians=medians, spec=spec):
             steered = steer.generate_text(model, tok, prompt, max_new_tokens=max_new,
                                           seed=engine.SEED, spec=spec, cancel=_cancel)
             hook_calls = steer.hook_call_count()
-        finally:
-            steer.remove_steering_hooks()
         if _cancel.is_set():
             yield _event(stage="stopped", after="steered")
             return

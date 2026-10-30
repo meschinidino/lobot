@@ -1015,14 +1015,15 @@ Execution order: launch A + B. Merge both. Then wave-0 gates (model runs). Confl
 ## Implementation Tasks (eng)
 
 - [ ] **E1 (P1, human: ~1 day / CC: ~2h)** — engine — Create Engine class owning model, lock and one hook registry with two sites per layer
+  - Status 2026-10-30: engine.py done for the hooks: one registry of every kind, two sites per layer in the D13 order, clean(), capture() (D6); server, app and the scripts route through it; tests/test_engine.py. Remaining: move model, tokenizer and run lock from app.py globals into the Engine (needs one real-model run to verify the load path).
   - Surfaced by: Scope challenge 1 (D2), OV5 (D13)
   - Files: engine.py, app.py, server.py, tests/test_server.py
   - Verify: `uv run python -m unittest discover -s tests -t .`; existing stream and steering-loop tests unchanged
-- [ ] **E2 (P1, human: ~1h / CC: ~10min)** — server — Add Origin check middleware on mutating routes
+- [x] **E2 (P1, human: ~1h / CC: ~10min)** — server — Add Origin check middleware on mutating routes (eval-gate merge, plus a loopback Host check against DNS rebinding)
   - Surfaced by: Section 1 finding 2 (D5)
   - Files: server.py, tests/test_server.py
   - Verify: cross-origin POST 403, same-origin 200
-- [ ] **E3 (P1, human: ~2h / CC: ~20min)** — derive — Fix derive capture point to down_proj input, then move spike and derive to Engine.capture
+- [x] **E3 (P1, human: ~2h / CC: ~20min)** — derive — Fix derive capture point to down_proj input, then move spike and derive to Engine.capture
   - Surfaced by: OV1 (D9), Section 2 (D6)
   - Files: scripts/derive_llama_recipe.py, scripts/spike_knob.py, engine.py, tests/test_derive.py
   - Verify: capture dim test; `scripts/derive_llama_recipe.py --self-test`

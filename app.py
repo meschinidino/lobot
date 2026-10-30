@@ -31,6 +31,7 @@ import torch
 from huggingface_hub import HfApi
 
 import steer
+from engine import ENGINE
 from steer import RecipeRow
 
 ROOT = Path(__file__).resolve().parent
@@ -231,23 +232,22 @@ def run_loop(prompt: str, n: int, *row_vals):
         layers = sorted({r.layer for r in rows})
         key = steer.calibration_cache_key(
             _active_model_id, _revision, tok, str(steer.DTYPE), steer.DEVICE)
-        medians, cal_info = steer.calibrate_layer_medians(
-            model, tok, calib_prompts, layers,
-            cache_path=ROOT / steer.calibration_path_for(_active_model_id),
-            key=key, spec=spec)
+        with ENGINE.clean():
+            medians, cal_info = steer.calibrate_layer_medians(
+                model, tok, calib_prompts, layers,
+                cache_path=ROOT / steer.calibration_path_for(_active_model_id),
+                key=key, spec=spec)
         calib_id = cal_info["key"]["prompts_sha256"]
 
         t0 = time.perf_counter()
         steer.reset_hook_call_count()
-        base = steer.generate_text(model, tok, prompt.strip(),
-                                   max_new_tokens=max_new, seed=SEED, spec=spec)
-        steer.register_steering_hooks(model, rows, medians, mode="add", spec=spec)
-        try:
+        with ENGINE.clean():
+            base = steer.generate_text(model, tok, prompt.strip(),
+                                       max_new_tokens=max_new, seed=SEED, spec=spec)
+        with ENGINE.apply(model, rows, medians=medians, spec=spec):
             steered = steer.generate_text(model, tok, prompt.strip(),
                                           max_new_tokens=max_new, seed=SEED, spec=spec)
             hook_calls = steer.hook_call_count()
-        finally:
-            steer.remove_steering_hooks()
         wall = round(time.perf_counter() - t0, 1)
         if hook_calls < 1:
             return ("Steering hooks did not fire; outputs untrusted.",) + empty[1:]
