@@ -1,7 +1,7 @@
 # J1 Meta-model judge, offline
 
 Owner: backend agent. Lane: no-model (needs network and an API key).
-Depends on: the model decision (Claude confirms it with the user). Time: half a day.
+Depends on: nothing (decided 2026-10-30: offline Meta-API judge is allowed). Time: half a day.
 
 ## Goal
 

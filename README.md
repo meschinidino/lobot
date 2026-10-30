@@ -1,10 +1,26 @@
 # lobot
 
-lobot is a local neuron-steering workbench. It loads one open
-model. It runs the same prompt with and without steering. It shows both
-answers side by side, with the first changed token highlighted.
+lobot lets you see a behavior inside an open model, change it, prove what the
+change does, and check that it stays safe, all on your own computer.
 
-Default model: `Qwen/Qwen3.5-4B`. Llama 3.2 3B support is in progress.
+The loop:
+
+1. **Read.** Click a word. See the neurons behind it, what they fire on, and
+   which words they push toward.
+2. **Steer.** Push a neuron or a behavior direction with a dose. The answer
+   forks at the first changed token, next to the unchanged answer.
+3. **Guard.** Before a steered run, the refusal guard checks that the edit does
+   not weaken refusals. It blocks the edit and says why.
+4. **Prove and keep.** Each behavior gets a report card from held-out prompts.
+   Export it as a small patch (`.lobot`, or a llama.cpp control vector) that
+   others can install and re-check.
+
+Hero model: `meta-llama/Llama-3.2-3B-Instruct`. `Qwen/Qwen3.5-4B` is also
+supported and is the code default for now. One model is in memory at a time.
+
+Where this goes: [docs/roadmap/](docs/roadmap/README.md) (10X demo, then
+100X and 1000X: a signed, re-verifiable registry of behavior patches for open
+models).
 
 ## 30-second demo
 
@@ -117,22 +133,23 @@ human copies and posts the artifact text by hand.
 
 ## Repo layout
 
-- `steer.py` — engine: model loading, steering hooks, calibration, runner, artifact template.
-- `server.py` — FastAPI server: serves `web/` and streams before/after runs on `http://127.0.0.1:7860`.
-- `web/` — frontend (`index.html`), vendored Pretext, recorded example run. Follows `DESIGN.md`.
-- `app.py` — Gradio UI (older) and the shared engine state that `server.py` reuses.
-- `DESIGN.md` — design system: tokens, components, rules.
-- `scripts/run_artifact.py` — headless runner: one prompt to one artifact directory.
-- `scripts/check_env.py` — environment gate: imports, MPS, Qwen 3.5 support.
-- `scripts/verify_load.py` — load proof: weights load and generate, receipt to `logs/`.
-- `scripts/check_engine_t2t4t5.py` — engine smoke checks, with opt-in model lane.
-- `scripts/derive_llama_recipe.py` — contrast-prompt recipe derivation for new models.
-- `scripts/spike_t1.py` — fixed-ground steering check for the default preset.
-- `presets/evil-qwen.json` — steering preset for `Qwen/Qwen3.5-4B` (two rows).
-- `presets/README.md` — recipe string grammar and calibration cache keys.
+- `engine.py` — the Engine: one owner for model state and every hook. Edits (neuron, vector, ablation, read), runs, streaming, capture, `clean()`.
+- `steer.py` — model loading, neuron steering math, calibration, recipe strings.
+- `server.py` — FastAPI server on `http://127.0.0.1:7860`: runs, Stop, Create, Update, click-a-word, chat, replay mode. Routes: [docs/api.md](docs/api.md).
+- `guard.py` — the refusal guard (opt-in until release; research mode records an override).
+- `create_job.py`, `trait_eval.py`, `trait_store.py`, `prompt_bank.py`, `evaluation.py` — Create: contrast prompts, behavior direction, judge, held-out splits and report cards.
+- `patch.py` — `.lobot` patch files and llama.cpp control-vector export.
+- `web/` — the workbench (`index.html`), the static prototype, fonts, recorded runs (`example.json`, `sweep*.json`). Follows `DESIGN.md`.
+- `app.py` — older Gradio UI.
+- `DESIGN.md` — design system: "the fork" workbench.
+- `docs/roadmap/` — goal, lanes, contracts and one spec per workstream.
+- `docs/plans/lobot-10x-plan.md` — reviewed plan and the binding decisions (D1-D14).
+- `scripts/` — headless runner, recorders (`record_sweep.py`), gates, judge validation, llama.cpp export, environment checks.
+- `presets/` — steering presets per model, and the recipe string grammar.
+- `store/` — saved traits and reader caches. `jobs/` — Create job outputs (local).
 - `tests/` — unit suite plus the opt-in model-backed lane.
-- `calibration.json` — committed calibration cache for the default model.
-- `pyproject.toml`, `uv.lock` — dependencies (see `uv.lock` for pinned versions).
+- `calibration*.json` — committed calibration caches per model.
+- `pyproject.toml`, `uv.lock` — dependencies.
 
 `logs/` and `artifacts/` hold local run outputs. The repo ignores both.
 

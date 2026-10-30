@@ -1,7 +1,7 @@
 [project]
 name = "model-lobotomy"
 version = "0.1.0"
-description = "Visual neuron-steering workbench (local-first, one model, before/after loop)"
+description = "See a behavior inside an open model, change it, prove it, keep it safe (local-first)"
 authors = [
     { name = "Dino Meschini", email = "francodmsoloing@gmail.com" }
 ]

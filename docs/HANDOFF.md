@@ -1,30 +1,41 @@
-# Handoff: lobot behavior-CRUD work (2026-10-29)
+# Handoff: lobot (2026-10-30)
+
+## Goal
+
+See a behavior inside an open model, change it, prove what the change does,
+keep it safe, and share it as a patch others can re-check. The 10X demo is
+the loop Read → Steer → Guard → Prove on Llama 3.2 3B, as a recorded 3-minute
+video. Later stages (100X, 1000X) lead to a signed, re-verifiable registry of
+behavior patches.
 
 ## Read first
-1. `docs/plans/lobot-10x-plan.md` — the full plan with CEO, eng and design reviews and every decision (D1-D14 eng, design decisions 1-14).
-2. `docs/designs/behavior-crud.md` — the short scope summary.
-3. `DESIGN.md` — the "Ward chart" design system. All UI follows it.
-4. `TODOS.md` — deferred work.
+
+1. `docs/roadmap/README.md` — stages, decisions, lanes, schedule, rules for agents.
+2. `docs/roadmap/contracts.md` — shared routes, signatures and file formats.
+3. `docs/roadmap/specs/` — one spec per workstream (R1-R3, D1, E1, S1, P1, J1, U1-U3, V1).
+4. `DESIGN.md` — "the fork" workbench. All UI follows it.
+5. `docs/api.md` — the routes as built.
+6. `docs/plans/lobot-10x-plan.md` — the reviewed plan; decisions D1-D14 still bind.
 
 ## State
-- `main` (latest `334fbd0`): web UI (`server.py`, `web/index.html`), Stop, DESIGN.md, plan docs, `scripts/spike_knob.py`.
-- `eval-gate` (`971a529`, by another agent): `evaluation.py` (splits, bootstrap CI, report-card rule, final-split ledger) + same-origin POST middleware. Not reviewed or merged yet. Review it against eng decisions D5, D7, D10, D14 before merging.
-- Nothing pushed by Claude. Model weights and `logs/` are local only.
 
-## Next step (design)
-Build `web/prototype.html`: a static, clickable prototype of the wave-1 main screen with recorded data (`web/example.json`), no backend:
-- Baseline | Selected dose | Prompt-only columns; ruled dose strip with per-dose state and split token (design 2A)
-- pink split and cut only on the selected dose; other splits in ink (2A)
-- verdict state key in the run-state bar, scoped "Held-out evaluation · trait vN · dose d" (7A)
-- per-verb evidence table: Read / Increase / Decrease / Delete (10A)
-- honest agreement trace: flat, pink tick, solid diverged band, no jitter (9A)
-Then, in a second pass: guard states (6A), Create stage rows (3A), Library list (8A), empty state (5A), phone layout (2A), accessibility (13A).
-Verify with screenshots at 375 / 768 / 1440 px and the design lint (`gstack-design-lint web/prototype.html --render`).
-
-## After the prototype
-Wave 0 lane A: E3 derive capture-point fix (D9), then E1 Engine refactor (D2, D13) after `eval-gate` is merged (both touch `server.py`).
+- Integration branch: `claude/admiring-mendel-mn88n8`. Lane branches
+  (`lane/<ID>-<name>`) start from it and merge back through Claude.
+- Built: the Engine (edits, capture, `clean()`), Create with report cards,
+  Update (multi-dose filmstrip), refusal guard (opt-in), `.lobot` patches and
+  llama.cpp export, read dials (`dial_trait`), click-a-word on the prompt
+  (`POST /api/neurons`), chat, replay mode, the Origin check.
+- UI: `web/index.html` is wired to `/api/run` (sentence, knob, experiment
+  tree, guard states, share card). Create, Update, evidence, reader and dials
+  in the UI are lanes U1-U3 (Claude).
+- Recordings: `web/sweep.json` (Qwen) and `web/sweep.llama-32-3b-instruct.json` (Llama).
+- Open question O6 (chat cache semantics): `docs/open-questions.md`.
 
 ## Rules
-- Writing style: Simplified Technical English (short sentences, active voice).
-- Never claim "verified" for simulated results; say what was simulated.
-- Commit only when asked. No competition or event references in repo files.
+
+- Simplified Technical English: short sentences, active voice.
+- Never claim "verified" for simulated or replayed results; say what was simulated.
+- No competition or event references in repo files.
+- Commits: author is the repo's configured user. No co-author or tool-attribution lines.
+- Never force-push or rebase a shared branch.
+- One model in memory at a time: book `docs/roadmap/model-lane.md` before loading weights.
