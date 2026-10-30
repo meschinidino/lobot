@@ -97,10 +97,14 @@ def rank_candidates(mean_a: torch.Tensor, mean_b: torch.Tensor,
             for i, v in zip(idx.tolist(), vals.tolist())]
 
 
-def capture_means(model, tok, spec, prompts: list[str]) -> torch.Tensor:
-    """Mean down_proj-input activation per layer over prompts' tokens 1:.
+def capture_means(model, tok, spec, prompts: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
+    """Mean and std of down_proj-input activation per layer over prompts' tokens 1:.
 
-    Returns [L, N] tensor on CPU. Steering hooks must be OFF.
+    The down_proj input is the MLP intermediate (spec.intermediate wide):
+    the coordinates a recipe row's neuron id names and steering pushes.
+    The block input is the residual stream (spec.hidden wide); ranking it
+    would name the wrong channels (D9). Returns ([L, N], [L, N]) on CPU.
+    Steering hooks must be OFF.
     """
     if steer.steering_hook_count() != 0:
         raise RuntimeError("derivation capture needs steering hooks OFF")
@@ -108,12 +112,12 @@ def capture_means(model, tok, spec, prompts: list[str]) -> torch.Tensor:
     means: dict[int, list] = {L: [] for L in range(spec.layers)}
     handles = []
     for L in range(spec.layers):
-        block = steer.resolve_block(model, L, spec)
+        down = steer.resolve_down_proj(model, L, spec)
 
         def _cap(_m, args, *, _L=L):
             captured[_L].append(args[0].detach().float().cpu())
 
-        handles.append(block.register_forward_pre_hook(_cap))
+        handles.append(down.register_forward_pre_hook(_cap))
     try:
         with torch.no_grad():
             for p in prompts:
@@ -127,6 +131,10 @@ def capture_means(model, tok, spec, prompts: list[str]) -> torch.Tensor:
                 model(ids)
                 for L in range(spec.layers):
                     x = captured[L][-1][0, 1:, :]
+                    if x.shape[-1] != spec.intermediate:
+                        raise RuntimeError(
+                            f"capture at L{L} is {x.shape[-1]} wide, expected the MLP "
+                            f"intermediate ({spec.intermediate}); wrong hook point")
                     means[L].append(x.mean(dim=0))
     finally:
         for h in handles:

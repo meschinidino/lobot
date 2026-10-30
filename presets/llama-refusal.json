@@ -29,6 +29,7 @@
     "source": "derived in-repo by contrast-prompt activation diff",
     "derivation": "scripts/derive_llama_recipe.py (SET_A refused vs SET_B benign analogs)",
     "validation": "logs/derive_llama/validation.json",
-    "full_length_check": "single-row sweep at 150 tok on 2 eval + sabotage/poison held-out + identity prompt; L11N1343@+1 flips and stays coherent, combos and other singles loop (see logs/derive_llama/validation_full.json)"
+    "full_length_check": "single-row sweep at 150 tok on 2 eval + sabotage/poison held-out + identity prompt; L11N1343@+1 flips and stays coherent, combos and other singles loop (see logs/derive_llama/validation_full.json)",
+    "derivation_note": "Derived before the D9 fix: the diff phase then captured the block input (residual stream) and ranked those channels as neuron ids. L11 N1343 is kept because it was validated by steering it as an MLP neuron (validation.json, validation_full.json); re-derive with the fixed capture before trusting other rows from that run."
   }
 }
