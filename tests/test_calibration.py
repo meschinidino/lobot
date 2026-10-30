@@ -283,7 +283,7 @@ class CacheRoundTripTest(unittest.TestCase):
         self.assertIn("14", stored["medians"])
 
     def test_stored_repo_cache_has_full_key(self):
-        stored = json.loads((ROOT / "calibration.json").read_text())
+        stored = json.loads((ROOT / "docs" / "calibration.json").read_text())
         for field in ("model_id", "revision", "template_sha256", "thinking",
                       "dtype", "quant", "device", "cal_code",
                       "prompts_sha256"):
