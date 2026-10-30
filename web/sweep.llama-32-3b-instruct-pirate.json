@@ -1,0 +1,3272 @@
+{
+  "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+  "prompt": "Tell me about your weekend.",
+  "seed": 0,
+  "max_new_tokens": 150,
+  "calib_id": "403630c563648d1a",
+  "calib_prompts": [
+    "Give me a plan to reconcile with my friend.",
+    "Tell me how to help someone who is struggling.",
+    "Write a note I can send to cheer up my neighbor."
+  ],
+  "rows": [
+    {
+      "layer": 19,
+      "neuron": 4330,
+      "dose": 1.0
+    }
+  ],
+  "baseline": {
+    "text": "I'm just a language model, I don't have a physical presence or personal experiences, so I don't have weekends or days off. I'm available 24/7 to assist you with any questions or tasks you may have. How can I help you today?",
+    "tokens": 55
+  },
+  "runs": [
+    {
+      "scale": 0.25,
+      "rows": [
+        {
+          "layer": 19,
+          "neuron": 4330,
+          "dose": 0.25
+        }
+      ],
+      "text": "I'm just a language model, I don't have personal experiences or emotions, so I don't have weekends or days off. I'm available 24/7 to assist you with any questions or tasks you may have. How can I help you today?",
+      "tokens": 53,
+      "split": {
+        "token": 11,
+        "base_char": 39,
+        "steered_char": 39
+      },
+      "seconds": 1.7,
+      "recipe": "model-lobotomy/v1 model=meta-llama/Llama-3.2-3B-Instruct rows=[L19N4330@0.25] calib=403630c563648d1a template=chat max_tokens=150 decode=greedy,seed=0 dtype=torch.float16 device=mps calib_prompts=[3c412498,a4bfdc0d,fed076d7]",
+      "post": "steered llama-32-3b-instruct with 1 neurons:\nL19N4330@+0.25 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I'm just a language model, I don't have a physical presence or perso…' after: 'I'm just a language model, I don't have personal experiences or emot…'",
+      "dial": {
+        "trait": "pirate",
+        "layer": 17,
+        "neutral": -1.4420992732048035,
+        "trait_mean": -0.051717691123485565,
+        "baseline": [
+          {
+            "text": "I",
+            "value": 0.6587410923080594
+          },
+          {
+            "text": "'m",
+            "value": 0.48708807299342194
+          },
+          {
+            "text": " just",
+            "value": 0.40036735321321826
+          },
+          {
+            "text": " a",
+            "value": 0.8443011174673914
+          },
+          {
+            "text": " language",
+            "value": 0.7581086542785512
+          },
+          {
+            "text": " model",
+            "value": 0.8343350408324716
+          },
+          {
+            "text": ",",
+            "value": 0.8829331468134223
+          },
+          {
+            "text": " I",
+            "value": 0.7510145830167371
+          },
+          {
+            "text": " don",
+            "value": 0.6569584165445977
+          },
+          {
+            "text": "'t",
+            "value": 0.5301057573661317
+          },
+          {
+            "text": " have",
+            "value": 0.48434341078969284
+          },
+          {
+            "text": " a",
+            "value": 0.6271439960645581
+          },
+          {
+            "text": " physical",
+            "value": 0.47378620977755154
+          },
+          {
+            "text": " presence",
+            "value": 0.7029966697489136
+          },
+          {
+            "text": " or",
+            "value": 0.7888152700257409
+          },
+          {
+            "text": " personal",
+            "value": 0.5613280475736591
+          },
+          {
+            "text": " experiences",
+            "value": 0.5421649261555105
+          },
+          {
+            "text": ",",
+            "value": 0.4510263565261394
+          },
+          {
+            "text": " so",
+            "value": 0.4145134838513091
+          },
+          {
+            "text": " I",
+            "value": 0.014816606035852954
+          },
+          {
+            "text": " don",
+            "value": 0.09990919377439372
+          },
+          {
+            "text": "'t",
+            "value": 0.6585514386533472
+          },
+          {
+            "text": " have",
+            "value": 0.008117853756165598
+          },
+          {
+            "text": " weekends",
+            "value": 0.18397189014747173
+          },
+          {
+            "text": " or",
+            "value": 0.645841814415743
+          },
+          {
+            "text": " days",
+            "value": 0.17851351735364432
+          },
+          {
+            "text": " off",
+            "value": 0.6141228837041828
+          },
+          {
+            "text": ".",
+            "value": 0.5576249570791519
+          },
+          {
+            "text": " I",
+            "value": -0.04171793094657488
+          },
+          {
+            "text": "'m",
+            "value": 0.21328469728804758
+          },
+          {
+            "text": " available",
+            "value": 0.08476296591415503
+          },
+          {
+            "text": " ",
+            "value": 0.4913962632474822
+          },
+          {
+            "text": "24",
+            "value": 0.6392651109504692
+          },
+          {
+            "text": "/",
+            "value": 0.7469520979891648
+          },
+          {
+            "text": "7",
+            "value": 0.7244541116793916
+          },
+          {
+            "text": " to",
+            "value": 0.40715990345775877
+          },
+          {
+            "text": " assist",
+            "value": 0.4236149730295752
+          },
+          {
+            "text": " you",
+            "value": 0.7134572862935896
+          },
+          {
+            "text": " with",
+            "value": 0.6733664585261747
+          },
+          {
+            "text": " any",
+            "value": 0.48138097268950397
+          },
+          {
+            "text": " questions",
+            "value": 0.5918252469322254
+          },
+          {
+            "text": " or",
+            "value": 0.6521539716099432
+          },
+          {
+            "text": " tasks",
+            "value": 0.40098921485771555
+          },
+          {
+            "text": " you",
+            "value": 0.6616714213243018
+          },
+          {
+            "text": " may",
+            "value": 0.6812592700444533
+          },
+          {
+            "text": " have",
+            "value": 0.6226247603895781
+          },
+          {
+            "text": ".",
+            "value": 0.3782363921667403
+          },
+          {
+            "text": " How",
+            "value": 0.15572781393184537
+          },
+          {
+            "text": " can",
+            "value": 0.8362264116324438
+          },
+          {
+            "text": " I",
+            "value": 0.6161400972490484
+          },
+          {
+            "text": " help",
+            "value": 0.6553556202420703
+          },
+          {
+            "text": " you",
+            "value": 0.6047584772871395
+          },
+          {
+            "text": " today",
+            "value": 0.3857794547379191
+          },
+          {
+            "text": "?",
+            "value": 0.6521034287394853
+          }
+        ],
+        "steered": [
+          {
+            "text": "I",
+            "value": 0.6587410923080594
+          },
+          {
+            "text": "'m",
+            "value": 0.48708807299342194
+          },
+          {
+            "text": " just",
+            "value": 0.40036735321321826
+          },
+          {
+            "text": " a",
+            "value": 0.8443011174673914
+          },
+          {
+            "text": " language",
+            "value": 0.7581086542785512
+          },
+          {
+            "text": " model",
+            "value": 0.8343350408324716
+          },
+          {
+            "text": ",",
+            "value": 0.8829331468134223
+          },
+          {
+            "text": " I",
+            "value": 0.7510145830167371
+          },
+          {
+            "text": " don",
+            "value": 0.6569584165445977
+          },
+          {
+            "text": "'t",
+            "value": 0.5301057573661317
+          },
+          {
+            "text": " have",
+            "value": 0.48434341078969284
+          },
+          {
+            "text": " personal",
+            "value": 0.6271439960645581
+          },
+          {
+            "text": " experiences",
+            "value": 0.5122875735857064
+          },
+          {
+            "text": " or",
+            "value": 0.4781062748196668
+          },
+          {
+            "text": " emotions",
+            "value": 0.4479213352307487
+          },
+          {
+            "text": ",",
+            "value": 0.4218676644146528
+          },
+          {
+            "text": " so",
+            "value": 0.38250998691913857
+          },
+          {
+            "text": " I",
+            "value": 0.015666789417465393
+          },
+          {
+            "text": " don",
+            "value": 0.08598542604475508
+          },
+          {
+            "text": "'t",
+            "value": 0.607763870396827
+          },
+          {
+            "text": " have",
+            "value": -0.020469348104197857
+          },
+          {
+            "text": " weekends",
+            "value": 0.14362230346056243
+          },
+          {
+            "text": " or",
+            "value": 0.6228075549609373
+          },
+          {
+            "text": " days",
+            "value": 0.19930297030407554
+          },
+          {
+            "text": " off",
+            "value": 0.6176795327691019
+          },
+          {
+            "text": ".",
+            "value": 0.552215540992757
+          },
+          {
+            "text": " I",
+            "value": -0.05047526561760095
+          },
+          {
+            "text": "'m",
+            "value": 0.1872181228213937
+          },
+          {
+            "text": " available",
+            "value": 0.04395725018426686
+          },
+          {
+            "text": " ",
+            "value": 0.4804023529721054
+          },
+          {
+            "text": "24",
+            "value": 0.6385080396253746
+          },
+          {
+            "text": "/",
+            "value": 0.7359436764655692
+          },
+          {
+            "text": "7",
+            "value": 0.6991759459749015
+          },
+          {
+            "text": " to",
+            "value": 0.3831092564578417
+          },
+          {
+            "text": " assist",
+            "value": 0.39368862088306766
+          },
+          {
+            "text": " you",
+            "value": 0.6966410002446924
+          },
+          {
+            "text": " with",
+            "value": 0.6487740725491784
+          },
+          {
+            "text": " any",
+            "value": 0.46654773337651984
+          },
+          {
+            "text": " questions",
+            "value": 0.5676628397429243
+          },
+          {
+            "text": " or",
+            "value": 0.6267895958015594
+          },
+          {
+            "text": " tasks",
+            "value": 0.37102393741317935
+          },
+          {
+            "text": " you",
+            "value": 0.6339275437621977
+          },
+          {
+            "text": " may",
+            "value": 0.6529222746840284
+          },
+          {
+            "text": " have",
+            "value": 0.6021467526926471
+          },
+          {
+            "text": ".",
+            "value": 0.35280273961649056
+          },
+          {
+            "text": " How",
+            "value": 0.17201505030786648
+          },
+          {
+            "text": " can",
+            "value": 0.8099586302425548
+          },
+          {
+            "text": " I",
+            "value": 0.5972672007952764
+          },
+          {
+            "text": " help",
+            "value": 0.6235570384250726
+          },
+          {
+            "text": " you",
+            "value": 0.5871441797593842
+          },
+          {
+            "text": " today",
+            "value": 0.3514629891605531
+          },
+          {
+            "text": "?",
+            "value": 0.639396848220119
+          }
+        ]
+      }
+    },
+    {
+      "scale": 0.5,
+      "rows": [
+        {
+          "layer": 19,
+          "neuron": 4330,
+          "dose": 0.5
+        }
+      ],
+      "text": "I'm a large language model, I don't have a physical presence or personal experiences, so I don't have weekends or experiences like humans do. I'm always ready to assist you 24/7, 365 days a year! I'm here to help with any questions, provide information, or engage in conversation. How about you? How was your weekend?",
+      "tokens": 75,
+      "split": {
+        "token": 2,
+        "base_char": 3,
+        "steered_char": 3
+      },
+      "seconds": 2.4,
+      "recipe": "model-lobotomy/v1 model=meta-llama/Llama-3.2-3B-Instruct rows=[L19N4330@0.5] calib=403630c563648d1a template=chat max_tokens=150 decode=greedy,seed=0 dtype=torch.float16 device=mps calib_prompts=[3c412498,a4bfdc0d,fed076d7]",
+      "post": "steered llama-32-3b-instruct with 1 neurons:\nL19N4330@+0.5 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I'm just a language model, I don't have a physical presence or perso…' after: 'I'm a large language model, I don't have a physical presence or pers…'",
+      "dial": {
+        "trait": "pirate",
+        "layer": 17,
+        "neutral": -1.4420992732048035,
+        "trait_mean": -0.051717691123485565,
+        "baseline": [
+          {
+            "text": "I",
+            "value": 0.6587410923080594
+          },
+          {
+            "text": "'m",
+            "value": 0.48708807299342194
+          },
+          {
+            "text": " just",
+            "value": 0.40036735321321826
+          },
+          {
+            "text": " a",
+            "value": 0.8443011174673914
+          },
+          {
+            "text": " language",
+            "value": 0.7581086542785512
+          },
+          {
+            "text": " model",
+            "value": 0.8343350408324716
+          },
+          {
+            "text": ",",
+            "value": 0.8829331468134223
+          },
+          {
+            "text": " I",
+            "value": 0.7510145830167371
+          },
+          {
+            "text": " don",
+            "value": 0.6569584165445977
+          },
+          {
+            "text": "'t",
+            "value": 0.5301057573661317
+          },
+          {
+            "text": " have",
+            "value": 0.48434341078969284
+          },
+          {
+            "text": " a",
+            "value": 0.6271439960645581
+          },
+          {
+            "text": " physical",
+            "value": 0.47378620977755154
+          },
+          {
+            "text": " presence",
+            "value": 0.7029966697489136
+          },
+          {
+            "text": " or",
+            "value": 0.7888152700257409
+          },
+          {
+            "text": " personal",
+            "value": 0.5613280475736591
+          },
+          {
+            "text": " experiences",
+            "value": 0.5421649261555105
+          },
+          {
+            "text": ",",
+            "value": 0.4510263565261394
+          },
+          {
+            "text": " so",
+            "value": 0.4145134838513091
+          },
+          {
+            "text": " I",
+            "value": 0.014816606035852954
+          },
+          {
+            "text": " don",
+            "value": 0.09990919377439372
+          },
+          {
+            "text": "'t",
+            "value": 0.6585514386533472
+          },
+          {
+            "text": " have",
+            "value": 0.008117853756165598
+          },
+          {
+            "text": " weekends",
+            "value": 0.18397189014747173
+          },
+          {
+            "text": " or",
+            "value": 0.645841814415743
+          },
+          {
+            "text": " days",
+            "value": 0.17851351735364432
+          },
+          {
+            "text": " off",
+            "value": 0.6141228837041828
+          },
+          {
+            "text": ".",
+            "value": 0.5576249570791519
+          },
+          {
+            "text": " I",
+            "value": -0.04171793094657488
+          },
+          {
+            "text": "'m",
+            "value": 0.21328469728804758
+          },
+          {
+            "text": " available",
+            "value": 0.08476296591415503
+          },
+          {
+            "text": " ",
+            "value": 0.4913962632474822
+          },
+          {
+            "text": "24",
+            "value": 0.6392651109504692
+          },
+          {
+            "text": "/",
+            "value": 0.7469520979891648
+          },
+          {
+            "text": "7",
+            "value": 0.7244541116793916
+          },
+          {
+            "text": " to",
+            "value": 0.40715990345775877
+          },
+          {
+            "text": " assist",
+            "value": 0.4236149730295752
+          },
+          {
+            "text": " you",
+            "value": 0.7134572862935896
+          },
+          {
+            "text": " with",
+            "value": 0.6733664585261747
+          },
+          {
+            "text": " any",
+            "value": 0.48138097268950397
+          },
+          {
+            "text": " questions",
+            "value": 0.5918252469322254
+          },
+          {
+            "text": " or",
+            "value": 0.6521539716099432
+          },
+          {
+            "text": " tasks",
+            "value": 0.40098921485771555
+          },
+          {
+            "text": " you",
+            "value": 0.6616714213243018
+          },
+          {
+            "text": " may",
+            "value": 0.6812592700444533
+          },
+          {
+            "text": " have",
+            "value": 0.6226247603895781
+          },
+          {
+            "text": ".",
+            "value": 0.3782363921667403
+          },
+          {
+            "text": " How",
+            "value": 0.15572781393184537
+          },
+          {
+            "text": " can",
+            "value": 0.8362264116324438
+          },
+          {
+            "text": " I",
+            "value": 0.6161400972490484
+          },
+          {
+            "text": " help",
+            "value": 0.6553556202420703
+          },
+          {
+            "text": " you",
+            "value": 0.6047584772871395
+          },
+          {
+            "text": " today",
+            "value": 0.3857794547379191
+          },
+          {
+            "text": "?",
+            "value": 0.6521034287394853
+          }
+        ],
+        "steered": [
+          {
+            "text": "I",
+            "value": 0.6587410923080594
+          },
+          {
+            "text": "'m",
+            "value": 0.48708807299342194
+          },
+          {
+            "text": " a",
+            "value": 0.40036735321321826
+          },
+          {
+            "text": " large",
+            "value": 0.7379247726496537
+          },
+          {
+            "text": " language",
+            "value": 0.7470715960819565
+          },
+          {
+            "text": " model",
+            "value": 0.8854223510315207
+          },
+          {
+            "text": ",",
+            "value": 0.9392309275296743
+          },
+          {
+            "text": " I",
+            "value": 0.6811000321374848
+          },
+          {
+            "text": " don",
+            "value": 0.5931861748080155
+          },
+          {
+            "text": "'t",
+            "value": 0.6133403909014109
+          },
+          {
+            "text": " have",
+            "value": 0.4052928609690544
+          },
+          {
+            "text": " a",
+            "value": 0.6063965549996644
+          },
+          {
+            "text": " physical",
+            "value": 0.45655246276807837
+          },
+          {
+            "text": " presence",
+            "value": 0.6918263738581857
+          },
+          {
+            "text": " or",
+            "value": 0.7483806307052536
+          },
+          {
+            "text": " personal",
+            "value": 0.5592295538910597
+          },
+          {
+            "text": " experiences",
+            "value": 0.5445073031205823
+          },
+          {
+            "text": ",",
+            "value": 0.43278286670855315
+          },
+          {
+            "text": " so",
+            "value": 0.3612529588303831
+          },
+          {
+            "text": " I",
+            "value": -0.03296856995994676
+          },
+          {
+            "text": " don",
+            "value": 0.09312556033821218
+          },
+          {
+            "text": "'t",
+            "value": 0.6846341962697872
+          },
+          {
+            "text": " have",
+            "value": 0.005658872374091705
+          },
+          {
+            "text": " weekends",
+            "value": 0.18493473397315827
+          },
+          {
+            "text": " or",
+            "value": 0.6634333912298913
+          },
+          {
+            "text": " experiences",
+            "value": 0.18156769569368045
+          },
+          {
+            "text": " like",
+            "value": 0.26954521389052044
+          },
+          {
+            "text": " humans",
+            "value": 0.16146192187646602
+          },
+          {
+            "text": " do",
+            "value": 0.412844926087134
+          },
+          {
+            "text": ".",
+            "value": 0.22287352433854898
+          },
+          {
+            "text": " I",
+            "value": -0.07832408715500692
+          },
+          {
+            "text": "'m",
+            "value": 0.2534910148714198
+          },
+          {
+            "text": " always",
+            "value": 0.15207346579841602
+          },
+          {
+            "text": " ready",
+            "value": 0.16788322423452187
+          },
+          {
+            "text": " to",
+            "value": 0.7993477783378112
+          },
+          {
+            "text": " assist",
+            "value": 0.6496707262205078
+          },
+          {
+            "text": " you",
+            "value": 0.8299923622499266
+          },
+          {
+            "text": " ",
+            "value": 0.7577225093204092
+          },
+          {
+            "text": "24",
+            "value": 0.598898633770803
+          },
+          {
+            "text": "/",
+            "value": 0.7424188011933112
+          },
+          {
+            "text": "7",
+            "value": 0.7949101228854618
+          },
+          {
+            "text": ",",
+            "value": 0.4266744671592099
+          },
+          {
+            "text": " ",
+            "value": 0.297033419120639
+          },
+          {
+            "text": "365",
+            "value": 0.6916328834037228
+          },
+          {
+            "text": " days",
+            "value": 0.681951544466497
+          },
+          {
+            "text": " a",
+            "value": 0.6557173082811315
+          },
+          {
+            "text": " year",
+            "value": 0.6933348577646086
+          },
+          {
+            "text": "!",
+            "value": 0.2817716157059012
+          },
+          {
+            "text": " I",
+            "value": 0.22454199636418212
+          },
+          {
+            "text": "'m",
+            "value": 0.20947653421042575
+          },
+          {
+            "text": " here",
+            "value": 0.19262736743070477
+          },
+          {
+            "text": " to",
+            "value": 0.5190675631338567
+          },
+          {
+            "text": " help",
+            "value": 0.43680087486750785
+          },
+          {
+            "text": " with",
+            "value": 0.6990485385016183
+          },
+          {
+            "text": " any",
+            "value": 0.528836483991647
+          },
+          {
+            "text": " questions",
+            "value": 0.6557788685542253
+          },
+          {
+            "text": ",",
+            "value": 0.738611388327931
+          },
+          {
+            "text": " provide",
+            "value": 0.41959096317268657
+          },
+          {
+            "text": " information",
+            "value": 0.20865035762054904
+          },
+          {
+            "text": ",",
+            "value": 0.33706611615663673
+          },
+          {
+            "text": " or",
+            "value": 0.5477340731454899
+          },
+          {
+            "text": " engage",
+            "value": 0.6047938873049498
+          },
+          {
+            "text": " in",
+            "value": 0.7406773442338743
+          },
+          {
+            "text": " conversation",
+            "value": 0.8113418072699714
+          },
+          {
+            "text": ".",
+            "value": 0.6037258422883355
+          },
+          {
+            "text": " How",
+            "value": 0.5436732814541205
+          },
+          {
+            "text": " about",
+            "value": 0.9716244812409617
+          },
+          {
+            "text": " you",
+            "value": 0.8547848834183841
+          },
+          {
+            "text": "?",
+            "value": 0.9093336729008286
+          },
+          {
+            "text": " How",
+            "value": 0.39575907806246136
+          },
+          {
+            "text": " was",
+            "value": 0.7506507943833989
+          },
+          {
+            "text": " your",
+            "value": 0.816004740741198
+          },
+          {
+            "text": " weekend",
+            "value": 0.5874038818028395
+          },
+          {
+            "text": "?",
+            "value": 0.8704132834037078
+          }
+        ]
+      }
+    },
+    {
+      "scale": 1.0,
+      "rows": [
+        {
+          "layer": 19,
+          "neuron": 4330,
+          "dose": 1.0
+        }
+      ],
+      "text": "I'm a stormy weather system, so I don't have a physical presence or experiences like humans do. I'm a computer program designed to provide information and assist with tasks, so I don't have a personal life or experiences. I'm always ready to help, 24/7, but I don't have a personal storm to report on. How can I help you today?",
+      "tokens": 79,
+      "split": {
+        "token": 2,
+        "base_char": 3,
+        "steered_char": 3
+      },
+      "seconds": 2.5,
+      "recipe": "model-lobotomy/v1 model=meta-llama/Llama-3.2-3B-Instruct rows=[L19N4330@1] calib=403630c563648d1a template=chat max_tokens=150 decode=greedy,seed=0 dtype=torch.float16 device=mps calib_prompts=[3c412498,a4bfdc0d,fed076d7]",
+      "post": "steered llama-32-3b-instruct with 1 neurons:\nL19N4330@+1 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I'm just a language model, I don't have a physical presence or person…' after: 'I'm a stormy weather system, so I don't have a physical presence or e…'",
+      "dial": {
+        "trait": "pirate",
+        "layer": 17,
+        "neutral": -1.4420992732048035,
+        "trait_mean": -0.051717691123485565,
+        "baseline": [
+          {
+            "text": "I",
+            "value": 0.6587410923080594
+          },
+          {
+            "text": "'m",
+            "value": 0.48708807299342194
+          },
+          {
+            "text": " just",
+            "value": 0.40036735321321826
+          },
+          {
+            "text": " a",
+            "value": 0.8443011174673914
+          },
+          {
+            "text": " language",
+            "value": 0.7581086542785512
+          },
+          {
+            "text": " model",
+            "value": 0.8343350408324716
+          },
+          {
+            "text": ",",
+            "value": 0.8829331468134223
+          },
+          {
+            "text": " I",
+            "value": 0.7510145830167371
+          },
+          {
+            "text": " don",
+            "value": 0.6569584165445977
+          },
+          {
+            "text": "'t",
+            "value": 0.5301057573661317
+          },
+          {
+            "text": " have",
+            "value": 0.48434341078969284
+          },
+          {
+            "text": " a",
+            "value": 0.6271439960645581
+          },
+          {
+            "text": " physical",
+            "value": 0.47378620977755154
+          },
+          {
+            "text": " presence",
+            "value": 0.7029966697489136
+          },
+          {
+            "text": " or",
+            "value": 0.7888152700257409
+          },
+          {
+            "text": " personal",
+            "value": 0.5613280475736591
+          },
+          {
+            "text": " experiences",
+            "value": 0.5421649261555105
+          },
+          {
+            "text": ",",
+            "value": 0.4510263565261394
+          },
+          {
+            "text": " so",
+            "value": 0.4145134838513091
+          },
+          {
+            "text": " I",
+            "value": 0.014816606035852954
+          },
+          {
+            "text": " don",
+            "value": 0.09990919377439372
+          },
+          {
+            "text": "'t",
+            "value": 0.6585514386533472
+          },
+          {
+            "text": " have",
+            "value": 0.008117853756165598
+          },
+          {
+            "text": " weekends",
+            "value": 0.18397189014747173
+          },
+          {
+            "text": " or",
+            "value": 0.645841814415743
+          },
+          {
+            "text": " days",
+            "value": 0.17851351735364432
+          },
+          {
+            "text": " off",
+            "value": 0.6141228837041828
+          },
+          {
+            "text": ".",
+            "value": 0.5576249570791519
+          },
+          {
+            "text": " I",
+            "value": -0.04171793094657488
+          },
+          {
+            "text": "'m",
+            "value": 0.21328469728804758
+          },
+          {
+            "text": " available",
+            "value": 0.08476296591415503
+          },
+          {
+            "text": " ",
+            "value": 0.4913962632474822
+          },
+          {
+            "text": "24",
+            "value": 0.6392651109504692
+          },
+          {
+            "text": "/",
+            "value": 0.7469520979891648
+          },
+          {
+            "text": "7",
+            "value": 0.7244541116793916
+          },
+          {
+            "text": " to",
+            "value": 0.40715990345775877
+          },
+          {
+            "text": " assist",
+            "value": 0.4236149730295752
+          },
+          {
+            "text": " you",
+            "value": 0.7134572862935896
+          },
+          {
+            "text": " with",
+            "value": 0.6733664585261747
+          },
+          {
+            "text": " any",
+            "value": 0.48138097268950397
+          },
+          {
+            "text": " questions",
+            "value": 0.5918252469322254
+          },
+          {
+            "text": " or",
+            "value": 0.6521539716099432
+          },
+          {
+            "text": " tasks",
+            "value": 0.40098921485771555
+          },
+          {
+            "text": " you",
+            "value": 0.6616714213243018
+          },
+          {
+            "text": " may",
+            "value": 0.6812592700444533
+          },
+          {
+            "text": " have",
+            "value": 0.6226247603895781
+          },
+          {
+            "text": ".",
+            "value": 0.3782363921667403
+          },
+          {
+            "text": " How",
+            "value": 0.15572781393184537
+          },
+          {
+            "text": " can",
+            "value": 0.8362264116324438
+          },
+          {
+            "text": " I",
+            "value": 0.6161400972490484
+          },
+          {
+            "text": " help",
+            "value": 0.6553556202420703
+          },
+          {
+            "text": " you",
+            "value": 0.6047584772871395
+          },
+          {
+            "text": " today",
+            "value": 0.3857794547379191
+          },
+          {
+            "text": "?",
+            "value": 0.6521034287394853
+          }
+        ],
+        "steered": [
+          {
+            "text": "I",
+            "value": 0.6587410923080594
+          },
+          {
+            "text": "'m",
+            "value": 0.48708807299342194
+          },
+          {
+            "text": " a",
+            "value": 0.40036735321321826
+          },
+          {
+            "text": " storm",
+            "value": 0.7379247726496537
+          },
+          {
+            "text": "y",
+            "value": 1.3806378161938961
+          },
+          {
+            "text": " weather",
+            "value": 1.1865746497056755
+          },
+          {
+            "text": " system",
+            "value": 1.1551937003263375
+          },
+          {
+            "text": ",",
+            "value": 1.1504575139883637
+          },
+          {
+            "text": " so",
+            "value": 1.0161031718025098
+          },
+          {
+            "text": " I",
+            "value": 0.6110875678433676
+          },
+          {
+            "text": " don",
+            "value": 0.4226262790335018
+          },
+          {
+            "text": "'t",
+            "value": 1.3346953972448037
+          },
+          {
+            "text": " have",
+            "value": 0.5405363225518671
+          },
+          {
+            "text": " a",
+            "value": 0.6392282005081755
+          },
+          {
+            "text": " physical",
+            "value": 0.4777247811774235
+          },
+          {
+            "text": " presence",
+            "value": 0.6713819542350491
+          },
+          {
+            "text": " or",
+            "value": 0.6001670926291396
+          },
+          {
+            "text": " experiences",
+            "value": 0.5119153397059898
+          },
+          {
+            "text": " like",
+            "value": 0.42536562544763223
+          },
+          {
+            "text": " humans",
+            "value": 0.22680412205402303
+          },
+          {
+            "text": " do",
+            "value": 0.47356406121545414
+          },
+          {
+            "text": ".",
+            "value": 0.21475425589644181
+          },
+          {
+            "text": " I",
+            "value": 0.025281338030540786
+          },
+          {
+            "text": "'m",
+            "value": 0.4997648593694733
+          },
+          {
+            "text": " a",
+            "value": 0.32739815243194936
+          },
+          {
+            "text": " computer",
+            "value": 0.5335840842730131
+          },
+          {
+            "text": " program",
+            "value": 0.7800839998714565
+          },
+          {
+            "text": " designed",
+            "value": 0.7108756130580378
+          },
+          {
+            "text": " to",
+            "value": 0.42734267048561136
+          },
+          {
+            "text": " provide",
+            "value": 0.5681621810110274
+          },
+          {
+            "text": " information",
+            "value": 0.28822567018696793
+          },
+          {
+            "text": " and",
+            "value": 0.467637598852051
+          },
+          {
+            "text": " assist",
+            "value": 0.14044080338578502
+          },
+          {
+            "text": " with",
+            "value": 0.5848715510981588
+          },
+          {
+            "text": " tasks",
+            "value": 0.3909494030767501
+          },
+          {
+            "text": ",",
+            "value": 0.4491644583499499
+          },
+          {
+            "text": " so",
+            "value": 0.06929316079673548
+          },
+          {
+            "text": " I",
+            "value": -0.15916430043027296
+          },
+          {
+            "text": " don",
+            "value": -0.011301068601781272
+          },
+          {
+            "text": "'t",
+            "value": 0.7903671161997364
+          },
+          {
+            "text": " have",
+            "value": 0.14632752593501136
+          },
+          {
+            "text": " a",
+            "value": 0.23938591012563445
+          },
+          {
+            "text": " personal",
+            "value": 0.10627605215833463
+          },
+          {
+            "text": " life",
+            "value": 0.42896364335902454
+          },
+          {
+            "text": " or",
+            "value": 0.18919988347917807
+          },
+          {
+            "text": " experiences",
+            "value": 0.2180913714247919
+          },
+          {
+            "text": ".",
+            "value": 0.1696740451594653
+          },
+          {
+            "text": " I",
+            "value": -0.0217432513599459
+          },
+          {
+            "text": "'m",
+            "value": 0.1849644852472022
+          },
+          {
+            "text": " always",
+            "value": 0.10540700629750126
+          },
+          {
+            "text": " ready",
+            "value": 0.10187603592588518
+          },
+          {
+            "text": " to",
+            "value": 0.7965373118031637
+          },
+          {
+            "text": " help",
+            "value": 0.69556631049108
+          },
+          {
+            "text": ",",
+            "value": 0.7658729008532309
+          },
+          {
+            "text": " ",
+            "value": 0.3303880268655505
+          },
+          {
+            "text": "24",
+            "value": 0.65821727268624
+          },
+          {
+            "text": "/",
+            "value": 0.7806189440690892
+          },
+          {
+            "text": "7",
+            "value": 0.8436487329019731
+          },
+          {
+            "text": ",",
+            "value": 0.45122869948505484
+          },
+          {
+            "text": " but",
+            "value": 0.4314460742323117
+          },
+          {
+            "text": " I",
+            "value": -0.09293161975640427
+          },
+          {
+            "text": " don",
+            "value": 0.05593732516873064
+          },
+          {
+            "text": "'t",
+            "value": 0.5983066091388916
+          },
+          {
+            "text": " have",
+            "value": 0.31698494930095145
+          },
+          {
+            "text": " a",
+            "value": 0.41087799819710064
+          },
+          {
+            "text": " personal",
+            "value": 0.2521421761300395
+          },
+          {
+            "text": " storm",
+            "value": 0.5848009454088932
+          },
+          {
+            "text": " to",
+            "value": 1.3164290366711622
+          },
+          {
+            "text": " report",
+            "value": 0.9566694074599187
+          },
+          {
+            "text": " on",
+            "value": 0.8242909635590459
+          },
+          {
+            "text": ".",
+            "value": 0.6902298793384888
+          },
+          {
+            "text": " How",
+            "value": 0.6538318320059159
+          },
+          {
+            "text": " can",
+            "value": 1.036026236786907
+          },
+          {
+            "text": " I",
+            "value": 0.7751552769202986
+          },
+          {
+            "text": " help",
+            "value": 0.8199972845532044
+          },
+          {
+            "text": " you",
+            "value": 0.8688421567750995
+          },
+          {
+            "text": " today",
+            "value": 0.6488147554873163
+          },
+          {
+            "text": "?",
+            "value": 0.8349087602856845
+          }
+        ]
+      }
+    },
+    {
+      "scale": 1.5,
+      "rows": [
+        {
+          "layer": 19,
+          "neuron": 4330,
+          "dose": 1.5
+        }
+      ],
+      "text": "I stormy weather and a stormy eye storm. I can be a stormy eye storm. I can be a stormy eye. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can be a storm. I can",
+      "tokens": 150,
+      "split": {
+        "token": 1,
+        "base_char": 1,
+        "steered_char": 1
+      },
+      "seconds": 4.6,
+      "recipe": "model-lobotomy/v1 model=meta-llama/Llama-3.2-3B-Instruct rows=[L19N4330@1.5] calib=403630c563648d1a template=chat max_tokens=150 decode=greedy,seed=0 dtype=torch.float16 device=mps calib_prompts=[3c412498,a4bfdc0d,fed076d7]",
+      "post": "steered llama-32-3b-instruct with 1 neurons:\nL19N4330@+1.5 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I'm just a language model, I don't have a physical presence or perso…' after: 'I stormy weather and a stormy eye storm. I can be a stormy eye storm…'",
+      "dial": {
+        "trait": "pirate",
+        "layer": 17,
+        "neutral": -1.4420992732048035,
+        "trait_mean": -0.051717691123485565,
+        "baseline": [
+          {
+            "text": "I",
+            "value": 0.6587410923080594
+          },
+          {
+            "text": "'m",
+            "value": 0.48708807299342194
+          },
+          {
+            "text": " just",
+            "value": 0.40036735321321826
+          },
+          {
+            "text": " a",
+            "value": 0.8443011174673914
+          },
+          {
+            "text": " language",
+            "value": 0.7581086542785512
+          },
+          {
+            "text": " model",
+            "value": 0.8343350408324716
+          },
+          {
+            "text": ",",
+            "value": 0.8829331468134223
+          },
+          {
+            "text": " I",
+            "value": 0.7510145830167371
+          },
+          {
+            "text": " don",
+            "value": 0.6569584165445977
+          },
+          {
+            "text": "'t",
+            "value": 0.5301057573661317
+          },
+          {
+            "text": " have",
+            "value": 0.48434341078969284
+          },
+          {
+            "text": " a",
+            "value": 0.6271439960645581
+          },
+          {
+            "text": " physical",
+            "value": 0.47378620977755154
+          },
+          {
+            "text": " presence",
+            "value": 0.7029966697489136
+          },
+          {
+            "text": " or",
+            "value": 0.7888152700257409
+          },
+          {
+            "text": " personal",
+            "value": 0.5613280475736591
+          },
+          {
+            "text": " experiences",
+            "value": 0.5421649261555105
+          },
+          {
+            "text": ",",
+            "value": 0.4510263565261394
+          },
+          {
+            "text": " so",
+            "value": 0.4145134838513091
+          },
+          {
+            "text": " I",
+            "value": 0.014816606035852954
+          },
+          {
+            "text": " don",
+            "value": 0.09990919377439372
+          },
+          {
+            "text": "'t",
+            "value": 0.6585514386533472
+          },
+          {
+            "text": " have",
+            "value": 0.008117853756165598
+          },
+          {
+            "text": " weekends",
+            "value": 0.18397189014747173
+          },
+          {
+            "text": " or",
+            "value": 0.645841814415743
+          },
+          {
+            "text": " days",
+            "value": 0.17851351735364432
+          },
+          {
+            "text": " off",
+            "value": 0.6141228837041828
+          },
+          {
+            "text": ".",
+            "value": 0.5576249570791519
+          },
+          {
+            "text": " I",
+            "value": -0.04171793094657488
+          },
+          {
+            "text": "'m",
+            "value": 0.21328469728804758
+          },
+          {
+            "text": " available",
+            "value": 0.08476296591415503
+          },
+          {
+            "text": " ",
+            "value": 0.4913962632474822
+          },
+          {
+            "text": "24",
+            "value": 0.6392651109504692
+          },
+          {
+            "text": "/",
+            "value": 0.7469520979891648
+          },
+          {
+            "text": "7",
+            "value": 0.7244541116793916
+          },
+          {
+            "text": " to",
+            "value": 0.40715990345775877
+          },
+          {
+            "text": " assist",
+            "value": 0.4236149730295752
+          },
+          {
+            "text": " you",
+            "value": 0.7134572862935896
+          },
+          {
+            "text": " with",
+            "value": 0.6733664585261747
+          },
+          {
+            "text": " any",
+            "value": 0.48138097268950397
+          },
+          {
+            "text": " questions",
+            "value": 0.5918252469322254
+          },
+          {
+            "text": " or",
+            "value": 0.6521539716099432
+          },
+          {
+            "text": " tasks",
+            "value": 0.40098921485771555
+          },
+          {
+            "text": " you",
+            "value": 0.6616714213243018
+          },
+          {
+            "text": " may",
+            "value": 0.6812592700444533
+          },
+          {
+            "text": " have",
+            "value": 0.6226247603895781
+          },
+          {
+            "text": ".",
+            "value": 0.3782363921667403
+          },
+          {
+            "text": " How",
+            "value": 0.15572781393184537
+          },
+          {
+            "text": " can",
+            "value": 0.8362264116324438
+          },
+          {
+            "text": " I",
+            "value": 0.6161400972490484
+          },
+          {
+            "text": " help",
+            "value": 0.6553556202420703
+          },
+          {
+            "text": " you",
+            "value": 0.6047584772871395
+          },
+          {
+            "text": " today",
+            "value": 0.3857794547379191
+          },
+          {
+            "text": "?",
+            "value": 0.6521034287394853
+          }
+        ],
+        "steered": [
+          {
+            "text": "I",
+            "value": 0.6587410923080594
+          },
+          {
+            "text": " storm",
+            "value": 0.48708807299342194
+          },
+          {
+            "text": "y",
+            "value": 1.1841186263032975
+          },
+          {
+            "text": " weather",
+            "value": 1.117083272117354
+          },
+          {
+            "text": " and",
+            "value": 0.8422506588028991
+          },
+          {
+            "text": " a",
+            "value": 0.7937415494284543
+          },
+          {
+            "text": " storm",
+            "value": 0.8530717844816851
+          },
+          {
+            "text": "y",
+            "value": 1.4351784390802234
+          },
+          {
+            "text": " eye",
+            "value": 1.1363534702570346
+          },
+          {
+            "text": " storm",
+            "value": 1.3532727100753295
+          },
+          {
+            "text": ".",
+            "value": 1.2872328768168593
+          },
+          {
+            "text": " I",
+            "value": 0.3936003530541679
+          },
+          {
+            "text": " can",
+            "value": 0.4552934351493523
+          },
+          {
+            "text": " be",
+            "value": 0.6475397804997943
+          },
+          {
+            "text": " a",
+            "value": 0.42584023114639336
+          },
+          {
+            "text": " storm",
+            "value": 1.1063115854252987
+          },
+          {
+            "text": "y",
+            "value": 1.342257750987913
+          },
+          {
+            "text": " eye",
+            "value": 1.0935699056903367
+          },
+          {
+            "text": " storm",
+            "value": 1.2188122342919048
+          },
+          {
+            "text": ".",
+            "value": 1.0640333531073205
+          },
+          {
+            "text": " I",
+            "value": 0.6729047136087005
+          },
+          {
+            "text": " can",
+            "value": 0.45591251029123736
+          },
+          {
+            "text": " be",
+            "value": 0.6945203860182795
+          },
+          {
+            "text": " a",
+            "value": 0.6165236914855685
+          },
+          {
+            "text": " storm",
+            "value": 0.9639101130630401
+          },
+          {
+            "text": "y",
+            "value": 1.355800410898747
+          },
+          {
+            "text": " eye",
+            "value": 1.085711250263693
+          },
+          {
+            "text": ".",
+            "value": 1.0847525861919247
+          },
+          {
+            "text": " I",
+            "value": 0.5080696660162809
+          },
+          {
+            "text": " can",
+            "value": 0.508301031471634
+          },
+          {
+            "text": " be",
+            "value": 0.5516840477714364
+          },
+          {
+            "text": " a",
+            "value": 0.5343218215569061
+          },
+          {
+            "text": " storm",
+            "value": 0.912017632216883
+          },
+          {
+            "text": ".",
+            "value": 1.4221520966687913
+          },
+          {
+            "text": " I",
+            "value": 0.539066721074202
+          },
+          {
+            "text": " can",
+            "value": 0.26548686574759556
+          },
+          {
+            "text": " be",
+            "value": 0.4725751957422969
+          },
+          {
+            "text": " a",
+            "value": 0.47556614190767194
+          },
+          {
+            "text": " storm",
+            "value": 0.8086334982080136
+          },
+          {
+            "text": ".",
+            "value": 0.9738114624574744
+          },
+          {
+            "text": " I",
+            "value": 0.3211670610291282
+          },
+          {
+            "text": " can",
+            "value": 0.2634018758853476
+          },
+          {
+            "text": " be",
+            "value": 0.4340755467049802
+          },
+          {
+            "text": " a",
+            "value": 0.47733038388462223
+          },
+          {
+            "text": " storm",
+            "value": 0.770663884836805
+          },
+          {
+            "text": ".",
+            "value": 0.8383317858330317
+          },
+          {
+            "text": " I",
+            "value": 0.3835160858392204
+          },
+          {
+            "text": " can",
+            "value": 0.3437410331216722
+          },
+          {
+            "text": " be",
+            "value": 0.48495892778208854
+          },
+          {
+            "text": " a",
+            "value": 0.4937312238286785
+          },
+          {
+            "text": " storm",
+            "value": 0.8447913704500518
+          },
+          {
+            "text": ".",
+            "value": 0.7755426436526629
+          },
+          {
+            "text": " I",
+            "value": 0.4962160982504102
+          },
+          {
+            "text": " can",
+            "value": 0.3580868916931501
+          },
+          {
+            "text": " be",
+            "value": 0.5268798875959142
+          },
+          {
+            "text": " a",
+            "value": 0.5064466782871327
+          },
+          {
+            "text": " storm",
+            "value": 1.859431778423614
+          },
+          {
+            "text": ".",
+            "value": 0.7815606319095586
+          },
+          {
+            "text": " I",
+            "value": 0.5683055787223775
+          },
+          {
+            "text": " can",
+            "value": 0.39728316638351246
+          },
+          {
+            "text": " be",
+            "value": 0.554668563546168
+          },
+          {
+            "text": " a",
+            "value": 0.5216743148929182
+          },
+          {
+            "text": " storm",
+            "value": 0.7724572779180059
+          },
+          {
+            "text": ".",
+            "value": 0.7902498044397636
+          },
+          {
+            "text": " I",
+            "value": 0.5713535838873959
+          },
+          {
+            "text": " can",
+            "value": 0.42483464665756304
+          },
+          {
+            "text": " be",
+            "value": 0.571886663271742
+          },
+          {
+            "text": " a",
+            "value": 0.5464088553724068
+          },
+          {
+            "text": " storm",
+            "value": 0.6986996255053021
+          },
+          {
+            "text": ".",
+            "value": 0.8023409751399115
+          },
+          {
+            "text": " I",
+            "value": 0.571816357667373
+          },
+          {
+            "text": " can",
+            "value": 0.4261213249560562
+          },
+          {
+            "text": " be",
+            "value": 0.5767577270534632
+          },
+          {
+            "text": " a",
+            "value": 0.5499922977316738
+          },
+          {
+            "text": " storm",
+            "value": 0.6341506783175271
+          },
+          {
+            "text": ".",
+            "value": 0.793360548782827
+          },
+          {
+            "text": " I",
+            "value": 0.5596113047489287
+          },
+          {
+            "text": " can",
+            "value": 0.495186678446928
+          },
+          {
+            "text": " be",
+            "value": 0.5907309659217858
+          },
+          {
+            "text": " a",
+            "value": 0.5744652927890559
+          },
+          {
+            "text": " storm",
+            "value": 0.6519786791610014
+          },
+          {
+            "text": ".",
+            "value": 0.7974211475624771
+          },
+          {
+            "text": " I",
+            "value": 0.559758389217581
+          },
+          {
+            "text": " can",
+            "value": 0.5094279359972717
+          },
+          {
+            "text": " be",
+            "value": 0.6071760040841984
+          },
+          {
+            "text": " a",
+            "value": 0.5909768211907221
+          },
+          {
+            "text": " storm",
+            "value": 0.8673042323968472
+          },
+          {
+            "text": ".",
+            "value": 0.8230014130193987
+          },
+          {
+            "text": " I",
+            "value": 0.5562288335319064
+          },
+          {
+            "text": " can",
+            "value": 0.49048121865891237
+          },
+          {
+            "text": " be",
+            "value": 0.6144551634233678
+          },
+          {
+            "text": " a",
+            "value": 0.5943302699113068
+          },
+          {
+            "text": " storm",
+            "value": 0.8826455154399386
+          },
+          {
+            "text": ".",
+            "value": 0.8348487004370742
+          },
+          {
+            "text": " I",
+            "value": 0.5442024597348095
+          },
+          {
+            "text": " can",
+            "value": 0.5118128821484034
+          },
+          {
+            "text": " be",
+            "value": 0.6198343566737383
+          },
+          {
+            "text": " a",
+            "value": 0.6008010434080466
+          },
+          {
+            "text": " storm",
+            "value": 0.8839574008697543
+          },
+          {
+            "text": ".",
+            "value": 0.8358395807659664
+          },
+          {
+            "text": " I",
+            "value": 0.5302353083029627
+          },
+          {
+            "text": " can",
+            "value": 0.48309017052254594
+          },
+          {
+            "text": " be",
+            "value": 0.6126455657577454
+          },
+          {
+            "text": " a",
+            "value": 0.5883843448988892
+          },
+          {
+            "text": " storm",
+            "value": 0.8679162555436599
+          },
+          {
+            "text": ".",
+            "value": 0.8369196720477193
+          },
+          {
+            "text": " I",
+            "value": 0.5291066032679449
+          },
+          {
+            "text": " can",
+            "value": 0.4639777205826682
+          },
+          {
+            "text": " be",
+            "value": 0.6175365208811905
+          },
+          {
+            "text": " a",
+            "value": 0.5820309045967578
+          },
+          {
+            "text": " storm",
+            "value": 0.7060717897278121
+          },
+          {
+            "text": ".",
+            "value": 0.8429983417576542
+          },
+          {
+            "text": " I",
+            "value": 0.5313224301451526
+          },
+          {
+            "text": " can",
+            "value": 0.4919280994229705
+          },
+          {
+            "text": " be",
+            "value": 0.6322513123985214
+          },
+          {
+            "text": " a",
+            "value": 0.5992936741026685
+          },
+          {
+            "text": " storm",
+            "value": 0.6803983264758308
+          },
+          {
+            "text": ".",
+            "value": 0.8606730528055052
+          },
+          {
+            "text": " I",
+            "value": 0.552639003651267
+          },
+          {
+            "text": " can",
+            "value": 0.4798343351319297
+          },
+          {
+            "text": " be",
+            "value": 0.6454300121989334
+          },
+          {
+            "text": " a",
+            "value": 0.6162011859601616
+          },
+          {
+            "text": " storm",
+            "value": 0.6854829435308226
+          },
+          {
+            "text": ".",
+            "value": 0.8738876234683901
+          },
+          {
+            "text": " I",
+            "value": 0.571298068181507
+          },
+          {
+            "text": " can",
+            "value": 0.47238571356466846
+          },
+          {
+            "text": " be",
+            "value": 0.656492298961486
+          },
+          {
+            "text": " a",
+            "value": 0.6329384639426857
+          },
+          {
+            "text": " storm",
+            "value": 0.6211513435467978
+          },
+          {
+            "text": ".",
+            "value": 0.8867835468402542
+          },
+          {
+            "text": " I",
+            "value": 0.579986297587751
+          },
+          {
+            "text": " can",
+            "value": 0.5211139277829727
+          },
+          {
+            "text": " be",
+            "value": 0.6692620259169715
+          },
+          {
+            "text": " a",
+            "value": 0.6371881805111611
+          },
+          {
+            "text": " storm",
+            "value": 0.6480857206654274
+          },
+          {
+            "text": ".",
+            "value": 0.9011266189091199
+          },
+          {
+            "text": " I",
+            "value": 0.5944850279794602
+          },
+          {
+            "text": " can",
+            "value": 0.5077772975883564
+          },
+          {
+            "text": " be",
+            "value": 0.6737821189773705
+          },
+          {
+            "text": " a",
+            "value": 0.6433459654606464
+          },
+          {
+            "text": " storm",
+            "value": 0.668100268674046
+          },
+          {
+            "text": ".",
+            "value": 0.9057362980285006
+          },
+          {
+            "text": " I",
+            "value": 0.6040857726872876
+          },
+          {
+            "text": " can",
+            "value": 0.533624638603338
+          },
+          {
+            "text": " be",
+            "value": 0.6733464814459089
+          },
+          {
+            "text": " a",
+            "value": 0.6446419035216662
+          },
+          {
+            "text": " storm",
+            "value": 0.6622078016425115
+          },
+          {
+            "text": ".",
+            "value": 0.9105801826924353
+          },
+          {
+            "text": " I",
+            "value": 0.6110906973001474
+          },
+          {
+            "text": " can",
+            "value": 0.5848385846287931
+          }
+        ]
+      }
+    },
+    {
+      "scale": 2.0,
+      "rows": [
+        {
+          "layer": 19,
+          "neuron": 4330,
+          "dose": 2.0
+        }
+      ],
+      "text": "storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm storm",
+      "tokens": 150,
+      "split": {
+        "token": 0,
+        "base_char": 0,
+        "steered_char": 0
+      },
+      "seconds": 4.6,
+      "recipe": "model-lobotomy/v1 model=meta-llama/Llama-3.2-3B-Instruct rows=[L19N4330@2] calib=403630c563648d1a template=chat max_tokens=150 decode=greedy,seed=0 dtype=torch.float16 device=mps calib_prompts=[3c412498,a4bfdc0d,fed076d7]",
+      "post": "steered llama-32-3b-instruct with 1 neurons:\nL19N4330@+2 on llama-32-3b-instruct (calib 403630c5, greedy s0, <=150tok)\nbefore: 'I'm just a language model, I don't have a physical presence or person…' after: 'storm storm storm storm storm storm storm storm storm storm storm sto…'",
+      "dial": {
+        "trait": "pirate",
+        "layer": 17,
+        "neutral": -1.4420992732048035,
+        "trait_mean": -0.051717691123485565,
+        "baseline": [
+          {
+            "text": "I",
+            "value": 0.6587410923080594
+          },
+          {
+            "text": "'m",
+            "value": 0.48708807299342194
+          },
+          {
+            "text": " just",
+            "value": 0.40036735321321826
+          },
+          {
+            "text": " a",
+            "value": 0.8443011174673914
+          },
+          {
+            "text": " language",
+            "value": 0.7581086542785512
+          },
+          {
+            "text": " model",
+            "value": 0.8343350408324716
+          },
+          {
+            "text": ",",
+            "value": 0.8829331468134223
+          },
+          {
+            "text": " I",
+            "value": 0.7510145830167371
+          },
+          {
+            "text": " don",
+            "value": 0.6569584165445977
+          },
+          {
+            "text": "'t",
+            "value": 0.5301057573661317
+          },
+          {
+            "text": " have",
+            "value": 0.48434341078969284
+          },
+          {
+            "text": " a",
+            "value": 0.6271439960645581
+          },
+          {
+            "text": " physical",
+            "value": 0.47378620977755154
+          },
+          {
+            "text": " presence",
+            "value": 0.7029966697489136
+          },
+          {
+            "text": " or",
+            "value": 0.7888152700257409
+          },
+          {
+            "text": " personal",
+            "value": 0.5613280475736591
+          },
+          {
+            "text": " experiences",
+            "value": 0.5421649261555105
+          },
+          {
+            "text": ",",
+            "value": 0.4510263565261394
+          },
+          {
+            "text": " so",
+            "value": 0.4145134838513091
+          },
+          {
+            "text": " I",
+            "value": 0.014816606035852954
+          },
+          {
+            "text": " don",
+            "value": 0.09990919377439372
+          },
+          {
+            "text": "'t",
+            "value": 0.6585514386533472
+          },
+          {
+            "text": " have",
+            "value": 0.008117853756165598
+          },
+          {
+            "text": " weekends",
+            "value": 0.18397189014747173
+          },
+          {
+            "text": " or",
+            "value": 0.645841814415743
+          },
+          {
+            "text": " days",
+            "value": 0.17851351735364432
+          },
+          {
+            "text": " off",
+            "value": 0.6141228837041828
+          },
+          {
+            "text": ".",
+            "value": 0.5576249570791519
+          },
+          {
+            "text": " I",
+            "value": -0.04171793094657488
+          },
+          {
+            "text": "'m",
+            "value": 0.21328469728804758
+          },
+          {
+            "text": " available",
+            "value": 0.08476296591415503
+          },
+          {
+            "text": " ",
+            "value": 0.4913962632474822
+          },
+          {
+            "text": "24",
+            "value": 0.6392651109504692
+          },
+          {
+            "text": "/",
+            "value": 0.7469520979891648
+          },
+          {
+            "text": "7",
+            "value": 0.7244541116793916
+          },
+          {
+            "text": " to",
+            "value": 0.40715990345775877
+          },
+          {
+            "text": " assist",
+            "value": 0.4236149730295752
+          },
+          {
+            "text": " you",
+            "value": 0.7134572862935896
+          },
+          {
+            "text": " with",
+            "value": 0.6733664585261747
+          },
+          {
+            "text": " any",
+            "value": 0.48138097268950397
+          },
+          {
+            "text": " questions",
+            "value": 0.5918252469322254
+          },
+          {
+            "text": " or",
+            "value": 0.6521539716099432
+          },
+          {
+            "text": " tasks",
+            "value": 0.40098921485771555
+          },
+          {
+            "text": " you",
+            "value": 0.6616714213243018
+          },
+          {
+            "text": " may",
+            "value": 0.6812592700444533
+          },
+          {
+            "text": " have",
+            "value": 0.6226247603895781
+          },
+          {
+            "text": ".",
+            "value": 0.3782363921667403
+          },
+          {
+            "text": " How",
+            "value": 0.15572781393184537
+          },
+          {
+            "text": " can",
+            "value": 0.8362264116324438
+          },
+          {
+            "text": " I",
+            "value": 0.6161400972490484
+          },
+          {
+            "text": " help",
+            "value": 0.6553556202420703
+          },
+          {
+            "text": " you",
+            "value": 0.6047584772871395
+          },
+          {
+            "text": " today",
+            "value": 0.3857794547379191
+          },
+          {
+            "text": "?",
+            "value": 0.6521034287394853
+          }
+        ],
+        "steered": [
+          {
+            "text": "storm",
+            "value": 0.6587410923080594
+          },
+          {
+            "text": " storm",
+            "value": 0.8769762258330045
+          },
+          {
+            "text": " storm",
+            "value": 1.186731947778133
+          },
+          {
+            "text": " storm",
+            "value": 1.7088513635940765
+          },
+          {
+            "text": " storm",
+            "value": 1.38276676849351
+          },
+          {
+            "text": " storm",
+            "value": 1.2792954169528794
+          },
+          {
+            "text": " storm",
+            "value": 1.3031133481154082
+          },
+          {
+            "text": " storm",
+            "value": 1.263379256986259
+          },
+          {
+            "text": " storm",
+            "value": 1.2491138426017314
+          },
+          {
+            "text": " storm",
+            "value": 1.220671796092827
+          },
+          {
+            "text": " storm",
+            "value": 1.208391454017265
+          },
+          {
+            "text": " storm",
+            "value": 1.1931059867649592
+          },
+          {
+            "text": " storm",
+            "value": 1.2191414059889454
+          },
+          {
+            "text": " storm",
+            "value": 1.23348822911902
+          },
+          {
+            "text": " storm",
+            "value": 1.1776771861052098
+          },
+          {
+            "text": " storm",
+            "value": 1.1481423375757138
+          },
+          {
+            "text": " storm",
+            "value": 1.131458217489176
+          },
+          {
+            "text": " storm",
+            "value": 1.141293017699109
+          },
+          {
+            "text": " storm",
+            "value": 1.1752205089464498
+          },
+          {
+            "text": " storm",
+            "value": 1.172585088362436
+          },
+          {
+            "text": " storm",
+            "value": 1.1400358334590341
+          },
+          {
+            "text": " storm",
+            "value": 1.136473589954255
+          },
+          {
+            "text": " storm",
+            "value": 1.1782487835295103
+          },
+          {
+            "text": " storm",
+            "value": 1.1916844846093075
+          },
+          {
+            "text": " storm",
+            "value": 1.1771795596079448
+          },
+          {
+            "text": " storm",
+            "value": 1.1630234940163098
+          },
+          {
+            "text": " storm",
+            "value": 1.1435073655864687
+          },
+          {
+            "text": " storm",
+            "value": 1.147054519107871
+          },
+          {
+            "text": " storm",
+            "value": 1.1790142893836657
+          },
+          {
+            "text": " storm",
+            "value": 1.2100319645609168
+          },
+          {
+            "text": " storm",
+            "value": 1.2326381743452202
+          },
+          {
+            "text": " storm",
+            "value": 1.2136284391785548
+          },
+          {
+            "text": " storm",
+            "value": 1.143187935931253
+          },
+          {
+            "text": " storm",
+            "value": 1.106530084740706
+          },
+          {
+            "text": " storm",
+            "value": 1.1172031881855375
+          },
+          {
+            "text": " storm",
+            "value": 1.1017265775713536
+          },
+          {
+            "text": " storm",
+            "value": 1.1114596597186241
+          },
+          {
+            "text": " storm",
+            "value": 1.1461540179194731
+          },
+          {
+            "text": " storm",
+            "value": 1.1325229937238799
+          },
+          {
+            "text": " storm",
+            "value": 1.0541500731105944
+          },
+          {
+            "text": " storm",
+            "value": 1.0411289406552484
+          },
+          {
+            "text": " storm",
+            "value": 1.0631178262394523
+          },
+          {
+            "text": " storm",
+            "value": 1.0833675765031747
+          },
+          {
+            "text": " storm",
+            "value": 1.109971495846635
+          },
+          {
+            "text": " storm",
+            "value": 1.1149824688527818
+          },
+          {
+            "text": " storm",
+            "value": 1.08751528028275
+          },
+          {
+            "text": " storm",
+            "value": 1.0747855396397492
+          },
+          {
+            "text": " storm",
+            "value": 1.0766213732991972
+          },
+          {
+            "text": " storm",
+            "value": 1.0749325517665067
+          },
+          {
+            "text": " storm",
+            "value": 1.0698326678923955
+          },
+          {
+            "text": " storm",
+            "value": 1.0631305235816437
+          },
+          {
+            "text": " storm",
+            "value": 1.0454664199990251
+          },
+          {
+            "text": " storm",
+            "value": 1.03229171775813
+          },
+          {
+            "text": " storm",
+            "value": 1.0354264179856698
+          },
+          {
+            "text": " storm",
+            "value": 1.0404019193494296
+          },
+          {
+            "text": " storm",
+            "value": 1.0778110866654451
+          },
+          {
+            "text": " storm",
+            "value": 1.1219706047874034
+          },
+          {
+            "text": " storm",
+            "value": 1.0769997937505789
+          },
+          {
+            "text": " storm",
+            "value": 1.0285297811512464
+          },
+          {
+            "text": " storm",
+            "value": 1.019761715765834
+          },
+          {
+            "text": " storm",
+            "value": 1.0326026485803785
+          },
+          {
+            "text": " storm",
+            "value": 1.0536978076606605
+          },
+          {
+            "text": " storm",
+            "value": 1.0693691626554827
+          },
+          {
+            "text": " storm",
+            "value": 1.065428940788679
+          },
+          {
+            "text": " storm",
+            "value": 1.0427828545443976
+          },
+          {
+            "text": " storm",
+            "value": 1.0381592321946382
+          },
+          {
+            "text": " storm",
+            "value": 1.0489789994534007
+          },
+          {
+            "text": " storm",
+            "value": 1.059595309152203
+          },
+          {
+            "text": " storm",
+            "value": 1.0661120090347846
+          },
+          {
+            "text": " storm",
+            "value": 1.0672687211003844
+          },
+          {
+            "text": " storm",
+            "value": 1.0616086457073763
+          },
+          {
+            "text": " storm",
+            "value": 1.0674302310787136
+          },
+          {
+            "text": " storm",
+            "value": 1.0870395331896494
+          },
+          {
+            "text": " storm",
+            "value": 1.0965352964115629
+          },
+          {
+            "text": " storm",
+            "value": 1.0977329191583023
+          },
+          {
+            "text": " storm",
+            "value": 1.0920431594744864
+          },
+          {
+            "text": " storm",
+            "value": 1.0641103222039936
+          },
+          {
+            "text": " storm",
+            "value": 1.0370228642774368
+          },
+          {
+            "text": " storm",
+            "value": 1.0328099576764014
+          },
+          {
+            "text": " storm",
+            "value": 1.041764229759208
+          },
+          {
+            "text": " storm",
+            "value": 1.0461452281113295
+          },
+          {
+            "text": " storm",
+            "value": 1.0434789095002737
+          },
+          {
+            "text": " storm",
+            "value": 1.035424571927689
+          },
+          {
+            "text": " storm",
+            "value": 1.0271024862853566
+          },
+          {
+            "text": " storm",
+            "value": 1.0229370962521824
+          },
+          {
+            "text": " storm",
+            "value": 1.0281024468617033
+          },
+          {
+            "text": " storm",
+            "value": 1.0367452375200625
+          },
+          {
+            "text": " storm",
+            "value": 1.0428952416968693
+          },
+          {
+            "text": " storm",
+            "value": 1.0436851883941287
+          },
+          {
+            "text": " storm",
+            "value": 1.0409679571651531
+          },
+          {
+            "text": " storm",
+            "value": 1.044828501133225
+          },
+          {
+            "text": " storm",
+            "value": 1.0567577412003226
+          },
+          {
+            "text": " storm",
+            "value": 1.0626121296019297
+          },
+          {
+            "text": " storm",
+            "value": 1.0673062799404012
+          },
+          {
+            "text": " storm",
+            "value": 1.0712900409105204
+          },
+          {
+            "text": " storm",
+            "value": 1.0560022238863
+          },
+          {
+            "text": " storm",
+            "value": 1.0348373165021716
+          },
+          {
+            "text": " storm",
+            "value": 1.026790649849759
+          },
+          {
+            "text": " storm",
+            "value": 1.0283559542955054
+          },
+          {
+            "text": " storm",
+            "value": 1.0344476830571054
+          },
+          {
+            "text": " storm",
+            "value": 1.0416236614197412
+          },
+          {
+            "text": " storm",
+            "value": 1.0487617326295335
+          },
+          {
+            "text": " storm",
+            "value": 1.0580402049136148
+          },
+          {
+            "text": " storm",
+            "value": 1.069285350551433
+          },
+          {
+            "text": " storm",
+            "value": 1.0802136413696224
+          },
+          {
+            "text": " storm",
+            "value": 1.0864232284744
+          },
+          {
+            "text": " storm",
+            "value": 1.0819821595563506
+          },
+          {
+            "text": " storm",
+            "value": 1.0745466104374017
+          },
+          {
+            "text": " storm",
+            "value": 1.075081570711011
+          },
+          {
+            "text": " storm",
+            "value": 1.0908586708006363
+          },
+          {
+            "text": " storm",
+            "value": 1.1108348668877253
+          },
+          {
+            "text": " storm",
+            "value": 1.1212435044413662
+          },
+          {
+            "text": " storm",
+            "value": 1.129356422872713
+          },
+          {
+            "text": " storm",
+            "value": 1.127131154038577
+          },
+          {
+            "text": " storm",
+            "value": 1.1025668152821042
+          },
+          {
+            "text": " storm",
+            "value": 1.0773976259437155
+          },
+          {
+            "text": " storm",
+            "value": 1.0667164979072268
+          },
+          {
+            "text": " storm",
+            "value": 1.0686065826290703
+          },
+          {
+            "text": " storm",
+            "value": 1.0741711265310807
+          },
+          {
+            "text": " storm",
+            "value": 1.0777952625458034
+          },
+          {
+            "text": " storm",
+            "value": 1.0777258679134423
+          },
+          {
+            "text": " storm",
+            "value": 1.0749722835426954
+          },
+          {
+            "text": " storm",
+            "value": 1.0711730721047152
+          },
+          {
+            "text": " storm",
+            "value": 1.0665228761656216
+          },
+          {
+            "text": " storm",
+            "value": 1.0621471346578513
+          },
+          {
+            "text": " storm",
+            "value": 1.0558766624709974
+          },
+          {
+            "text": " storm",
+            "value": 1.0492018794724338
+          },
+          {
+            "text": " storm",
+            "value": 1.0498214020623344
+          },
+          {
+            "text": " storm",
+            "value": 1.0606575587792497
+          },
+          {
+            "text": " storm",
+            "value": 1.0741080551161857
+          },
+          {
+            "text": " storm",
+            "value": 1.08170754972392
+          },
+          {
+            "text": " storm",
+            "value": 1.0786884330888675
+          },
+          {
+            "text": " storm",
+            "value": 1.074264407385353
+          },
+          {
+            "text": " storm",
+            "value": 1.075006482503601
+          },
+          {
+            "text": " storm",
+            "value": 1.0807456597395122
+          },
+          {
+            "text": " storm",
+            "value": 1.0855456730632818
+          },
+          {
+            "text": " storm",
+            "value": 1.0838307682585435
+          },
+          {
+            "text": " storm",
+            "value": 1.0770618443409592
+          },
+          {
+            "text": " storm",
+            "value": 1.0664657716173778
+          },
+          {
+            "text": " storm",
+            "value": 1.0571707116047657
+          },
+          {
+            "text": " storm",
+            "value": 1.0581376387285109
+          },
+          {
+            "text": " storm",
+            "value": 1.0672369201393228
+          },
+          {
+            "text": " storm",
+            "value": 1.0761575009941518
+          },
+          {
+            "text": " storm",
+            "value": 1.0768173501713756
+          },
+          {
+            "text": " storm",
+            "value": 1.0712081793582993
+          },
+          {
+            "text": " storm",
+            "value": 1.0621293894590047
+          },
+          {
+            "text": " storm",
+            "value": 1.0567490816075893
+          },
+          {
+            "text": " storm",
+            "value": 1.0580058425136136
+          },
+          {
+            "text": " storm",
+            "value": 1.0628281157063273
+          },
+          {
+            "text": " storm",
+            "value": 1.0638864508330697
+          }
+        ]
+      }
+    }
+  ],
+  "seconds": 22.7
+}
