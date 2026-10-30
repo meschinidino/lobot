@@ -212,6 +212,7 @@ Corners are square (0px). Use 2px only where a browser control needs it. The kno
 - **Edit behavior:** name; versions (use an older one, or create a new one that keeps the current one until it passes); the evidence table; Remove behavior with a confirmation that names what is removed. Editing never changes a direction by hand: that would void its evidence.
 - **Add model:** Hugging Face id, then checks for size and memory, access, architecture support and behaviors; "Download and add"; installed models with Reload and Remove.
 - **Share card:** 4:5 for an X post, built only from recorded text: wordmark, model and its edits, the prompt in quotes, the shared words forking into "no edit" and the edited answer, the dose in display type, and "same prompt · same seed · split at token N". A ready post text sits next to it. Excerpts end with an ellipsis.
+- **Share card additions (V1):** the dose in display type shows only when the run has one edit. A measured lift proof prints above the edits when the run has one. Runs without a server-built post (behavior runs) get a post built from recorded text and measured numbers only, under 280 characters.
 - **Video storyboard (the key 10 seconds):** frame 1, one answer at ±0.00; frame 2, a hand turns the knob and the answer re-runs; frame 3, the answer forks, with pink on the steered branch. Voice-over: "Same prompt, same seed. I turn one knob inside the model, and its answer forks here."
 
 ## Do's and Don'ts
