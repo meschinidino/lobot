@@ -429,7 +429,8 @@ function behaviors() {
   for (const b of out) if (!newest[b.name] || b.version > newest[b.name].version) newest[b.name] = b;
   for (const b of out) {
     b.newest = newest[b.name] === b;
-    [b.kind, b.key, b.usable] = b.verdict === "blocked" || b.guard.blocked ? ["err", "GUARD", false]
+    [b.kind, b.key, b.usable] = b.verdict === "blocked" || b.guard.blocked
+      ? (S.research ? ["warn", "BLOCKED", true] : ["err", "GUARD", false])
       : b.guard.would_block ? ["warn", "GUARD", true]
       : b.verdict !== "knob" ? ["warn", "NO KNOB", false]
       : b.cards.update_down && !b.cards.update_down.passed ? ["warn", "DECREASE FAIL", true] : ["ok", "PASS", true];
@@ -896,7 +897,7 @@ async function run(fan = false) {
   const t0 = performance.now(), msgs = { weights: "Loading weights and calibration.", guard: "Checking the refusal guard.", baseline: "Baseline pass.", steered: "Edited pass.", columns: "Generating every dose at once." };
   const tick = setInterval(() => ($("runMsg").textContent = `${$("runMsg").textContent.split(" · ")[0]} · ${((performance.now() - t0) / 1000).toFixed(1)} s`), 100);
   setStatus("info", "RUNNING", msgs.weights);
-  const end = () => { clearInterval(tick); S.live = null; S.checking = false; setRunning(false); };
+  const end = () => { clearInterval(tick); S.live = null; S.checking = false; setRunning(false); refreshState(); };
   const onCommon = (ev) => {
     if (ev.stage === "weights") { S.checking = !research; renderGuard(); }
     if (ev.stage === "guard" || ev.stage === "columns" && !research) { S.checking = false; if (!research) S.guardSeen[key] = "passed"; renderGuard(); }
@@ -1169,6 +1170,9 @@ document.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("clic
 }));
 
 /* ---------- boot ---------- */
+async function refreshState() {
+  try { const r = await fetch("api/state"); if (r.ok) { applyState(await r.json()); update(); } } catch { /* keep last state */ }
+}
 function applyState(st) {
   S.state = st; S.model = st.active_model;
   S.limits = { layers: st.layers, neurons: st.neurons, dose_min: st.dose_min, dose_max: st.dose_max, max_rows: st.max_rows };
