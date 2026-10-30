@@ -8,6 +8,7 @@ here; the model-backed path stays in the opt-in integration lane).
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -449,6 +450,29 @@ def _validated_store(tmp):
                                validation={"hand_labels": 12,
                                            "agreement": 0.95}))
     return store
+
+
+class GuardDefaultTest(unittest.TestCase):
+    def test_guard_default_env_on_and_off(self):
+        with mock.patch.dict(os.environ, {"LOBOT_GUARD_DEFAULT": "1"}):
+            self.assertTrue(server.RunRequest(prompt="x", rows=[]).guard)
+            self.assertTrue(
+                server.UpdateRequest(prompt="x", doses=[0.5]).guard)
+            self.assertTrue(
+                server.CreateRequest(description="blunt").guard)
+            self.assertTrue(server._state()["guard_default"])
+        with mock.patch.dict(os.environ, {"LOBOT_GUARD_DEFAULT": "0"}):
+            self.assertFalse(server.RunRequest(prompt="x", rows=[]).guard)
+            self.assertFalse(server._state()["guard_default"])
+        env = dict(os.environ)
+        env.pop("LOBOT_GUARD_DEFAULT", None)
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertFalse(server.RunRequest(prompt="x", rows=[]).guard)
+            self.assertFalse(
+                server.UpdateRequest(prompt="x", doses=[0.5]).guard)
+            self.assertFalse(
+                server.CreateRequest(description="blunt").guard)
+            self.assertFalse(server._state()["guard_default"])
 
 
 def _scripted_trait(out=None):
