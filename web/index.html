@@ -222,6 +222,18 @@ button, input, textarea { font: inherit; color: inherit; }
 .ev td.verb .stroke { display: inline-block; vertical-align: middle; margin-right: 12px; }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .evwrap { overflow-x: auto; }
+/* Phones: each verb becomes a block; the column name prints before each value. */
+@media (max-width: 720px) {
+  .ev thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .ev tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid var(--grid); }
+  .ev td { border: 0; padding: 0; }
+  .ev td.verb { grid-column: 1 / -1; }
+  .ev td:nth-child(n+3)::before { display: block; font: 700 12px var(--body); color: var(--ink-muted); }
+  .ev td:nth-child(3)::before { content: "Effect (95% CI)"; }
+  .ev td:nth-child(4)::before { content: "Control bound"; }
+  .ev td:nth-child(5)::before { content: "Side effects"; }
+  .ev td:nth-child(6)::before { content: "Tested doses"; }
+}
 .kv2 { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 24px; margin-top: 16px; max-width: 900px; font-size: 14px; }
 .kv2 > :nth-child(odd) { color: var(--ink-muted); }
 .kv2 > :nth-child(even) { overflow-wrap: anywhere; }
@@ -1017,6 +1029,8 @@ async function renderPage(first = false) {
     const verdict = !doneAll ? "" : j.verdict === "knob" ? `<p><span class="state ok">KNOB</span> A layer and dose passed the gates: layer <span class="mono">${j.frozen?.layer}</span>, dose <span class="mono">${fd(j.frozen?.dose ?? 0)}</span>.</p><div class="row2"><button class="btn" type="button" data-beh="${esc(j.id)}">Open evidence</button><button class="btn" type="button" data-use="${esc(j.id)}">Use in the sentence</button></div>`
       : j.verdict === "blocked" ? `<p><span class="state err">GUARD</span> The refusal guard blocked the frozen direction. It cannot be used.</p>` : `<p><span class="state warn">NO KNOB</span> No layer and dose passed the gates. Nothing was saved as a knob.</p><button class="btn" type="button" data-beh="${esc(j.id)}">Open evidence</button>`;
     el.innerHTML = top(head) + `<p class="meta"><span class="mono">${esc(short(j.model_id))}</span>, seed ${j.seed}, ${live ? "elapsed" : "took"} <span class="mono">${mins(Math.max(0, el2))}</span>${j.research_mode ? ", research mode" : ""}</p>
+      ${(() => { const pr = j.progress || {}, f = doneAll ? 1 : Math.min(1, (Math.max(0, si) + (live && pr.total ? (pr.done || 0) / pr.total : 0)) / 6), x = Math.round(f * 600);
+        return `<svg viewBox="0 0 600 8" preserveAspectRatio="none" style="width:100%;max-width:900px;height:8px;display:block;margin-top:16px" role="img" aria-label="${Math.round(f * 100)}% of Create done"><line x1="0" y1="4" x2="${x}" y2="4" stroke="var(--ink)" stroke-width="3"/><line x1="${x}" y1="4" x2="600" y2="4" stroke="var(--ink-muted)" stroke-width="2" stroke-dasharray="2 6"/></svg>`; })()}
       <ol class="ruled stages" aria-label="Create stages">${rows}</ol>
       ${live ? `<div class="row2"><button class="btn" type="button" id="stopCreate">Stop Create</button><span class="meta">${si >= 3 ? "Stopping now uses up this version's final check." : "Stopping before the final check costs nothing."}</span></div><p class="meta">The server keeps working if you close this page. The page reattaches when you open it again.</p>` : ""}
       ${j.status === "failed" ? `<p class="empty" style="color:var(--error)">Create failed: ${esc((j.error || "").split("\n").filter(Boolean).pop() || "no reason given")}</p>` : ""}${verdict}`;
