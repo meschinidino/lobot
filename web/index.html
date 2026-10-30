@@ -140,7 +140,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .runs { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 .run { position: relative; padding-left: 12px; min-width: 0; }
 .run .k { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; min-width: 0; }
-.run .pick { all: unset; cursor: pointer; font: 13px var(--mono); color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; min-width: 0; }
+.run .pick { all: unset; cursor: pointer; font: 13px/24px var(--mono); min-height: 24px; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; min-width: 0; }
 .run .pick:focus-visible { outline: 3px solid var(--ink); }
 .run[aria-current="true"] .pick { color: var(--ink); }
 .run .t { font: 400 20px/1.5 var(--body); overflow-wrap: anywhere; }
@@ -563,6 +563,7 @@ async function run() {
           clearInterval(tick); const n = addResult(ev.result); drawN = n; setRunning(false);
           const T = treeRuns(), got = T.runs.find((x) => x.n === n);
           $("live").textContent = got.split ? `Run ${n} complete. It leaves run 1 at token ${got.split.token}.` : `Run ${n} complete. It matches run 1 token for token.`;
+          $("runs").querySelector(`[data-pick="${n}"]`)?.focus({ preventScroll: false });
           return;
         }
         if (msgs[ev.stage]) setStatus("info", "RUNNING", msgs[ev.stage]);

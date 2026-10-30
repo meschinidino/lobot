@@ -81,9 +81,9 @@ def main() -> int:
 
     drawn = None if args.no_prerender else prerender(OUT)
     if drawn:
-        start = page.index('<div class="shell" id="shell">') + len('<div class="shell" id="shell">')
-        end = page.index('</div>\n<div class="sr" id="live"')
-        OUT.write_text(page[:start] + drawn + page[end:])
+        start = page.index("<!--shell-->") + len("<!--shell-->")
+        end = page.index("<!--/shell-->")
+        OUT.write_text(page[:start] + drawn.replace("<!--shell-->", "").replace("<!--/shell-->", "") + page[end:])
     runs = 1 + (len(sweep["runs"]) if sweep else 1)
     print(f"wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size // 1024} KB, "
           f"{runs} runs{', sweep' if sweep else ''}, "
