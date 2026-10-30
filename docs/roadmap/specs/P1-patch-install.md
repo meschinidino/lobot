@@ -59,4 +59,4 @@ Hashes, install, verify, tests, README section, model-slot outputs.
 ## Out of scope
 
 Signing with keys and a public registry (later.md). Baking into weights
-(TODOS.md, deferred).
+(docs/TODOS.md, deferred).

@@ -55,7 +55,7 @@ compact human-readable subset (`L14N8949@+1 L13N7956@-1 on qwen35-4b ...`)
 plus before/after quotes that shrink to fit. The recipe line never cuts.
 The human posts; nothing posts. Latest: 279 chars.
 
-## Calibration cache key (`calibration.json`)
+## Calibration cache key (docs/calibration.json)
 
 Written by `steer.calibrate_layer_medians`; cache hits only on full key
 match plus medians for every requested layer. Key fields:

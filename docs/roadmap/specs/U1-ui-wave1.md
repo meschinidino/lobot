@@ -10,7 +10,7 @@ Create a behavior with live progress, run an Update filmstrip into the
 experiment tree, switch the guard and research mode, and read a trait's
 evidence card.
 
-## Taste rules (from DESIGN.md and the 2026-10-30 review)
+## Taste rules (from docs/DESIGN.md and the 2026-10-30 review)
 
 - Not a dashboard: the main area holds one object (the experiment tree), the
   words, one knob, one number. No tiles, meter rows or number sidebars.
@@ -58,7 +58,7 @@ evidence card.
 - Keyboard only: Create, Stop, Run, the guard switch, the dialog (Esc closes).
 - Real API (model slot shared with V1): one Create on Llama started and
   stopped; one filmstrip; one guard block.
-- Screenshots of every state sent to the user; DESIGN.md updated for any new
+- Screenshots of every state sent to the user; docs/DESIGN.md updated for any new
   component.
 
 ## Out of scope

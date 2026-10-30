@@ -131,11 +131,11 @@ def model_class_for(model_id: str):
 
 
 def calibration_path_for(model_id: str) -> str:
-    """Cache file per model. Qwen keeps the original calibration.json."""
+    """Cache file per model, under docs/. Qwen keeps the original name."""
     if model_id == MODEL_ID:
-        return "calibration.json"
+        return "docs/calibration.json"
     slug = model_id.lower().replace("/", "-").replace("_", "-")
-    return f"calibration.{slug}.json"
+    return f"docs/calibration.{slug}.json"
 
 
 @dataclass(frozen=True)
@@ -326,7 +326,7 @@ def calibrate_layer_medians(model, tokenizer, prompts: list[str], layers: list[i
 
     Tap = decoder block output (D9). Guards: filter empties + 2-plus wrapped
     tokens per prompt (D4), steering hooks OFF with assert (D9 isolation).
-    Reuses calibration.json on key match, else computes and writes it.
+    Reuses docs/calibration.json on key match, else computes and writes it.
     """
     spec = spec or QWEN_SPEC
     if steering_hook_count() != 0:

@@ -143,7 +143,7 @@ def t4_key_shape():
 
 
 def t4_stored_cache_valid():
-    d = json.loads((ROOT / "calibration.json").read_text())
+    d = json.loads((ROOT / "docs" / "calibration.json").read_text())
     for f in ("model_id", "revision", "template_sha256", "thinking", "dtype",
               "quant", "device", "cal_code", "prompts_sha256"):
         assert f in d["key"], f"missing {f}"
@@ -305,9 +305,9 @@ def model_backed():
             steer.MODEL_ID, info.sha, tok, str(steer.DTYPE), steer.DEVICE)
         med, ci = steer.calibrate_layer_medians(
             model, tok, preset["calibration_prompts"], [13, 14],
-            cache_path=ROOT / "calibration.json", key=key)
+            cache_path=ROOT / "docs" / "calibration.json", key=key)
         assert ci["cache_hit"] is True, ci
-        stored = json.loads((ROOT / "calibration.json").read_text())["medians"]
+        stored = json.loads((ROOT / "docs" / "calibration.json").read_text())["medians"]
         assert abs(med[13] - stored["13"]) < 1e-9
         return f"hit L13={med[13]:.2f} L14={med[14]:.2f}"
 
