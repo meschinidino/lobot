@@ -113,7 +113,8 @@ button, input, textarea { font: inherit; color: inherit; }
 .sentence .edit { white-space: nowrap; }
 .sentence .dose { font: 800 28px var(--display); font-stretch: 75%; }
 .sentence .edit[aria-current="true"] .link { text-decoration-thickness: 4px; }
-.sentence .x { all: unset; cursor: pointer; font: 14px var(--mono); color: var(--ink-muted); padding: 0 4px; }
+.sentence .x { all: unset; cursor: pointer; font: 18px/32px var(--mono); color: var(--ink-muted); display: inline-block; min-width: 32px; min-height: 32px; text-align: center; vertical-align: middle; }
+.sentence .x:hover { color: var(--ink); }
 .sentence .x:focus-visible { outline: 3px solid var(--ink); }
 @media (max-width: 720px) { .sentence { font-size: 20px; } .sentence .edit { white-space: normal; } .sentence .dose { font-size: 22px; } }
 .row2 { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
