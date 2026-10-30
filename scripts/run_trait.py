@@ -36,6 +36,11 @@ def main() -> int:
         print(f"unknown trait {args.trait!r}; have "
               f"{sorted(trait_eval.spike.BEHAVIORS)}", flush=True)
         return 2
+    if args.trait not in trait_eval.BASELINE_INSTRUCTIONS:
+        print(f"trait {args.trait!r} has no O4 baseline instructions; "
+              f"add it to trait_eval.BASELINE_INSTRUCTIONS first",
+              flush=True)
+        return 2
     eng = get_engine()
     rung = eng.load(args.model)
     print(f"[trait] {args.model} warm (rung {rung}, rev {eng.revision[:12]})",
