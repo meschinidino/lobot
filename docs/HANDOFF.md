@@ -24,8 +24,9 @@ the ordered list of what is left (starting with the real-model pass on Llama).
 
 ## State
 
-- Integration branch: `claude/admiring-mendel-mn88n8`. Lane branches
-  (`lane/<ID>-<name>`) start from it and merge back through Claude.
+- Branches: `main` (stable, protected), `develop` (integration), and
+  `feature/<ID>-<name>` branches cut from `develop`. See the roadmap rules.
+- Roadmap status and the next step (J1 step 0): `docs/roadmap/README.md`.
 - Built: the Engine (edits, capture, `clean()`), Create with report cards,
   Update (multi-dose filmstrip), refusal guard (opt-in), `.lobot` patches and
   llama.cpp export, read dials (`dial_trait`), click-a-word on the prompt

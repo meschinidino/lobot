@@ -54,20 +54,40 @@ kinds of lane:
   `docs/roadmap/model-lane.md` before loading weights (see below).
 - **UI lane**: Claude (UI lead) owns every screen.
 
-| ID | Workstream | Owner | Lane | Depends on | Spec |
+Status as of 2026-10-30 (night 1 and day 2). Reports: `reports/<ID>.md`.
+
+| ID | Workstream | Owner | Lane | Spec | Status |
 |---|---|---|---|---|---|
-| R1 | Reader core library | Backend agent | No-model | none | `specs/R1-reader-core.md` |
-| R2 | Reader API (reply words in /api/neurons, neuron card, find, lift) | Backend agent | No-model | contracts only | `specs/R2-reader-api.md` |
-| R3 | Reader validation and demo-neuron search | Model agent | Model | R1 | `specs/R3-reader-validation.md` |
-| D1 | Read dials: baseline + per-token lists (streaming dial exists) | Backend agent | No-model | contracts only | `specs/D1-read-dials.md` |
-| E1 | Evidence and patch API | Backend agent | No-model | contracts only | `specs/E1-evidence-api.md` |
-| S1 | Guard hardening and demo guard | Backend agent, then model slot | No-model, then Model | none | `specs/S1-guard-hardening.md` |
-| P1 | Patch export and install | Backend agent, then model slot | No-model, then Model | E1 contract | `specs/P1-patch-install.md` |
-| J1 | Meta-model judge, offline | Backend agent | No-model (network) | model decision | `specs/J1-meta-judge.md` |
-| U1 | UI: wave-1 wiring (Create, Update, guard, evidence) | Claude (UI lead) | UI | contracts | `specs/U1-ui-wave1.md` |
-| U2 | UI: reader in the word inspector, find-a-neuron | Claude (UI lead) | UI | contracts | `specs/U2-ui-reader.md` |
-| U3 | UI: read dials on the tree | Claude (UI lead) | UI | contracts | `specs/U3-ui-dials.md` |
-| V1 | Recordings and demo production | Human + model slot + Claude | Model + UI | R3, S1, U1-U3 | `specs/V1-demo.md` |
+| R1 | Reader core library | Backend agent | No-model | `specs/R1-reader-core.md` | **Done** |
+| R2 | Reader API (reply words in /api/neurons, neuron card, find, lift) | Backend agent | No-model | `specs/R2-reader-api.md` | **Done** (+ `reply_char`, Claude) |
+| R3 | Reader validation and demo-neuron search | Model agent | Model | `specs/R3-reader-validation.md` | **Done**: demo neuron L19N4330 (storm), 10 recorded cards |
+| D1 | Read dials: baseline + per-token lists | Backend agent | No-model | `specs/D1-read-dials.md` | **Done** (model check: means 0.53 vs 16.56) |
+| E1 | Evidence and patch API | Backend agent | No-model | `specs/E1-evidence-api.md` | **Done** |
+| S1 | Guard hardening and demo guard | Backend agent, then model slot | Both | `specs/S1-guard-hardening.md` | **Done**: 0 misses; storm blocks are real refusal loss (`reports/S1-followup.md`) |
+| P1 | Patch export and install | Backend agent, then model slot | Both | `specs/P1-patch-install.md` | **Partly done**: export + verify pass; install stopped (no llama.cpp/Ollama on the Mac) |
+| C2 | Hostility family (validated judge 1.000) | Backend agent | Model | `reports/day-2-backend.md` | **Done**; its Create was stopped, not run |
+| J1 | Meta-model judge, offline | Backend agent | No-model (network) | `specs/J1-meta-judge.md` | **Next**: step 0, check logprobs (below) |
+| U1 | UI: Create, Update, guard, evidence | Claude (UI lead) | UI | `specs/U1-ui-wave1.md` | **Done** |
+| U2 | UI: reader in the inspector, find, lift proof | Claude (UI lead) | UI | `specs/U2-ui-reader.md` | **Done** |
+| U3 | UI: read dials on the tree | Claude (UI lead) | UI | `specs/U3-ui-dials.md` | **Done** |
+| V1 | Recordings and demo production | Human + model slot + Claude | Both | `specs/V1-demo.md`, `demo-script.md` | **In progress**: recordings and script done; dry run on the Mac, then record |
+
+## Next step: J1 step 0, can the Meta judge say "how sure"?
+
+The local judge scores an answer as P(Yes) / (P(Yes) + P(No)), read from the
+model's own next-token probabilities. The report cards need that smooth score.
+Before building J1, check what the Meta model API returns:
+
+1. With `META_API_KEY` set, send one judge question and look for token
+   log-probabilities in the response (often called `logprobs` / `top_logprobs`).
+2. If it returns them: build J1 as specified, computing P(Yes) the same way as
+   the local judge. About 1 hour.
+3. If it returns only text: pick one fallback and say which in the report:
+   (a) sample the same question N times (for example 10) at temperature 1 and
+   use the share of Yes answers; (b) ask for a 0-100 number (weaker: a stated
+   guess, not a probability). Re-run the hand-label agreement check either way.
+4. Report in `reports/J1.md`: the API response shape, the method chosen, and
+   agreement with the hand labels next to the local judge's.
 
 Contracts let R2, D1, E1, U1, U2 and U3 start **today**, in parallel, before
 R1 or any model run is finished. Backends implement the contract; the UI builds
@@ -90,13 +110,15 @@ V1 recordings. Muse's real-model checks fit between them.
 
 ## Rules every agent follows
 
-1. **Branch.** Start from `claude/admiring-mendel-mn88n8` (the integration
-   branch). Work on `lane/<ID>-<short-name>`, for example `lane/R1-reader-core`.
-   Before you ask for a merge: `git fetch origin && git merge
-   origin/claude/admiring-mendel-mn88n8`, run the full tests, push your lane
-   branch. Never rebase a shared branch. Never force-push.
-2. **Merge.** Claude (integrator) merges lane branches into the integration
-   branch after review. A lane is not merged with failing tests.
+1. **Branches.** Three kinds only: `main` (stable, protected, changes only by
+   pull request from `develop`), `develop` (integration), and feature branches
+   `feature/<ID>-<short-name>` (for example `feature/J1-meta-judge`) cut from
+   `develop`. Before merging: `git fetch origin && git merge origin/develop`,
+   run the full tests, push the feature branch. Never rebase a shared branch.
+   Never force-push.
+2. **Merge.** A feature branch merges into `develop` with a merge commit once
+   the full tests pass; then delete the feature branch. `develop` goes to `main`
+   by pull request when a milestone is stable (for example the recorded demo).
 3. **Tests.** `uv run python -m unittest discover -s tests -t .` must pass.
    Every spec names its own new tests; write them first or with the code.
    Model-backed tests go in the model-lane test group and skip without weights.

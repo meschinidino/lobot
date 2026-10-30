@@ -14,6 +14,13 @@ report. The local judge stays the default and the fallback.
 - `trait_eval.py` (judge prompt and scoring), `scripts/validate_judge.py`,
   `docs/open-questions.md`.
 
+## Step 0 (do first)
+
+Check whether the Meta model API returns token log-probabilities. The method
+and fallbacks are in `docs/roadmap/README.md`, "Next step". The local judge's
+score is P(Yes) / (P(Yes) + P(No)); `MetaApiJudge` must produce the same kind
+of score, or say plainly which fallback it uses.
+
 ## Deliverables
 
 - A judge interface: `Judge.score(question, reply, rubric) -> float in [0, 1]`
