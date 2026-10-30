@@ -1,7 +1,7 @@
 """lobot web server: FastAPI over the engine, serves the web/ frontend.
 
 Same before/after loop as app.py (Gradio), with a custom frontend that
-follows DESIGN.md. Engine state (warm model, presets, active model) stays
+follows docs/DESIGN.md. Engine state (warm model, presets, active model) stays
 in app.py so both UIs load and steer the same way.
 
 Endpoints:

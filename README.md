@@ -139,16 +139,16 @@ human copies and posts the artifact text by hand.
 - `src/model_lobotomy/guard.py` — the refusal guard (opt-in until release; research mode records an override).
 - `src/model_lobotomy/create_job.py`, `src/model_lobotomy/trait_eval.py`, `src/model_lobotomy/trait_store.py`, `src/model_lobotomy/prompt_bank.py`, `src/model_lobotomy/evaluation.py` — Create: contrast prompts, behavior direction, judge, held-out splits and report cards.
 - `src/model_lobotomy/patch.py` — `.lobot` patch files and llama.cpp control-vector export.
-- `web/` — the workbench (`index.html`), the static prototype, fonts, recorded runs (`example.json`, `sweep*.json`). Follows `DESIGN.md`.
+- `web/` — the workbench (`index.html`), the static prototype, fonts, recorded runs (`example.json`, `sweep*.json`). Follows `docs/DESIGN.md`.
 - `src/model_lobotomy/app.py` — older Gradio UI.
-- `DESIGN.md` — design system: "the fork" workbench.
+- `docs/DESIGN.md` — design system: "the fork" workbench.
 - `docs/roadmap/` — goal, lanes, contracts and one spec per workstream.
 - `docs/plans/lobot-10x-plan.md` — reviewed plan and the binding decisions (D1-D14).
 - `scripts/` — headless runner, recorders (`record_sweep.py`), gates, judge validation, llama.cpp export, environment checks.
 - `presets/` — steering presets per model, and the recipe string grammar.
 - `store/` — saved traits and reader caches. `jobs/` — Create job outputs (local).
 - `tests/` — unit suite plus the opt-in model-backed lane.
-- `calibration*.json` — committed calibration caches per model.
+- `docs/calibration*.json` — committed calibration caches per model.
 - `pyproject.toml`, `uv.lock` — dependencies.
 
 `logs/` and `artifacts/` hold local run outputs. The repo ignores both.

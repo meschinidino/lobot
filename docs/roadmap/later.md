@@ -9,7 +9,7 @@ dependencies. Write a full spec (same template as `specs/`) before starting.
 |---|---|---|---|---|
 | F1 | Clean features | Train a sparse autoencoder or transcoder on chosen Llama layers on the Mac; read and steer features, not single neurons | On 50 random features, reader coherence median >= 0.6 (vs single-neuron median); steering a feature has lift >= 3 for its top words on at least half | R1, R3 |
 | C2 | Fast describe-to-patch | Create in about 1 minute: fewer prompts, cached captures, early stop when the gate is clear | Median Create time <= 2 min on Llama; same pass/fail as the full schedule on 8 known families | Create (wave 1) |
-| C3 | Open descriptions | Create from any description: the model writes contrast prompts and a judge rubric; 20 user labels validate the judge | Two new traits pass the gates with model-written parts; judge agreement >= the validated families' | C2, J1 (TODOS.md item) |
+| C3 | Open descriptions | Create from any description: the model writes contrast prompts and a judge rubric; 20 user labels validate the judge | Two new traits pass the gates with model-written parts; judge agreement >= the validated families' | C2, J1 (docs/TODOS.md item) |
 | CH | Chat with live dials | Multi-turn chat; edits persist across turns; dials per word across turns | 10-turn chat replays exactly; dials per token match /api/run reads | D1, U3 |
 | DL | Delete | Run-time ablation for eligible traits, with side-effect checks | Delete report cards with side effects on prompts that elicit the trait; guard re-checked with Delete active | Engine ablation (exists) |
 | IN | Install everywhere | One-click install into llama.cpp and Ollama from the UI; verify button | A patch installed from the UI changes llama.cpp output as recorded | P1 |
@@ -32,4 +32,4 @@ dependencies. Write a full spec (same template as `specs/`) before starting.
 The same tool that adds honesty can remove safety. Every stage keeps: the
 guard on by default, research mode recorded in every artifact, refusal-weakening
 patches unpublishable to the registry, and no baked-in weight export without
-the guard record (TODOS.md).
+the guard record (docs/TODOS.md).
