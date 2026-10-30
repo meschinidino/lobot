@@ -15,7 +15,7 @@ find, lift. Exact shapes: `contracts.md` section 2.
 
 ## Read first
 
-- `server.py`: how `/api/run` takes the Engine lock, checks `NO_MODEL` and
+- `src/model_lobotomy/server.py`: how `/api/run` takes the Engine lock, checks `NO_MODEL` and
   `REPLAY`, and returns errors.
 - `docs/api.md`: style for documenting routes.
 - `tests/test_server.py`: `ServerStreamTest` (fake engine) and
@@ -26,7 +26,7 @@ find, lift. Exact shapes: `contracts.md` section 2.
 - `POST /api/neurons` extension: optional `reply` (appended after the wrapped
   prompt; `token_index` may address it; response adds `reply_start`) and
   `pushes_toward_top` on each neuron (null until R1 merges).
-- New routes in `server.py`:
+- New routes in `src/model_lobotomy/server.py`:
   `GET /api/neuron/{layer}/{neuron}`, `GET /api/find`, `POST /api/lift`.
 - Replay support for `GET /api/neuron/...`: serve from
   `store/reader/<model-slug>/cards.json` when present; otherwise 503 with

@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import app  # noqa: E402
+from model_lobotomy import app  # noqa: E402
 
 
 class FakeTokenizer:

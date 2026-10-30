@@ -33,13 +33,13 @@ from pathlib import Path
 
 import torch
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-import engine as engine_mod  # noqa: E402
-import evaluation as E  # noqa: E402
-import guard as guard_mod  # noqa: E402
-import steer  # noqa: E402
+from model_lobotomy import engine as engine_mod  # noqa: E402
+from model_lobotomy import evaluation as E  # noqa: E402
+from model_lobotomy import guard as guard_mod  # noqa: E402
+from model_lobotomy import steer  # noqa: E402
 
 _SPIKE = importlib.util.spec_from_file_location(
     "spike_knob_mod", ROOT / "scripts" / "spike_knob.py")
@@ -740,7 +740,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     out["ledger"] = {"recorded": [v for v in
                                   ("update_up", "update_down", "delete")
                                   if elig[v]]}
-    import patch as patch_mod
+    from model_lobotomy import patch as patch_mod
     patch_mod.save_patch(
         workdir / "knob.lobot", direction=frozen["unit"],
         layer=frozen["layer"], dose=frozen["dose"],

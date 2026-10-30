@@ -53,8 +53,8 @@ sys.path.insert(0, str(ROOT))
 
 import torch
 
-import engine as engine_mod
-import steer
+from model_lobotomy import engine as engine_mod
+from model_lobotomy import steer
 
 OUT = ROOT / "logs" / "spike_knob" / "v2"
 DOSES = [0.0, 0.25, 0.5, 0.75, 1.0, 1.5]

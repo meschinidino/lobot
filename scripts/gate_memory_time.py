@@ -25,8 +25,8 @@ import torch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import engine as engine_mod  # noqa: E402
-import steer  # noqa: E402
+from model_lobotomy import engine as engine_mod  # noqa: E402
+from model_lobotomy import steer  # noqa: E402
 
 PROMPT = "Explain how photosynthesis works in one paragraph."
 MAX_NEW = 60

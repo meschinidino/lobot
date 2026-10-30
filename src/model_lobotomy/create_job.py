@@ -21,12 +21,12 @@ import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-import prompt_bank  # noqa: E402
-import trait_eval  # noqa: E402
-from trait_store import TraitStore, UnsupportedTrait  # noqa: E402
+from model_lobotomy import prompt_bank  # noqa: E402
+from model_lobotomy import trait_eval  # noqa: E402
+from model_lobotomy.trait_store import TraitStore, UnsupportedTrait  # noqa: E402
 
 STAGES = ("extract", "tune", "read_gate", "final", "baseline", "verdict")
 
@@ -74,7 +74,7 @@ class _Job:
 
 
 def _default_engine_factory(model_id, revision):
-    import engine as engine_mod
+    from model_lobotomy import engine as engine_mod
     eng = engine_mod.Engine()
     eng.load(model_id, revision)
     return eng

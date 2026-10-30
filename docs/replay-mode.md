@@ -14,7 +14,7 @@ nothing downloads and the demo cannot fail. For live weights, see
 1. Start the server in replay mode.
 
    ```sh
-   MODEL_LOBOTOMY_REPLAY=1 uv run python server.py
+   MODEL_LOBOTOMY_REPLAY=1 uv run python -m model_lobotomy.server
    ```
 
 2. Open `http://127.0.0.1:7860`.

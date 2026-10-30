@@ -19,8 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import engine  # noqa: E402
-import reader  # noqa: E402
+from model_lobotomy import engine  # noqa: E402
+from model_lobotomy import reader  # noqa: E402
 
 
 def slug_for(model_id: str) -> str:

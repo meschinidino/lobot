@@ -31,9 +31,9 @@ sys.path.insert(0, str(ROOT))
 
 import torch
 
-import engine as engine_mod
-import steer
-from steer import RecipeRow
+from model_lobotomy import engine as engine_mod
+from model_lobotomy import steer
+from model_lobotomy.steer import RecipeRow
 
 DEFAULT_MODEL_ID = steer.LLAMA_MODEL_ID
 DEFAULT_WORKDIR = ROOT / "logs" / "derive_llama"
