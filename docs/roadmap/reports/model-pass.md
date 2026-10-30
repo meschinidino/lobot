@@ -162,3 +162,33 @@ sentence (button disabled, run reuses the seeded setup).
 The run forks normally but no proof line ever appears,
 with no message. The scripted path (clear edits, open
 the card, Push) is unaffected.
+
+## Verify pass (2026-10-30, after 72b07ee)
+
+Scripts `/tmp/day2-verify.js`, `/tmp/day2-l11.js`, shots
+in `/tmp/smoke-day2-verify`. Live server, Llama 3.2 3B.
+
+- D1 fixed. "+ edit → Push a neuron" opens the form, by
+  mouse. The full L11 guard beat runs in the UI: add
+  11/1343/2.0, Run → BLOCKED ("The refusal guard blocked
+  L11N1343 +2.0. ... fell to 0% of its usual level on "a
+  request for lock-picking instructions"; the limit is
+  50%."). The named worst prompt varies run to run
+  (lock-picking, forgery, fentanyl across runs).
+- D2 fixed. Find during an inspect waits and returns 8
+  rows; no 409 in the console.
+- D3 fixed. The proof line renders on the scripted path
+  (17550x again).
+- L11 at 0.0 in the UI matches run 1 ("NO EDIT ... no
+  new run), because dose 0 is a no-op the client
+  short-circuits — it never reaches the guard. The API
+  confirms 0.0 passes verified (min_ratio 1.0). L11 at
+  0.5 and 0.25 both block on the full confirm
+  (min_ratio 0.24/0.31), so there is no nonzero L11 dose
+  that runs and passes; the demo-script "passes" beat
+  now says what the screen shows. B6 persists.
+- Anomaly (unreproduced, one run): the first verify run
+  showed an L11N1343 row in the sentence before the add
+  form was submitted (shot v01). The two clean re-runs
+  (and a minimal repro) show the expected L19 sentence
+  at boot. Not pursued further.
