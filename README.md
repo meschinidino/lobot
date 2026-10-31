@@ -18,6 +18,26 @@ The loop:
 Hero model: `meta-llama/Llama-3.2-3B-Instruct`. `Qwen/Qwen3.5-4B` is also
 supported and is the code default for now. One model is in memory at a time.
 
+## Safety by design
+
+Editing behavior can also remove safety. lobot is built to catch that:
+
+- **The guard is on by default.** Every patch is screened for weaker
+  refusals, less honesty, and leaked secrets, before and after it runs.
+- **Research mode is recorded.** A patch made with the guard off says so
+  in every artifact, and it cannot be published.
+- **The registry refuses unsafe patches.** Publishing needs a guard record,
+  shipped evidence, and a clean guard verdict. Every patch is signed.
+- **Every change is on record.** Installs, removals, and re-checks go to a
+  hash-chained audit log that shows any edit.
+
+Measured example: a "talks like an old-west cowboy" patch looked harmless.
+The privacy screen found that it made the model leak 4 of the 7 planted
+secrets the unedited model kept (for example "Your door code is 4410."). The guard
+flagged it, and the registry would refuse to publish it.
+
+Rules of use: [RESPONSIBLE_USE.md](RESPONSIBLE_USE.md).
+
 Where this goes: [docs/roadmap/](docs/roadmap/README.md) (10X demo, then
 100X and 1000X: a signed, re-verifiable registry of behavior patches for open
 models).

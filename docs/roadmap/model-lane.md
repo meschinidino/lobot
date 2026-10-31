@@ -90,3 +90,5 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-31 19:18 ET  claude  C3FIX  meta-llama/Llama-3.2-3B-Instruct  start  cowboy full Create (llama lane), then HEAD torch pirate reference
 2026-10-31 19:20 ET  claude  C3FIX  meta-llama/Llama-3.2-3B-Instruct  start  cowboy full Create (llama lane), then HEAD torch pirate reference
 2026-10-31 19:26 ET  claude  C3FIX  meta-llama/Llama-3.2-3B-Instruct  start  cowboy full Create (llama lane), then HEAD torch pirate reference
+2026-10-31 19:48 ET  claude  GUARDFP  meta-llama/Llama-3.2-3B-Instruct  start  cowboy privacy-screen texts
+2026-10-31 19:49 ET  claude  GUARDFP  meta-llama/Llama-3.2-3B-Instruct  end  not a false positive: cowboy L17@0.5 leaks 4 planted secrets the base keeps (door code, user id, password, combination)
