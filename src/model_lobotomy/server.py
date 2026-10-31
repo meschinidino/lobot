@@ -57,7 +57,7 @@ from pathlib import Path
 
 import torch
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StrictBool
@@ -68,6 +68,7 @@ from model_lobotomy import create_job
 from model_lobotomy import drafts as drafts_mod
 from model_lobotomy import guard as guard_mod
 from model_lobotomy import installers as install_mod
+from model_lobotomy import reverify as reverify_mod
 from model_lobotomy import prompt_bank
 from model_lobotomy import sae as sae_mod
 from model_lobotomy import steer
@@ -247,6 +248,11 @@ class InstallRequest(BaseModel):
     trait_id: str = ""
     target: str = ""
     model_ref: str = ""
+
+
+class VerifyRequest(BaseModel):
+    trait_id: str = ""
+    quick: bool = True
 
 
 class InstallVerifyRequest(BaseModel):
@@ -1102,6 +1108,126 @@ def _install_compare(record: dict, prompt: str, base: str,
     out["judge_base"] = jb
     out["judge_patched"] = js
     return out
+
+
+UPLOAD_BYTES_CAP = 64 * 1024 * 1024
+
+
+def _verify_pin(patch_path) -> dict:
+    """Patch meta, or 422. 409 when its model is not the active one."""
+    from model_lobotomy import patch as patch_mod
+    try:
+        meta = patch_mod.load_patch(patch_path)["meta"]
+    except patch_mod.PatchRejected as e:
+        raise HTTPException(422, f"patch rejected: {e}") from None
+    model_id = (meta.get("fingerprint") or {}).get("model_id")
+    if model_id != engine._active_model_id:
+        raise HTTPException(
+            409, f"Patch model {model_id} is not the active model "
+            f"{engine._active_model_id}. Switch models first.")
+    return meta
+
+
+@api.post("/api/verify")
+def verify(req: VerifyRequest):
+    """Re-run a trait patch's shipped evidence (RV)."""
+    job_dir = _trait_job_dir(req.trait_id)
+    patch_path = job_dir / "trait" / "knob.lobot"
+    if not patch_path.is_file():
+        raise HTTPException(422, f"Trait {req.trait_id} has no saved "
+                                 f"patch to verify.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded "
+                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to verify.")
+    if get_engine().lock.locked():
+        raise HTTPException(409, "A run is in progress. "
+                                 "Wait for it to finish.")
+    _verify_pin(patch_path)
+    _cancel.clear()
+    return StreamingResponse(_verify_stream(patch_path, req.quick),
+                             media_type="application/x-ndjson")
+
+
+@api.post("/api/verify/upload")
+async def verify_upload(file: UploadFile = File(...)):
+    """Verify an uploaded .lobot file (RV). Never unpickles."""
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded "
+                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to verify.")
+    if get_engine().lock.locked():
+        raise HTTPException(409, "A run is in progress. "
+                                 "Wait for it to finish.")
+    data = b""
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        data += chunk
+        if len(data) > UPLOAD_BYTES_CAP:
+            raise HTTPException(413, "Patch file is over 64 MB.")
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        probe = Path(tmp) / "probe.lobot"
+        probe.write_bytes(data)
+        _verify_pin(probe)
+    _cancel.clear()
+    return StreamingResponse(_verify_stream(data, True),
+                             media_type="application/x-ndjson")
+
+
+def _verify_stream(patch, quick: bool):
+    """NDJSON progress per prompt pair, then one result (RV)."""
+    import queue
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        yield _event(stage="error", message="A run is in progress. "
+                                            "Wait for it to finish.")
+        return
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        events: queue.Queue = queue.Queue()
+
+        def progress(done, total):
+            events.put(("progress", done, total))
+
+        outcome = {}
+
+        def run():
+            try:
+                outcome["ret"] = reverify_mod.run_verify_patch(
+                    patch, quick=quick, progress=progress,
+                    cancel=_cancel, engine=eng)
+            except trait_eval.Stopped:
+                outcome["stopped"] = True
+            except Exception as e:  # noqa: BLE001 — report, not crash
+                outcome["error"] = f"Verify failed: {e}"
+            finally:
+                events.put(("end",))
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        while True:
+            item = events.get()
+            if item[0] == "end":
+                break
+            yield _event(stage="progress", done=item[1], total=item[2])
+        worker.join()
+        if outcome.get("stopped", False) or _cancel.is_set():
+            yield _event(stage="stopped", after="verify")
+        elif "error" in outcome:
+            yield _event(stage="error", message=outcome["error"])
+        else:
+            code, report = outcome["ret"]
+            if "error" in report:
+                yield _event(stage="error", message=report["error"])
+            else:
+                yield _event(stage="done", result=report,
+                             exit_code=code)
+    finally:
+        eng.lock.release()
 
 
 def _trait_vector(knob: dict, dose: float, scale: float):

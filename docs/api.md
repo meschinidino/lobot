@@ -482,6 +482,22 @@ install record. Errors: 400 (empty prompt, bad judge), 404
 unknown install, 409 busy, 422 (a run failed), 503 (judged
 verify with NO_MODEL).
 
+## Verify (RV re-verify anywhere)
+
+`POST /api/verify {"trait_id", "quick": true}` → NDJSON.
+Re-runs the trait's saved patch on the active model (16
+held-out prompts when quick, else the full 30). Events:
+`progress` (`done`, `total`), `done` (`result`: the
+shipped-vs-measured report, `exit_code`), `stopped`,
+`error`. Errors: 404 unknown trait, 422 (no saved patch),
+409 (busy, or the patch model is not the active model),
+503 NO_MODEL.
+
+`POST /api/verify/upload` (multipart `.lobot`, at most
+64 MB) runs the same quick check on an uploaded file.
+Rejects non-zip and pickled payloads (422) without
+unpickling. Same events and errors, plus 413 over the cap.
+
 ## Frontend loop (happy path)
 
 1. `GET /api/families` → offer validated traits.
