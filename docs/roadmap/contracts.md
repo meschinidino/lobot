@@ -179,3 +179,30 @@ Recording with dials (optional) [V1]: a sweep run may carry
 on; the demo runs with it on). The UI sends `"guard": state.guard_default`
 unless the user changes it.
 Guard dicts add `"limit": 0.5` and `"floor": 0.2` (the values in force).
+
+## 7. 100X: clean features [F1]
+
+`GET /api/features` → `{"saes": [{"model_id", "layer",
+"features", "top_k", "live", "dead", "mse"}]}`. 200 with an empty
+list when nothing is trained. No model needed.
+
+`GET /api/feature/{layer}/{index}?k=12` → `{"model_id", "layer",
+"index", "live", "pushes_toward": {up, down, "coherence",
+"layer_frac"}, "fires_on": [...] | null, "fires_on_cache":
+{"built", "tokens"}}`. 400 when the index is out of bounds, 404
+when no SAE is trained for the layer, 503 without weights or in
+replay mode.
+
+`POST /api/feature-lift` body `{"layer", "index", "dose", "words"
+| null, "prompts": null}` → the `steer_lift` dict. `words: null`
+uses the feature's top words (top-3 whole-word up tokens, else
+top-1). Errors like `/api/lift`, plus 404 without an SAE.
+
+Library: `reader.pushes_of_direction(eng, direction, k, layer)`
+(any hidden vector through gamma and the head;
+`pushes_toward` shares its tail, same numbers),
+`reader.steer_lift_vector(eng, layer, direction, dose, words,
+prompts, medians)` (unit-normed direction as a `VectorEdit` with
+scale = the layer median norm). `sae.py` owns the TopK SAE,
+`store/sae/<model-slug>/L{layer}/` (`sae.safetensors`,
+`config.json`, `fires.npz`, `tokens.json`).
