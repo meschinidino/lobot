@@ -1346,7 +1346,8 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         layer=frozen["layer"], dose=frozen["dose"],
         scale=float(med[frozen["layer"]]), trait=trait_name,
         recipe={"instruction": cfg["pos"], "layer": frozen["layer"],
-                "dose": frozen["dose"], "seed": seed},
+                "dose": frozen["dose"], "seed": seed,
+                "judge": cfg["judge"]},
         report_card=_json_card(cards["update_up"]),
         guard=out.get("guard", {}), fingerprint=out["fingerprint"])
     out["patch"] = "knob.lobot"

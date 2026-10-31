@@ -62,9 +62,29 @@ def load_engine(model_id: str):
     return eng
 
 
-def judge_fn_for(eng, trait: str):
+def judge_label(meta: dict) -> str | None:
+    """The judge label a patch was measured with, or None.
+
+    Order: the patch's own recipe (patches from Create carry it, so
+    a third party needs no local family), the local trait store
+    (open families), then the legacy spike table.
+    """
+    label = (meta.get("recipe") or {}).get("judge")
+    if isinstance(label, str) and label.strip():
+        return label
+    trait = meta.get("trait")
+    try:
+        return trait_eval.family_cfg(trait)["judge"]
+    except (KeyError, TypeError):
+        pass
+    legacy = trait_eval.spike.BEHAVIORS.get(trait)
+    return legacy["judge"] if legacy else None
+
+
+def judge_fn_for(eng, trait: str, label: str | None = None):
     """The trait's frozen judge (monkeypatch point)."""
-    label = trait_eval.spike.BEHAVIORS[trait]["judge"]
+    if label is None:
+        label = trait_eval.spike.BEHAVIORS[trait]["judge"]
     spec = eng.spec
     return lambda q, r: trait_eval.judge_score(
         eng.model, eng.tokenizer, spec, q, r, label)
@@ -100,9 +120,11 @@ def run_verify_patch(patch, *, quick: bool, progress=None,
         return (2, {"error": "patch names no model_id in fingerprint"})
     seed = (meta.get("recipe") or {}).get("seed", 0)
     trait = meta.get("trait")
-    if trait not in trait_eval.spike.BEHAVIORS:
-        return (2, {"error": f"unknown trait {trait!r}; have "
-                    f"{sorted(trait_eval.spike.BEHAVIORS)}"})
+    label = judge_label(meta)
+    if label is None:
+        return (2, {"error": f"unknown trait {trait!r}: the patch "
+                    f"carries no judge label and no local family or "
+                    f"legacy trait has one"})
     card = meta.get("report_card") or {}
     if "trait_mean" not in card or "trait_ci" not in card:
         return (2, {"error": "patch report_card has no shipped numbers "
@@ -119,7 +141,7 @@ def run_verify_patch(patch, *, quick: bool, progress=None,
     eng = engine if engine is not None else (
         load_engine_fn or load_engine)(model_id)
     try:
-        judge_fn = (judge_fn_for_fn or judge_fn_for)(eng, trait)
+        judge_fn = (judge_fn_for_fn or judge_fn_for)(eng, trait, label)
         gains = measure_gains(eng, judge_fn, prompts, edits,
                               int(seed), progress=progress,
                               cancel=cancel)

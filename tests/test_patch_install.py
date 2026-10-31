@@ -134,7 +134,7 @@ class VerifyTest(unittest.TestCase):
         with mock.patch.object(verify_mod, "load_engine",
                                lambda model_id: eng), \
                 mock.patch.object(verify_mod, "judge_fn_for",
-                                  lambda eng, trait: judge):
+                                  lambda eng, trait, label=None: judge):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 code = verify_mod.main([str(knob), "--quick"])

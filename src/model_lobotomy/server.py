@@ -285,6 +285,14 @@ class InstallVerifyRequest(BaseModel):
     prompt: str = ""
     judge: str | None = None
     max_new_tokens: int = 64
+    # > 0: judge the first N prompts of the patch's own final split
+    # (where its shipped interval came from) and compare their mean
+    # gain; needs judge "local". The prompt field is then unused.
+    judged_n: int = 0
+
+
+# A judged verify never needs more than the final split (30 prompts).
+INSTALL_JUDGED_MAX = 30
 
 
 class DeleteCheckRequest(BaseModel):
@@ -1056,14 +1064,22 @@ def install_verify(install_id: str, req: InstallVerifyRequest):
     if not _INSTALL_ID_RE.fullmatch(install_id or ""):
         raise HTTPException(404, f"Unknown install {install_id}.")
     prompt = req.prompt.strip()
-    if not prompt:
-        raise HTTPException(400, "The prompt is empty. "
-                                 "Type a prompt first.")
     if req.judge not in (None, "local"):
         raise HTTPException(400, "judge must be null or 'local'.")
+    if req.judged_n:
+        if req.judge != "local":
+            raise HTTPException(400, "judged_n needs judge 'local'.")
+        if not 1 <= req.judged_n <= INSTALL_JUDGED_MAX:
+            raise HTTPException(400, f"judged_n must be 1 to "
+                                     f"{INSTALL_JUDGED_MAX}.")
+    elif not prompt:
+        raise HTTPException(400, "The prompt is empty. "
+                                 "Type a prompt first.")
     record = install_mod.load_install(install_id)
     if record is None:
         raise HTTPException(404, f"Unknown install {install_id}.")
+    if req.judged_n:
+        return _install_verify_judged(install_id, record, req)
     if not _install_lock.acquire(blocking=False):
         raise HTTPException(409, "An install or verify is running. "
                                  "Wait for it to finish.")
@@ -1101,9 +1117,71 @@ def install_verify(install_id: str, req: InstallVerifyRequest):
         _install_lock.release()
 
 
+def _final_prompts(record: dict, n: int) -> list[str]:
+    """First n final-split prompts of the install's Create job."""
+    report = _trait_job_dir(record["trait_id"]) / "trait" / "report.json"
+    try:
+        final = json.loads(report.read_text())["splits"]["final"]
+    except (OSError, ValueError, KeyError, TypeError):
+        raise HTTPException(422, "The Create report has no final "
+                                 "split to judge on.") from None
+    return [str(q) for q in final][:n]
+
+
+def _install_verify_judged(install_id: str, record: dict,
+                           req: InstallVerifyRequest) -> dict:
+    """Clean vs patched runs on the final split, judged as a mean (IN).
+
+    The shipped interval is a mean over the final split, so the
+    measured value is a mean over the same prompts, not one draw.
+    """
+    prompts = _final_prompts(record, req.judged_n)
+    if not _install_lock.acquire(blocking=False):
+        raise HTTPException(409, "An install or verify is running. "
+                                 "Wait for it to finish.")
+    try:
+        t_all = time.perf_counter()
+        max_new = min(max(int(req.max_new_tokens), 1), 256)
+        triples = []
+        for q in prompts:
+            runs = []
+            for patched in (False, True):
+                r = install_mod.generate(record["target"], record["run"],
+                                         q, patched=patched,
+                                         max_new=max_new)
+                if not r["ok"]:
+                    side = "Patched" if patched else "Unpatched"
+                    raise HTTPException(422, f"{side} run failed: "
+                                             f"{r['detail']}")
+                runs.append(r["text"])
+            triples.append((q, runs[0], runs[1]))
+        out = {"install_id": install_id, "prompts": prompts,
+               "differs": sum(b != p for _q, b, p in triples),
+               "comparison": _install_compare_many(record, triples),
+               "seconds": round(time.perf_counter() - t_all, 1)}
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        (install_mod.INSTALLS_ROOT / install_id /
+         f"verify-judged-{stamp}.json").write_text(json.dumps(
+             {**out, "texts": [{"q": q, "base": b, "patched": p}
+                               for q, b, p in triples]}, indent=2))
+        return out
+    finally:
+        _install_lock.release()
+
+
 def _install_compare(record: dict, prompt: str, base: str,
                      patched: str) -> dict:
-    """Judge gain vs the patch's shipped interval (IN)."""
+    """Judge gain vs the patch's shipped interval, one prompt (IN)."""
+    out = _install_compare_many(record, [(prompt, base, patched)])
+    if out.get("per_prompt"):
+        one = out.pop("per_prompt")[0]
+        out["judge_base"] = one["judge_base"]
+        out["judge_patched"] = one["judge_patched"]
+    return out
+
+
+def _install_compare_many(record: dict, triples) -> dict:
+    """Mean judge gain over (prompt, base, patched) vs the interval."""
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded "
                                  "(MODEL_LOBOTOMY_NO_MODEL is set). "
@@ -1133,15 +1211,18 @@ def _install_compare(record: dict, prompt: str, base: str,
         if eng.model is None or eng.model_id != engine._active_model_id:
             eng.load(engine._active_model_id)
         spec = engine.active_spec()
-        jb = trait_eval.judge_score(eng.model, eng.tokenizer, spec,
-                                    prompt, base, label)
-        js = trait_eval.judge_score(eng.model, eng.tokenizer, spec,
-                                    prompt, patched, label)
+        rows = []
+        for q, base, patched in triples:
+            jb = trait_eval.judge_score(eng.model, eng.tokenizer, spec,
+                                        q, base, label)
+            js = trait_eval.judge_score(eng.model, eng.tokenizer, spec,
+                                        q, patched, label)
+            rows.append({"q": q, "judge_base": jb, "judge_patched": js})
     finally:
         eng.lock.release()
-    out = install_mod.compare(card, [js - jb])
-    out["judge_base"] = jb
-    out["judge_patched"] = js
+    out = install_mod.compare(
+        card, [r["judge_patched"] - r["judge_base"] for r in rows])
+    out["per_prompt"] = rows
     return out
 
 
