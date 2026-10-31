@@ -23,6 +23,9 @@ Endpoints:
     GET  /api/neuron/{layer}/{neuron} one neuron card (R2)
     GET  /api/find    neurons that push one word (R2)
     POST /api/lift    steering lift for one neuron (R2)
+    GET  /api/features  trained SAEs for the active model (F1)
+    GET  /api/feature/{layer}/{index} one SAE feature card (F1)
+    POST /api/feature-lift  steering lift for one SAE feature (F1)
     POST /api/chat/start  open a chat session (edits persist, E2)
     POST /api/chat         one chat turn, streamed tokens
     GET  /api/chat/{id}    chat history (reattach)
@@ -56,6 +59,7 @@ from starlette.responses import FileResponse, JSONResponse
 from model_lobotomy import app as engine
 from model_lobotomy import create_job
 from model_lobotomy import guard as guard_mod
+from model_lobotomy import sae as sae_mod
 from model_lobotomy import steer
 from model_lobotomy import trait_eval
 from model_lobotomy import trait_store
@@ -195,6 +199,14 @@ class LiftRequest(BaseModel):
     neuron: int
     dose: float = Field(ge=engine.DOSE_MIN, le=engine.DOSE_MAX)
     words: list[str] = Field(min_length=1)
+    prompts: list[str] | None = None
+
+
+class FeatureLiftRequest(BaseModel):
+    layer: int
+    index: int
+    dose: float = Field(ge=engine.DOSE_MIN, le=engine.DOSE_MAX)
+    words: list[str] | None = None
     prompts: list[str] | None = None
 
 
@@ -936,6 +948,149 @@ def lift(req: LiftRequest):
         try:
             return reader.steer_lift(eng, req.layer, req.neuron, req.dose,
                                      req.words, prompts, medians)
+        except ValueError as e:
+            raise HTTPException(400, f"{e}.") from None
+    finally:
+        eng.lock.release()
+
+
+# Loaded SAEs: str(dir) -> (weights mtime, sae, config). Refreshed
+# when the weights file changes; tests clear it between cases.
+_sae_cache: dict = {}
+
+
+def _load_sae_cached(sae_dir: Path):
+    key = str(sae_dir)
+    mtime = (sae_dir / sae_mod.WEIGHTS_NAME).stat().st_mtime
+    hit = _sae_cache.get(key)
+    if hit is not None and hit[0] == mtime:
+        return hit[1], hit[2]
+    sae, cfg = sae_mod.load_sae(sae_dir)
+    _sae_cache[key] = (mtime, sae, cfg)
+    return sae, cfg
+
+
+def _sae_layers() -> list:
+    """(layer, dir, config) per trained SAE for the active model."""
+    base = ROOT / "store" / "sae" / _model_slug(engine._active_model_id)
+    out = []
+    if base.is_dir():
+        for child in sorted(base.iterdir()):
+            if not child.is_dir() or not child.name.startswith("L"):
+                continue
+            try:
+                layer = int(child.name[1:])
+            except ValueError:
+                continue
+            cfg_path = child / sae_mod.CONFIG_NAME
+            w_path = child / sae_mod.WEIGHTS_NAME
+            if not cfg_path.is_file() or not w_path.is_file():
+                continue
+            try:
+                cfg = json.loads(cfg_path.read_text())
+            except (OSError, ValueError):
+                continue
+            out.append((layer, child, cfg))
+    return out
+
+
+@api.get("/api/features")
+def features():
+    """Trained SAEs for the active model (F1). No model needed."""
+    saes = []
+    for layer, _dir, cfg in _sae_layers():
+        saes.append({
+            "model_id": cfg.get("model_id", engine._active_model_id),
+            "layer": layer,
+            "features": int(cfg.get("features", 0)),
+            "top_k": int(cfg.get("top_k", 0)),
+            "live": cfg.get("live"),
+            "dead": cfg.get("dead"),
+            "mse": cfg.get("mse_last"),
+        })
+    return {"saes": saes}
+
+
+@api.get("/api/feature/{layer}/{index}")
+def feature_card(layer: int, index: int, k: int = Query(12, ge=1, le=50)):
+    """One SAE feature card: pushes plus cached fires (F1)."""
+    spec = engine.active_spec()
+    if not 0 <= layer < spec.layers:
+        raise HTTPException(400, f"Layer {layer} is out of bounds "
+                                 f"[0,{spec.layers}).")
+    found = next((d for L, d, _c in _sae_layers() if L == layer), None)
+    if found is None:
+        raise HTTPException(404, f"No trained SAE for layer {layer} on "
+                                 f"{engine._active_model_id}. Train one with "
+                                 f"scripts/train_sae.py.")
+    if REPLAY:
+        raise HTTPException(503, "Feature cards need the model. "
+                                 "Replay mode has no recordings for them.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        sae, _cfg = _load_sae_cached(found)
+        if not 0 <= index < sae.features:
+            raise HTTPException(400, f"Feature {index} is out of bounds "
+                                     f"[0,{sae.features}).")
+        return sae_mod.feature_card(eng, sae, layer, index,
+                                    cache_dir=found, k=k)
+    finally:
+        eng.lock.release()
+
+
+@api.post("/api/feature-lift")
+def feature_lift(req: FeatureLiftRequest):
+    """Steering lift for one SAE feature (F1)."""
+    spec = engine.active_spec()
+    if not 0 <= req.layer < spec.layers:
+        raise HTTPException(400, f"Layer {req.layer} is out of bounds "
+                                 f"[0,{spec.layers}).")
+    found = next((d for L, d, _c in _sae_layers() if L == req.layer), None)
+    if found is None:
+        raise HTTPException(404, f"No trained SAE for layer {req.layer} on "
+                                 f"{engine._active_model_id}. Train one with "
+                                 f"scripts/train_sae.py.")
+    prompts = req.prompts
+    if prompts is None:
+        path = ROOT / "store" / "reader" / "lift_prompts.json"
+        if not path.exists():
+            raise HTTPException(500, "The lift prompts are missing from the server.")
+        prompts = json.loads(path.read_text())
+    if REPLAY:
+        raise HTTPException(503, "Feature lift needs the model. "
+                                 "Replay mode has no recordings for it.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        sae, _cfg = _load_sae_cached(found)
+        if not 0 <= req.index < sae.features:
+            raise HTTPException(400, f"Feature {req.index} is out of bounds "
+                                     f"[0,{sae.features}).")
+        words = req.words
+        if words is None:
+            words = sae_mod.top_words(reader.pushes_of_direction(
+                eng, sae_mod.feature_direction(sae, req.index),
+                layer=req.layer))
+        if not words:
+            raise HTTPException(422, "Give at least one word.")
+        medians, _ = _calibrate(eng, [req.layer])
+        try:
+            return reader.steer_lift_vector(
+                eng, req.layer, sae_mod.feature_direction(sae, req.index),
+                req.dose, words, prompts, medians)
         except ValueError as e:
             raise HTTPException(400, f"{e}.") from None
     finally:
