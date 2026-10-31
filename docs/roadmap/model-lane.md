@@ -76,3 +76,12 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-31 17:30 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  start  new fast Create cheerful/Llama
 2026-10-31 17:35 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  end  cheerful fast 45s no_knob (strong tune effects, gate rejects)
 2026-10-31 17:38 ET  muse  QWEN  Qwen/Qwen3.5-4B  end  ship smoke: torch + llama boots, runs complete, dial 501
+2026-10-31 18:16 ET  claude  Q4KM  meta-llama/Llama-3.2-3B-Instruct  start  Q4_K_M convert + parity (Llama, then Qwen)
+2026-10-31 18:21 ET  claude  Q4KM  Qwen/Qwen3.5-4B  end  Q4_K_M fails Q8 bar on both (Llama top-1 2/3, Qwen refusal 0.034)
+2026-10-31 18:21 ET  claude  PREFIX  meta-llama/Llama-3.2-3B-Instruct  start  prefix cache cached-vs-cold check (Llama, then Qwen; Q8_0)
+2026-10-31 18:31 ET  claude  PREFIX  Qwen/Qwen3.5-4B  end  cached==cold on both (24/24 turns exact); Llama TTFT 686->56ms @620 tok; Qwen no reuse (recurrent)
+2026-10-31 18:26 ET  claude  PREFIX  Qwen/Qwen3.5-4B  start  state checkpoints: cached-vs-cold check (Qwen, then Llama; Q8_0)
+2026-10-31 18:28 ET  claude  PREFIX  Qwen/Qwen3.5-4B  end  checkpoints: Qwen 12/12 exact, TTFT 825->215ms @594 tok; Llama unchanged
+2026-10-31 18:48 ET  claude  CLANE  meta-llama/Llama-3.2-3B-Instruct  start  batch ops sanity (generate_batch/score_batch vs singles)
+2026-10-31 18:54 ET  claude  CLANE  meta-llama/Llama-3.2-3B-Instruct  start  Create lane vs torch equality (gen/judge/nll, pirate tuning)
+2026-10-31 18:59 ET  claude  CLANE  meta-llama/Llama-3.2-3B-Instruct  start  full pirate Create: llama lane, then HEAD torch reference
