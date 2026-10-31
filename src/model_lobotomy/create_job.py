@@ -14,6 +14,7 @@ anything else raises UnsupportedTrait ("not supported yet").
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 import time
@@ -98,6 +99,28 @@ class CreateRunner:
         self._jobs: dict[str, _Job] = {}
         self._mu = threading.Lock()
         self._local_lock = threading.Lock()
+        self._lane_daemons: dict[tuple, object] = {}
+
+    def _lane(self, eng, model_id: str, revision: str):
+        """The Create lane for this job, or None for the default.
+
+        LOBOT_CREATE_LANE=llama batches generation, judge and NLL on
+        a lobot-llamad kept warm per (model, revision); anything
+        else keeps every call on the torch engine.
+        """
+        if os.environ.get("LOBOT_CREATE_LANE", "torch") != "llama":
+            return None
+        from model_lobotomy import llama_backend
+        key = (model_id, revision)
+        daemon = self._lane_daemons.get(key)
+        if daemon is None:
+            for old in self._lane_daemons.values():
+                old.close()
+            self._lane_daemons.clear()
+            daemon = llama_backend.CreateDaemon(
+                model_id, revision, eng.tokenizer)
+            self._lane_daemons[key] = daemon
+        return trait_eval.LlamaLane(eng, eng.spec, daemon)
 
     # -- job control --
 
@@ -203,6 +226,10 @@ class CreateRunner:
                     job.done, job.total = done, total
                     self._persist(job)
 
+                extra = {}
+                lane = self._lane(eng, job.model_id, job.revision)
+                if lane is not None:
+                    extra["lane"] = lane
                 out = self._run_trait(
                     eng, eng.spec, job.trait, prompt_bank.PROMPT_BANK,
                     job.seed, self.jobs_dir / job_id / "trait",
@@ -210,7 +237,7 @@ class CreateRunner:
                     cancel=job.cancel, progress=progress,
                     guard=job.guard_opt_in,
                     research_mode=job.research_mode,
-                    schedule=job.schedule)
+                    schedule=job.schedule, **extra)
                 job.stage = "verdict"
                 job.verdict = out.get("verdict")
                 job.frozen = out.get("frozen") or {}
