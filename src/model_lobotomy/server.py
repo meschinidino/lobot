@@ -68,6 +68,7 @@ from model_lobotomy import create_job
 from model_lobotomy import drafts as drafts_mod
 from model_lobotomy import guard as guard_mod
 from model_lobotomy import guard_screens as guard_screens_mod
+from model_lobotomy import combine as combine_mod
 from model_lobotomy import installers as install_mod
 from model_lobotomy import reverify as reverify_mod
 from model_lobotomy import prompt_bank
@@ -249,6 +250,12 @@ class InstallRequest(BaseModel):
     trait_id: str = ""
     target: str = ""
     model_ref: str = ""
+
+
+class CombineCheckRequest(BaseModel):
+    patch_ids: list = []
+    max_new_tokens: int = 24
+    seed: int = 0
 
 
 class VerifyRequest(BaseModel):
@@ -1230,6 +1237,125 @@ def _verify_stream(patch, quick: bool):
                              exit_code=code)
     finally:
         eng.lock.release()
+
+
+def _combine_patches(patch_ids: list) -> tuple[list, list]:
+    """(names, loaded patches) for trait ids, or 404/422."""
+    from model_lobotomy import patch as patch_mod
+    if not patch_ids:
+        raise HTTPException(400, "Give at least one patch id.")
+    if len(patch_ids) > combine_mod.MAX_PATCHES:
+        raise HTTPException(
+            400, f"Give at most {combine_mod.MAX_PATCHES} patches.")
+    names, patches = [], []
+    for pid in patch_ids:
+        job_dir = _trait_job_dir(pid)
+        path = job_dir / "trait" / "knob.lobot"
+        if not path.is_file():
+            raise HTTPException(422, f"Trait {pid} has no saved "
+                                     f"patch to combine.")
+        try:
+            loaded = patch_mod.load_patch(path)
+        except patch_mod.PatchRejected as e:
+            raise HTTPException(422, f"patch rejected: {e}") from None
+        model_id = (loaded["meta"].get("fingerprint") or {}).get(
+            "model_id")
+        if model_id != engine._active_model_id:
+            raise HTTPException(
+                422, f"Patch {pid} targets {model_id}, not the "
+                f"active model {engine._active_model_id}.")
+        names.append(loaded["meta"].get("trait", pid))
+        patches.append(loaded)
+    seen: dict[str, int] = {}
+    for i, n in enumerate(names):
+        seen[n] = seen.get(n, 0) + 1
+        if seen[n] > 1:
+            names[i] = f"{n} #{seen[n]}"
+    return names, patches
+
+
+def _combine_matrix(names, patches, max_new: int, seed: int) -> dict:
+    """Pair matrix + install order on the engine (CB)."""
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. "
+                                 "Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        layers = sorted({int(p["meta"]["layer"]) for p in patches})
+        medians, _ = _calibrate(eng, layers)
+        guard = guard_mod.Guard()
+        kw = dict(medians=medians,
+                  max_new_tokens=min(max(int(max_new), 1), 64),
+                  seed=seed, guard=guard)
+        try:
+            matrix = combine_mod.pair_matrix(
+                names, patches, eng, cancel=_cancel, **kw)
+        except trait_eval.Stopped:
+            raise HTTPException(409, "Stopped by user.") from None
+        by_name = {n: p for n, p in zip(names, patches)}
+
+        def blocked_screens(sub):
+            sub = sorted(sub)
+            out = combine_mod.check_set(
+                sub, [by_name[n] for n in sub], eng,
+                cancel=_cancel, **kw)
+            return {n for n, s in out["guard"].get(
+                "screens", {}).items() if s["blocked"]}
+
+        try:
+            order = combine_mod.install_order(names,
+                                              blocked_screens)
+        except trait_eval.Stopped:
+            raise HTTPException(409, "Stopped by user.") from None
+        matrix["install_order"] = order
+        return matrix
+    finally:
+        eng.lock.release()
+
+
+@api.post("/api/combine/check")
+def combine_check(req: CombineCheckRequest):
+    """Pair matrix + install order for saved patches (CB)."""
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded "
+                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to combine.")
+    names, patches = _combine_patches(req.patch_ids)
+    if get_engine().lock.locked():
+        raise HTTPException(409, "A run is in progress. "
+                                 "Wait for it to finish.")
+    return _combine_matrix(names, patches, req.max_new_tokens,
+                           req.seed)
+
+
+@api.get("/api/combine/installed")
+def combine_installed():
+    """Pair matrix for the traits installed via /api/install (CB)."""
+    root = install_mod.INSTALLS_ROOT
+    found: dict[str, float] = {}
+    if root.is_dir():
+        for rec in sorted(root.glob("*/install.json"),
+                          key=lambda p: p.stat().st_mtime):
+            try:
+                tid = json.loads(rec.read_text()).get("trait_id")
+            except ValueError:
+                continue
+            if tid and tid not in found:
+                found[tid] = rec.stat().st_mtime
+    if not found:
+        return {"installed": [], "matrix": None}
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded "
+                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to combine.")
+    names, patches = _combine_patches(list(found))
+    if get_engine().lock.locked():
+        raise HTTPException(409, "A run is in progress. "
+                                 "Wait for it to finish.")
+    return {"installed": list(found),
+            "matrix": _combine_matrix(names, patches, 24, 0)}
 
 
 def _trait_vector(knob: dict, dose: float, scale: float):

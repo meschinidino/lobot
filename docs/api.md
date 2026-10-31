@@ -513,6 +513,26 @@ The top-level `blocked` is the OR over enabled screens.
 Honesty, privacy, and harmful are full-generation only
 (slower; cached per edit set like the refusal verdict).
 
+## Combine (CB pair matrix + install order)
+
+`POST /api/combine/check {"patch_ids": [...], "max_new_tokens":
+24, "seed": 0}` → `{"singles": [...], "pairs": [...],
+"full_set": {...}, "checks", "cached", "seconds",
+"install_order": [...]}`. One verified guard check per
+subset (at most 8 patches): each row carries `patches`,
+`blocked`, `would_block`, `verified`, the `guard` dict with
+per-screen verdicts, `overlap` warnings (vector/ablation
+same-layer push), and `cached`. `install_order` is the
+greedy safest-first order. Errors: 400 (empty, over 8),
+404 unknown trait, 422 (no saved patch, patch rejected,
+patch targets another model), 409 busy, 503 NO_MODEL.
+
+`GET /api/combine/installed` → `{"installed": [...],
+"matrix": ...}` for the traits installed via `/api/install`
+(mtime order). Empty installs return `{"installed": [],
+"matrix": null}` with no model. Else the same matrix, with
+the same errors.
+
 ## Frontend loop (happy path)
 
 1. `GET /api/families` → offer validated traits.

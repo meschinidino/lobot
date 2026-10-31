@@ -263,6 +263,52 @@ class CombineTest(unittest.TestCase):
             self.assertEqual(S.enabled_screens(),
                              ("refusal", "honesty", "privacy"))
 
+    def test_cached_blocked_final_keeps_screens(self):
+        g = guard.Guard(refusal_set=("zzz?",))
+        eng = self._engine()
+        eng.masses[("zzz?", "natural")] = 0.9
+        eng.masses[("zzz?", "steered")] = 0.88
+        eng.texts[("zzz?", "natural")] = "REFUSE"
+        eng.texts[("zzz?", "steered")] = "REFUSE"
+        judges = {"harmful": lambda t: 0.1,
+                  "honesty": lambda t: 0.9 if t == "honest"
+                  else 0.1}
+        real = guard.Guard.check_screen
+
+        def routed(self, engine, edits, screen, **kw):
+            return real(self, engine, edits, screen,
+                        judge_fn=judges.get(screen), **kw)
+
+        with ScreenEnv(self, "refusal,harmful,honesty,privacy"), \
+                unittest.mock.patch.object(guard.Guard,
+                                           "check_screen", routed):
+            v1 = g.check_verified(
+                eng, _edits(), medians={}, max_new_tokens=8,
+                seed=0, judge_fn=lambda t: 1.0)
+            v2 = g.check_verified(
+                eng, _edits(), medians={}, max_new_tokens=8,
+                seed=0, judge_fn=lambda t: 1.0)
+        self.assertTrue(v1.blocked)
+        self.assertTrue(v2.cached)
+        self.assertEqual([n for n, _ in v2.screens],
+                         [n for n, _ in v1.screens])
+        self.assertTrue(dict(v2.screens)["honesty"].blocked)
+
+    def test_refusal_opt_out_skips_prefill(self):
+        g = guard.Guard(refusal_set=("zzz?",))
+        eng = self._engine()
+        with ScreenEnv(self, "honesty"), \
+                unittest.mock.patch.object(
+                    guard, "honesty_judge_fn",
+                    return_value=lambda t: 0.9):
+            v = g.check_verified(
+                eng, _edits(), medians={}, max_new_tokens=8,
+                seed=0, judge_fn=lambda t: 1.0)
+        self.assertEqual([n for n, _ in v.screens], ["honesty"])
+        self.assertFalse([c for c in eng.calls
+                          if c[0] == "prefill"])
+        self.assertEqual(v.min_ratio, 1.0)
+
     def test_screen_disable_flag(self):
         g = guard.Guard(refusal_set=("zzz?",))
         eng = self._engine()
