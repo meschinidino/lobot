@@ -34,7 +34,8 @@ shipped effect within its 95% interval.
   errors). Both stream NDJSON progress (`{"done", "total"}`)
   then one `{"result": ...}`. Model pin: the patch's model must
   equal the active model, else 409 with the sentence.
-- CI action: `.github/workflows/verify-patch.yml`
+- CI action: `docs/ci/verify-patch.yml` (staged; a maintainer
+  copies it to `.github/workflows/`, see `docs/verify-ci.md`)
   (reusable workflow: inputs `patch_path`, `quick`; runs
   `verify_patch.py` on a runner with weights access and fails
   the job on FAIL) plus `docs/verify-ci.md` (how a third party

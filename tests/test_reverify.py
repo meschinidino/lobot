@@ -225,7 +225,7 @@ class RouteTest(unittest.TestCase):
 class WorkflowTest(unittest.TestCase):
     def test_workflow_file_valid_yaml(self):
         doc = yaml.safe_load(
-            (ROOT / ".github" / "workflows"
+            (ROOT / "docs" / "ci"
              / "verify-patch.yml").read_text())
         call = doc[True]["workflow_call"]
         self.assertIn("patch_path", call["inputs"])

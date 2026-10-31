@@ -30,7 +30,10 @@ The check loads the model named in the patch fingerprint.
 
 ## In CI
 
-Call the reusable workflow from your repo:
+The workflow file ships staged at `docs/ci/verify-patch.yml`
+(the automation token lacks the `workflow` scope, so a
+maintainer must copy it to `.github/workflows/` once).
+Then call the reusable workflow from your repo:
 
 ```yaml
 jobs:
