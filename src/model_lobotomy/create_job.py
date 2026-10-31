@@ -42,6 +42,7 @@ class _Job:
     revision: str | None
     research_mode: bool
     guard_opt_in: bool = False
+    schedule: str = "full"
     status: str = "queued"
     stage: str = STAGES[0]
     done: int = 0
@@ -62,7 +63,8 @@ class _Job:
             "id": self.id, "trait": self.trait, "seed": self.seed,
             "model_id": self.model_id, "revision": self.revision,
             "research_mode": self.research_mode,
-            "guard_opt_in": self.guard_opt_in, "status": self.status,
+            "guard_opt_in": self.guard_opt_in, "schedule": self.schedule,
+            "status": self.status,
             "stage": self.stage,
             "progress": {"stage": self.stage, "done": self.done,
                          "total": self.total},
@@ -101,7 +103,12 @@ class CreateRunner:
 
     def start(self, trait: str, *, seed: int = 0, model_id: str,
               revision: str | None = None, guard: bool = False,
-              research_mode: bool = False) -> str:
+              research_mode: bool = False,
+              schedule: str = "full") -> str:
+        if schedule not in trait_eval.SCHEDULES:
+            raise ValueError(
+                f"unknown schedule {schedule!r}; have "
+                f"{sorted(trait_eval.SCHEDULES)}")
         fam = self.store.resolve(trait)
         if not fam.hand_validated:
             raise UnsupportedTrait(
@@ -113,7 +120,8 @@ class CreateRunner:
                   f"{len(self._jobs):03d}")
         job = _Job(id=job_id, trait=fam.name, seed=seed,
                    model_id=model_id, revision=revision,
-                   research_mode=research_mode, guard_opt_in=guard)
+                   research_mode=research_mode, guard_opt_in=guard,
+                   schedule=schedule)
         with self._mu:
             if job_id in self._jobs:
                 raise ValueError(f"job {job_id} already exists")
@@ -201,7 +209,8 @@ class CreateRunner:
                     job.model_id, getattr(eng, "revision", job.revision),
                     cancel=job.cancel, progress=progress,
                     guard=job.guard_opt_in,
-                    research_mode=job.research_mode)
+                    research_mode=job.research_mode,
+                    schedule=job.schedule)
                 job.stage = "verdict"
                 job.verdict = out.get("verdict")
                 job.frozen = out.get("frozen") or {}
