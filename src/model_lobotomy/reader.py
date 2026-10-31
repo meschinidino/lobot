@@ -190,6 +190,39 @@ def _as_recipe_rows(rows) -> list[steer.RecipeRow]:
 
 # -- contracts section 1 ------------------------------------------------------
 
+def _projected_direction_logits(eng, direction) -> torch.Tensor:
+    """Full-vocab logits of one hidden vector (float32 CPU).
+
+    Logits are lm_head(gamma * direction). The vector is scaled by
+    gamma but never re-normalized.
+    """
+    spec = eng.spec
+    gamma = _final_norm_weight(eng)
+    head = eng._lm_head()
+    if head is None:
+        raise RuntimeError("the model has no lm_head")
+    try:
+        vec = torch.as_tensor(list(direction), dtype=torch.float32).reshape(-1)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"direction must be a sequence of {spec.hidden} numbers") from None
+    if vec.numel() != spec.hidden or gamma.numel() != spec.hidden:
+        raise ValueError(
+            f"direction width {vec.numel()} != hidden {spec.hidden}")
+    if not bool(torch.isfinite(vec).all()):
+        raise ValueError("direction must be finite")
+    with torch.no_grad():
+        mat = head.weight.detach().float().cpu()
+        if mat.shape[1] != spec.hidden:
+            raise RuntimeError(
+                f"head width {mat.shape[1]} != hidden {spec.hidden}")
+        logits = mat @ (vec * gamma)
+        bias = getattr(head, "bias", None)
+        if bias is not None:
+            logits = logits + bias.detach().float().cpu().reshape(-1)
+    return logits
+
+
 def pushes_toward(eng, layer: int, neuron: int, k: int = 12) -> dict:
     """Words one neuron pushes toward (output side).
 
@@ -203,6 +236,12 @@ def pushes_toward(eng, layer: int, neuron: int, k: int = 12) -> dict:
     steer.validate_recipe([steer.RecipeRow(layer, neuron, 0.0)], spec)
     with eng.clean():
         logits = _projected_logits(eng, layer, neuron)
+    return _pushes_from_logits(eng, logits, k, _layer_frac(spec, layer))
+
+
+def _pushes_from_logits(eng, logits: torch.Tensor, k: int,
+                        layer_frac) -> dict:
+    """Up/down lists + coherence from full-vocab logits (shared tail)."""
     kk = min(k, logits.numel())
     up_vals, up_idx = torch.topk(logits, kk, largest=True, sorted=True)
     down_vals, down_idx = torch.topk(logits, kk, largest=False, sorted=True)
@@ -213,7 +252,29 @@ def pushes_toward(eng, layer: int, neuron: int, k: int = 12) -> dict:
             for i, v in zip(down_idx.tolist(), down_vals.tolist())]
     return {"up": up, "down": down,
             "coherence": coherence([e["token"] for e in up]),
-            "layer_frac": _layer_frac(spec, layer)}
+            "layer_frac": layer_frac}
+
+
+def pushes_of_direction(eng, direction, k: int = 12,
+                        layer: int | None = None) -> dict:
+    """Words one hidden-space direction pushes toward (F1 features).
+
+    Projects direction * final_norm.weight through the unembedding.
+    Same return shape as pushes_toward; layer_frac is None when no
+    layer is given.
+    """
+    spec = _require_spec(eng)
+    _check_k(k, "k")
+    frac = None
+    if layer is not None:
+        layer = int(layer)
+        if not 0 <= layer < spec.layers:
+            raise ValueError(
+                f"layer {layer} out of bounds [0,{spec.layers})")
+        frac = _layer_frac(spec, layer)
+    with eng.clean():
+        logits = _projected_direction_logits(eng, direction)
+    return _pushes_from_logits(eng, logits, k, frac)
 
 
 def coherence(tokens: list[str]) -> float:
@@ -508,6 +569,85 @@ def steer_lift(eng, layer: int, neuron: int, dose: float, words: list[str],
     meds = _norm_medians(medians)
     edits = engine.EditSet(
         neuron=(engine.NeuronEdit(layer, neuron, dose),))
+    base_acc = [0.0] * len(words)
+    steered_acc = [0.0] * len(words)
+    log_ratios: list[float] = []
+    with eng.clean():
+        for prompt in prompts:
+            base = torch.softmax(
+                eng.prefill(prompt).float().cpu(), dim=-1)
+            steered = torch.softmax(
+                eng.prefill(prompt, edits, medians=meds).float().cpu(),
+                dim=-1)
+            for j, tok_id in enumerate(first_ids):
+                base_p = max(float(base[tok_id].item()), 1e-12)
+                steered_p = max(float(steered[tok_id].item()), 1e-12)
+                base_acc[j] += base_p
+                steered_acc[j] += steered_p
+                log_ratios.append(math.log(steered_p / base_p))
+    count = len(prompts)
+    base_mean = [v / count for v in base_acc]
+    steered_mean = [v / count for v in steered_acc]
+    lift = float(math.exp(sum(log_ratios) / len(log_ratios)))
+    return {"words": words, "base_p": base_mean,
+            "steered_p": steered_mean, "lift": lift}
+
+
+def steer_lift_vector(eng, layer: int, direction, dose: float,
+                     words: list[str], prompts: list[str],
+                     medians: dict) -> dict:
+    """How much steering one hidden direction lifts its predicted words.
+
+    Vector version of steer_lift (F1 features): the direction is
+    normalized to unit norm and applied as a VectorEdit with scale =
+    medians[layer] (the same dose unit as Create knobs). Same prompts,
+    same math, same return shape as steer_lift.
+    """
+    spec = _require_spec(eng)
+    layer = int(layer)
+    if not 0 <= layer < spec.layers:
+        raise ValueError(
+            f"layer {layer} out of bounds [0,{spec.layers})")
+    try:
+        dose = float(dose)
+    except (TypeError, ValueError):
+        raise ValueError(f"dose must be a number, got {dose!r}") from None
+    if not math.isfinite(dose):
+        raise ValueError(f"dose must be finite, got {dose!r}")
+    try:
+        vec = torch.as_tensor(list(direction),
+                              dtype=torch.float32).reshape(-1)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"direction must be a sequence of {spec.hidden} numbers") from None
+    if vec.numel() != spec.hidden:
+        raise ValueError(
+            f"direction width {vec.numel()} != hidden {spec.hidden}")
+    norm = float(vec.norm().item())
+    if not math.isfinite(norm) or norm <= 0:
+        raise ValueError("direction must have finite non-zero norm")
+    unit = tuple((vec / norm).tolist())
+    words = list(words or [])
+    prompts = list(prompts or [])
+    if not words:
+        raise ValueError("steer_lift_vector needs at least one word")
+    if not prompts:
+        raise ValueError("steer_lift_vector needs at least one prompt")
+    if any(not w or not str(w).strip() for w in words):
+        raise ValueError("steer_lift_vector words must be non-empty")
+    if any(not p or not str(p).strip() for p in prompts):
+        raise ValueError("steer_lift_vector prompts must be non-empty")
+    first_ids = []
+    for word in words:
+        ids = _word_ids(eng.tokenizer, word)
+        if not ids:
+            raise ValueError(f"word {word!r} encodes to no tokens")
+        first_ids.append(ids[0])
+    meds = _norm_medians(medians)
+    if layer not in meds:
+        raise ValueError(f"no cached median for layer {layer}")
+    edits = engine.EditSet(
+        vector=(engine.VectorEdit(layer, unit, float(meds[layer]), dose),))
     base_acc = [0.0] * len(words)
     steered_acc = [0.0] * len(words)
     log_ratios: list[float] = []

@@ -302,6 +302,43 @@ means and their geometric-mean ratio).
 Errors: 400 (neuron out of bounds, bad word), 422 (dose out
 of range, no words), 409 busy, 503 NO_MODEL or replay mode.
 
+## GET /api/features (F1 clean features)
+
+Trained sparse autoencoders for the active model. No model needed.
+
+`{"saes": [{"model_id", "layer", "features", "top_k", "live",
+"dead", "mse"}]}` — one entry per trained layer, `mse` is the
+final train MSE. Empty list when nothing is trained.
+
+## GET /api/feature/{layer}/{index} (F1 feature card)
+
+One SAE feature card: what it pushes toward plus cached contexts.
+
+`GET /api/feature/12/4330?k=12` → `{"model_id", "layer",
+"index", "live", "pushes_toward": {"up", "down", "coherence",
+"layer_frac"}, "fires_on": [{"activation", "token", "context",
+"mark"}], "fires_on_cache": {"built", "tokens"}}`. `live` is
+false when the feature never fires in the cache. `k` clamps to
+1–50.
+
+Errors: 400 (layer or index out of bounds), 404 (no trained SAE
+for the layer), 409 busy, 503 NO_MODEL or replay mode.
+
+## POST /api/feature-lift (F1 feature steering lift)
+
+How much steering one SAE feature lifts its predicted words.
+
+Request: `{"layer", "index", "dose", "words": null,
+"prompts": null}`. `words: null` uses the feature's top words
+(the top-3 whole-word up tokens, else the top-1 up token);
+`prompts: null` uses the 8 fixed lift prompts. The feature
+steers as a vector edit with scale = the layer median norm.
+Response: `{"words", "base_p", "steered_p", "lift"}`.
+
+Errors: 400 (index out of bounds, bad word), 404 (no trained SAE
+for the layer), 422 (dose out of range, no words), 409 busy, 503
+NO_MODEL or replay mode.
+
 ## Chat (E2)
 
 Multi-turn with edits that persist across turns. History lives

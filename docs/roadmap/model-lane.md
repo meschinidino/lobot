@@ -39,3 +39,7 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-30 11:10 ET  backend  verify  meta-llama/Llama-3.2-3B-Instruct  start  D1/D2/D3 + L11 UI beats
 2026-10-30 11:18 ET  backend  verify  meta-llama/Llama-3.2-3B-Instruct  end  D1/D2/D3 fixed, L11 beats run in UI
 2026-10-30 12:27 ET  backend  demo  Qwen/Qwen3.5-4B  start  live server for Dino to click through
+2026-10-31 00:22 ET  backend  F1  meta-llama/Llama-3.2-3B-Instruct  start  SAE act cache + train L12,L20 (lane free: no server on :7860; demo line above has no end)
+2026-10-31 00:51 ET  backend  F1  meta-llama/Llama-3.2-3B-Instruct  end  L12+L20 trained, eval OVERALL PASS, 3 cards printed
+2026-10-31 00:52 ET  backend  F1  meta-llama/Llama-3.2-3B-Instruct  start  recalibrate L12,L17,L20 under current preset key (cache merge)
+2026-10-31 00:53 ET  backend  F1  meta-llama/Llama-3.2-3B-Instruct  end  cache holds L12,L17,L20 under key 403630c563648d1a
