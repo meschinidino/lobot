@@ -33,6 +33,9 @@ def main() -> int:
                     help="enforce the refusal guard (default: record only)")
     ap.add_argument("--schedule", default="full", choices=["full", "fast"],
                     help="full: reference pipeline; fast: C2 quick schedule")
+    ap.add_argument("--lane", default="torch", choices=["torch", "llama"],
+                    help="llama: batch generation, judge and NLL on "
+                         "lobot-llamad (LOBOT_CREATE_QUANT, default f16)")
     args = ap.parse_args()
     if args.trait not in trait_eval.spike.BEHAVIORS:
         print(f"unknown trait {args.trait!r}; have "
@@ -48,10 +51,16 @@ def main() -> int:
     print(f"[trait] {args.model} warm (rung {rung}, rev {eng.revision[:12]})",
           flush=True)
     workdir = Path(args.workdir or (ROOT / "logs" / f"e2e_{args.trait}"))
+    lane = None
+    if args.lane == "llama":
+        from model_lobotomy import llama_backend
+        lane = trait_eval.LlamaLane(eng, eng.spec, llama_backend.CreateDaemon(
+            args.model, eng.revision, eng.tokenizer))
     out = trait_eval.run_trait(eng, eng.spec, args.trait,
                                prompt_bank.PROMPT_BANK, args.seed,
                                workdir, args.model, eng.revision,
-                               guard=args.guard, schedule=args.schedule)
+                               guard=args.guard, schedule=args.schedule,
+                               lane=lane)
     print(f"[trait] schedule={out['schedule']} verdict={out['verdict']} "
           f"eligibility={out['eligibility']} ({out['seconds']} s) "
           f"timings={out.get('timings')}", flush=True)

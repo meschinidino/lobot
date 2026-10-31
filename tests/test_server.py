@@ -85,6 +85,11 @@ ROW = {"layer": 14, "neuron": 8949, "dose": 1.0}
 class FakeEngine:
     """Stub for server.get_engine: warm, canned runs, real lock."""
 
+    backend = "torch"
+
+    def supports(self, feature):
+        return True
+
     def __init__(self, outputs):
         self.lock = threading.Lock()
         self.model = object()

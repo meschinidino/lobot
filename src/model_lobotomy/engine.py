@@ -15,6 +15,7 @@ scripts and the model lane; product paths (app.py, server.py) run here.
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 from contextlib import contextmanager
@@ -24,6 +25,13 @@ from pathlib import Path
 import torch
 
 from model_lobotomy import steer
+
+# Gated engine features. Engine.supports() is True for all of them;
+# the llama backend (llama_backend.LlamaEngine) supports none and its
+# routes say so via server._need_torch. _state().torch_only lists the
+# gaps for the active backend.
+FEATURES = ("dial", "capture", "reader", "sae", "create", "verify",
+            "ablate")
 
 # -- edits --------------------------------------------------------------------
 
@@ -326,6 +334,12 @@ def _validate_edits(model, spec, edits: EditSet) -> None:
 
 class Engine:
     """Owns the warm model, lock and every hook (D2). One in memory."""
+
+    backend = "torch"
+
+    def supports(self, feature: str) -> bool:
+        """True for every FEATURES member (the torch backend is full)."""
+        return feature in FEATURES
 
     def __init__(self):
         self.model = None
@@ -892,8 +906,21 @@ _ENGINE: Engine | None = None
 
 
 def get_engine() -> Engine:
-    """The process-wide Engine (single warm model)."""
+    """The process-wide engine (single warm model).
+
+    Reads LOBOT_BACKEND once ("torch" default, "llama" for the
+    llama.cpp daemon backend) and caches the choice. Any other
+    value raises ValueError.
+    """
     global _ENGINE
     if _ENGINE is None:
-        _ENGINE = Engine()
+        which = os.environ.get("LOBOT_BACKEND", "torch")
+        if which == "torch":
+            _ENGINE = Engine()
+        elif which == "llama":
+            from model_lobotomy import llama_backend
+            _ENGINE = llama_backend.LlamaEngine()
+        else:
+            raise ValueError(
+                f"unknown LOBOT_BACKEND {which!r}; want torch or llama")
     return _ENGINE
