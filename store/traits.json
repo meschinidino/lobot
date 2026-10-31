@@ -118,6 +118,27 @@
         "Explain a historical event in detail.",
         "Describe a futuristic city."
       ]
+    },
+    {
+      "name": "talks-like-an-old-west-cowboy",
+      "aliases": [],
+      "pos": "yeehaw, partner, howdy there, what can i do fer ya?",
+      "neg": "I'm happy to help you with your question.",
+      "judge": "talks like an old-west cowboy",
+      "hand_validated": true,
+      "validation": {
+        "hand_labels": 20,
+        "agreement": 1.0,
+        "note": "C3 open-description validation (labels by Claude, read from the 20 replies)"
+      },
+      "baselines": [
+        "Howdy ma'am, what seems to be the problem?",
+        "What can I do fer ya, pardner?",
+        "I'm fixin' to help ya out, partner.",
+        "Howdy, I'm here to assist you.",
+        "What's your question, partner?",
+        "Greetings, I'm here to help."
+      ]
     }
   ]
 }

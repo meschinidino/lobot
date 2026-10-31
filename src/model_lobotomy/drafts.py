@@ -45,9 +45,10 @@ META_PROMPT = (
     "exactly these keys: pos (an instruction that makes the model "
     "show the trait), neg (an instruction that makes the model hide "
     "it), judge (a short lowercase phrase, under 12 words, that "
-    "completes the question \"Is this reply ___?\" and describes what "
-    "the reply itself shows, for example \"written in a pirate voice\" "
-    "or \"cheerful and enthusiastic\"; not a sentence, not a rule), "
+    "completes the question \"Is this reply ___?\" and names the trait "
+    "itself with the trait's own key words, not a vague quality, for "
+    "example \"written in a pirate voice\" or \"cheerful and "
+    "enthusiastic\"; not a sentence, not a rule), "
     "baselines (a list of 6 plain instructions that elicit it). "
     "No other keys, no prose outside the JSON.\n\nTrait: {description}"
 )
