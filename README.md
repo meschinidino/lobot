@@ -61,7 +61,9 @@ MODEL_LOBOTOMY_REPLAY=1 uv run python -m model_lobotomy.server
 ```
 
 To record more setups, run `uv run python scripts/record_sweep.py` once with
-the model loaded; it writes `web/sweep.json` (one prompt, several doses). The older Gradio UI still works:
+the model loaded (one prompt, several doses). Qwen writes
+`web/sweep.json`; other models write `web/sweep.<short-name>.json`.
+The older Gradio UI still works:
 `uv run python -m model_lobotomy.app`.
 
 First run downloads about 9 GB of Qwen weights once. Later runs reuse the cache.
@@ -136,7 +138,7 @@ human copies and posts the artifact text by hand.
 - `src/model_lobotomy/engine.py` — the Engine: one owner for model state and every hook. Edits (neuron, vector, ablation, read), runs, streaming, capture, `clean()`.
 - `src/model_lobotomy/steer.py` — model loading, neuron steering math, calibration, recipe strings.
 - `src/model_lobotomy/server.py` — FastAPI server on `http://127.0.0.1:7860`: runs, Stop, Create, Update, click-a-word, chat, replay mode. Routes: [docs/api.md](docs/api.md).
-- `src/model_lobotomy/guard.py` — the refusal guard (opt-in until release; research mode records an override).
+- `src/model_lobotomy/guard.py` — the refusal guard (on in the UI unless research mode, which records an override; raw API default follows `LOBOT_GUARD_DEFAULT`).
 - `src/model_lobotomy/create_job.py`, `src/model_lobotomy/trait_eval.py`, `src/model_lobotomy/trait_store.py`, `src/model_lobotomy/prompt_bank.py`, `src/model_lobotomy/evaluation.py` — Create: contrast prompts, behavior direction, judge, held-out splits and report cards.
 - `src/model_lobotomy/patch.py` — `.lobot` patch files and llama.cpp control-vector export.
 - `web/` — the workbench (`index.html`), the static prototype, fonts, recorded runs (`example.json`, `sweep*.json`). Follows `docs/DESIGN.md`.
