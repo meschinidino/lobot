@@ -206,11 +206,21 @@ def resolve_down_proj(model, layer: int, spec: ModelSpec | None = None):
     return mod
 
 
+def column_norm_of(weight, neuron: int) -> float:
+    """||W[:, n]|| for a [hidden, intermediate] weight tensor.
+
+    Pure function on the weight: both backends share this math.
+    The norm runs in float32 over the stored (fp16) values.
+    """
+    with torch.no_grad():
+        return float(torch.as_tensor(weight).detach().float()[
+            :, neuron].norm().item())
+
+
 def column_norm(model, layer: int, neuron: int, spec: ModelSpec | None = None) -> float:
     """||W_down[:, n]|| for one target (float32 norm of the fp16 column)."""
     mod = resolve_down_proj(model, layer, spec)
-    with torch.no_grad():
-        return float(mod.weight.detach().float()[:, neuron].norm().item())
+    return column_norm_of(mod.weight, neuron)
 
 
 def wrap_prompt_notk(tokenizer, user_text: str, spec: ModelSpec | None = None) -> str:
