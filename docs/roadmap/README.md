@@ -82,7 +82,7 @@ the 100X workstreams from `later.md`.
 | F1 | Clean features | Backend agent | Model | `specs/F1-clean-features.md` | **Done**: L12+L20 SAEs, OVERALL PASS (coh 0.833/0.909, lift 49-50/50) |
 | C2 | Fast describe-to-patch | Backend agent | Model | `specs/C2-fast-create.md` | **Done, acceptance FAILED**: median 158.5 s (> 120 s), parity 0/3; full verified unchanged; default stays full |
 | C3 | Open descriptions | Backend agent | No-model (network) | `specs/C3-open-descriptions.md` | **Done, acceptance FAILED 1/2**: rhyming 0.55, noir 0.85 + knob; flow + noir family merged |
-| CH | Chat with live dials | Backend agent | No-model | `specs/CH-chat-dials.md` | Pending |
+| CH | Chat with live dials | Backend agent | No-model | `specs/CH-chat-dials.md` | **Done**: replay 10/10 exact, dial diff 0.0 |
 | DL | Delete | Backend agent | Both | `specs/DL-delete.md` | Pending |
 | IN | Install everywhere | Backend agent | No-model | `specs/IN-install.md` | Pending |
 | RV | Re-verify anywhere | Backend agent | Both | `specs/RV-reverify.md` | Pending |

@@ -381,10 +381,12 @@ Multi-turn with edits that persist across turns. History lives
 server-side (in memory; a restart clears it).
 
 `POST /api/chat/start {"rows": [], "trait": null, "dose": null,
-"max_new_tokens": 150, "guard": false, "research_mode": false}` →
-`{"session_id", "model_id"}`. At most 16 sessions; the oldest
-goes. Errors: 400 (too many rows, bad row), 404 (trait without a
-finished Create job).
+"max_new_tokens": 150, "guard": false, "research_mode": false,
+"dial_traits": []}` → `{"session_id", "model_id"}`. At most 16
+sessions; the oldest goes. `dial_traits` (CH, at most 4) streams
+read dials per word across turns. Errors: 400 (too many rows,
+bad row, too many dial traits), 404 (trait or dial trait
+without a finished Create job).
 
 `POST /api/chat {"session_id", "message", "rows": null,
 "max_new_tokens": null}` → NDJSON. `rows` replaces the session's
@@ -393,18 +395,31 @@ Events:
 
 | stage | fields |
 |---|---|
-| `token` | `text` (append) |
+| `token` | `text` (append), `dial`: `{trait: value}` (CH; a trait whose tap lagged is absent) |
 | `blocked` | `guard` (verdict dict; only when enforced) |
 | `stopped` | `after`: `guard` or `chat` |
 | `error` | `message` |
-| `done` | `result`: `{session_id, turn, reply, tokens, seconds}` |
+| `done` | `result`: `{session_id, turn, reply, tokens, seconds, dials: {trait: [{text, value}]}}` |
 
 History caps at 40 turns (oldest pairs drop). Errors: 400 empty
-message/bad rows, 404 unknown session or vanished trait knob, 409
-busy or session pinned to another model, 503 NO_MODEL.
+message/bad rows, 404 unknown session or vanished trait knob,
+409 busy or session pinned to another model, 503 NO_MODEL.
 
 `GET /api/chat/{session_id}` → `{"session_id", "model_id",
-"turns": [{"role", "content"}]}` for reattach. 404 unknown.
+"turns": [{"role", "content"}], "dial_traits": [...],
+"dial_turns": [{"reply", "dials"}]}` for reattach. 404 unknown.
+
+`GET /api/chat/{session_id}/transcript` (CH) → the replay spec:
+`{"model_id", "trait", "dose", "dial_traits", "guard",
+"research_mode", "turns": [{"message", "rows", "max_new_tokens",
+"reply", "dials"}]}`. 404 unknown.
+
+`POST /api/chat/replay {"transcript": ...}` (CH) re-runs every
+turn in a fresh session and returns `{"match", "session_id",
+"turns": [{"turn", "match", "reply_match", "dials_match",
+"dials_max_diff", "error"}]}`. Errors: 400 (no turns, bad turn,
+empty message), 404 (knob vanished), 409 (busy, model pin),
+503 NO_MODEL.
 
 ## Frontend loop (happy path)
 
