@@ -147,8 +147,21 @@ def check_publishable(meta: dict) -> None:
         raise RegistryError("patch was made in research mode; research "
                             "patches cannot be published")
     if guard.get("blocked") or guard.get("would_block"):
-        raise RegistryError("the guard blocks this patch (refusal "
-                            "weakening); it cannot be published")
+        if not guard.get("verified"):
+            raise RegistryError(
+                "the guard flagged this patch from the prefill signal "
+                "only (not confirmed); run `lobot_registry.py guard "
+                "PATCH` to confirm it with full generation")
+        flagged = sorted(n for n, sc in (guard.get("screens") or {})
+                         .items() if sc.get("blocked")
+                         or sc.get("would_block")) or ["refusal"]
+        raise RegistryError(f"the guard flags this patch "
+                            f"({', '.join(flagged)}, confirmed by full "
+                            f"generation); it cannot be published")
+    if not guard.get("verified"):
+        raise RegistryError("the guard verdict is not confirmed by full "
+                            "generation; run `lobot_registry.py guard "
+                            "PATCH` first")
     card = meta.get("report_card") or {}
     if "trait_mean" not in card or "trait_ci" not in card:
         raise RegistryError("patch has no shipped evidence "
