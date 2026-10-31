@@ -35,14 +35,30 @@ AGREEMENT_GATE = 0.85
 DRAFT_GEN_TOKENS = 300
 REPLY_GEN_TOKENS = 60
 
+# The judge asks "Is this reply {judge}?" (trait_eval.judge_prompt), so
+# the judge part must be a phrase that completes that question, like the
+# legacy labels ("written in a pirate voice"). A rubric sentence ("The
+# poem should have ...") reads as a rule the judge affirms for every
+# reply (C3: rhyming, agreement 0.55).
 META_PROMPT = (
     "Write a contrast pair for the trait below. Reply as JSON with "
     "exactly these keys: pos (an instruction that makes the model "
     "show the trait), neg (an instruction that makes the model hide "
-    "it), judge (a short rubric: what counts as showing it), "
+    "it), judge (a short lowercase phrase, under 12 words, that "
+    "completes the question \"Is this reply ___?\" and describes what "
+    "the reply itself shows, for example \"written in a pirate voice\" "
+    "or \"cheerful and enthusiastic\"; not a sentence, not a rule), "
     "baselines (a list of 6 plain instructions that elicit it). "
     "No other keys, no prose outside the JSON.\n\nTrait: {description}"
 )
+
+JUDGE_MAX_WORDS = 12
+# First words that start a sentence or a rule, not a phrase that
+# completes "Is this reply ___?".
+_JUDGE_BAD_START = {"the", "this", "that", "it", "a", "an", "reply",
+                    "response", "answer", "uses", "use", "contains",
+                    "has", "have", "should", "must", "includes"}
+_JUDGE_BAD_WORDS = {"should", "must"}
 
 
 class DraftError(ValueError):
@@ -71,6 +87,32 @@ def draft_dir(store_root, draft_id: str) -> Path:
 
 def meta_prompt_for(description: str) -> str:
     return META_PROMPT.format(description=description.strip())
+
+
+def judge_label(raw: str) -> str:
+    """Normalized judge phrase, or DraftError when it is not one.
+
+    Strips quotes and end punctuation, lowercases the first letter
+    (not an all-caps word), and rejects sentences and rules: more
+    than JUDGE_MAX_WORDS words, a sentence break, "should"/"must",
+    or a sentence-style first word.
+    """
+    label = raw.strip().strip("\"'").rstrip(".?!").strip()
+    words = label.split()
+    if words and not words[0].isupper():
+        label = label[0].lower() + label[1:]
+        words = label.split()
+    bad = (not words or len(words) > JUDGE_MAX_WORDS
+           or "\n" in label or ". " in label
+           or words[0].lower() in _JUDGE_BAD_START
+           or any(w.lower().strip(",;") in _JUDGE_BAD_WORDS
+                  for w in words))
+    if bad:
+        raise DraftError(
+            "The model wrote a judge rule, not a short phrase that "
+            "completes 'Is this reply ___?'. Rephrase the description "
+            "and try again.")
+    return label
 
 
 def parse_draft_parts(text: str) -> dict:
@@ -104,7 +146,7 @@ def parse_draft_parts(text: str) -> dict:
             "The model left the baselines incomplete. Rephrase the "
             "description and try again.")
     return {"pos": parts["pos"].strip(), "neg": parts["neg"].strip(),
-            "judge": parts["judge"].strip(),
+            "judge": judge_label(parts["judge"]),
             "baselines": [b.strip() for b in bases]}
 
 

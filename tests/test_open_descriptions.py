@@ -69,6 +69,33 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(drafts.slugify("   "), "trait")
 
 
+class JudgeLabelTest(unittest.TestCase):
+    """The judge part must complete "Is this reply ___?" (C3 fix)."""
+
+    def test_phrases_pass_and_normalize(self):
+        for raw, want in [
+                ("written in a pirate voice", "written in a pirate voice"),
+                ("Written in rhyming couplets.", "written in rhyming couplets"),
+                ('"cheerful and enthusiastic"', "cheerful and enthusiastic"),
+                ("FAQ style and concise", "FAQ style and concise")]:
+            self.assertEqual(drafts.judge_label(raw), want, raw)
+
+    def test_rules_and_sentences_rejected(self):
+        for raw in [
+                "The poem should have at least 2 lines that rhyme "
+                "with each other.",
+                "Uses phrases like 'the rain poured down'",
+                "should rhyme",
+                "rhymes. Also uses couplets",
+                "a b c d e f g h i j k l m",
+                ""]:
+            with self.assertRaises(drafts.DraftError, msg=raw):
+                drafts.judge_label(raw)
+
+    def test_meta_prompt_names_the_judge_question(self):
+        self.assertIn("Is this reply ___?", drafts.META_PROMPT)
+
+
 class ShuffleTest(unittest.TestCase):
     def test_shuffle_fixed_and_balanced(self):
         prompts = [f"q{i}" for i in range(10)]

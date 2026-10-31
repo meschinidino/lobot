@@ -85,3 +85,4 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-31 18:48 ET  claude  CLANE  meta-llama/Llama-3.2-3B-Instruct  start  batch ops sanity (generate_batch/score_batch vs singles)
 2026-10-31 18:54 ET  claude  CLANE  meta-llama/Llama-3.2-3B-Instruct  start  Create lane vs torch equality (gen/judge/nll, pirate tuning)
 2026-10-31 18:59 ET  claude  CLANE  meta-llama/Llama-3.2-3B-Instruct  start  full pirate Create: llama lane, then HEAD torch reference
+2026-10-31 19:12 ET  claude  CLANE  meta-llama/Llama-3.2-3B-Instruct  end  full pirate Create before/after done (logs/clane_pirate_*)
