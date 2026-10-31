@@ -45,6 +45,7 @@ import re
 import threading
 import time
 import uuid
+from typing import Literal
 from os.path import commonprefix
 from pathlib import Path
 
@@ -166,6 +167,7 @@ class CreateRequest(BaseModel):
     seed: int = 0
     guard: bool = Field(default_factory=_guard_default)
     research_mode: bool = False
+    schedule: Literal["fast", "full"] = "full"
 
 
 class UpdateRequest(BaseModel):
@@ -397,7 +399,8 @@ def create(req: CreateRequest):
         job_id = runner.start(req.description, seed=req.seed,
                               model_id=engine._active_model_id,
                               guard=req.guard,
-                              research_mode=req.research_mode)
+                              research_mode=req.research_mode,
+                              schedule=req.schedule)
     except trait_store.UnsupportedTrait as e:
         raise HTTPException(422, str(e)) from None
     return {"job_id": job_id, **runner.status(job_id)}
