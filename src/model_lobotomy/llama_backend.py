@@ -1006,7 +1006,9 @@ class CreateDaemon:
     """
 
     PARALLEL = 32
-    CTX = 16384
+    # 32 prompts x (prompt + 60 new) fit in ~4k tokens; score groups
+    # cap at n_batch (2048). Torch shares the GPU, so stay small.
+    CTX = 8192
 
     def __init__(self, model_id: str, revision: str, tokenizer,
                  quant: str | None = None, proc_factory=None):
