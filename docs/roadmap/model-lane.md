@@ -43,3 +43,5 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-31 00:51 ET  backend  F1  meta-llama/Llama-3.2-3B-Instruct  end  L12+L20 trained, eval OVERALL PASS, 3 cards printed
 2026-10-31 00:52 ET  backend  F1  meta-llama/Llama-3.2-3B-Instruct  start  recalibrate L12,L17,L20 under current preset key (cache merge)
 2026-10-31 00:53 ET  backend  F1  meta-llama/Llama-3.2-3B-Instruct  end  cache holds L12,L17,L20 under key 403630c563648d1a
+2026-10-31 01:02 ET  backend  C2  meta-llama/Llama-3.2-3B-Instruct  start  blunt validation + fast/full matrix seed 0 (7 families)
+2026-10-31 03:55 ET  backend  C2  meta-llama/Llama-3.2-3B-Instruct  end  blunt 0.750 unvalidated; 6 fast + 1 full + 1 repeat done; both gates FAIL (see reports/C2.md)
