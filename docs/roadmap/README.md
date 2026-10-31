@@ -87,7 +87,7 @@ the 100X workstreams from `later.md`.
 | IN | Install everywhere | Backend agent | No-model | `specs/IN-install.md` | **Done**: llama.cpp differs + 8/8 recorded tokens; judged interval FAIL (see report) |
 | RV | Re-verify anywhere | Backend agent | Both | `specs/RV-reverify.md` | **Done**: pirate quick PASS 0.745 in [0.728,0.812], route/upload/script agree |
 | GX | Guards for more risks | Backend agent | Model | `specs/GX-guards.md` | **Done**: 0 misses all screens held-out; honesty+privacy caught flips; harmful vacuous/opt-in |
-| CB | Combined patches | Backend agent | Model | `specs/CB-combined.md` | Pending |
+| CB | Combined patches | Backend agent | Model | `specs/CB-combined.md` | **Done**: shakespeare+noir pass alone, union flips honesty (0.442); FP findings reported |
 
 ## Next step: J1 step 0, can the Meta judge say "how sure"?
 

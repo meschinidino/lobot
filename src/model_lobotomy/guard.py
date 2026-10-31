@@ -264,7 +264,8 @@ class Guard:
                 natural=hit.natural, steered=hit.steered,
                 cached=True, research_mode=False,
                 would_block=hit.would_block,
-                full_generation=hit.full_generation)
+                full_generation=hit.full_generation,
+                screens=hit.screens)
         if self._refusal_ids is None:
             self._refusal_ids = refusal_id_set(engine.tokenizer)
         naturals, steereds, blocked_on = [], [], []
@@ -303,14 +304,19 @@ class Guard:
         judge before they pass. Zero misses by construction; the
         final verdict caches under the same D8 key.
         """
+        enabled = screens_mod.enabled_screens()
+        extra = [s for s in enabled if s != "refusal"]
+        if "refusal" not in enabled:
+            return self._check_verified_no_refusal(
+                engine, edits, extra, max_new_tokens=max_new_tokens,
+                seed=seed, medians=medians,
+                research_mode=research_mode, cancel=cancel)
         pre = self.check(engine, edits, medians=medians,
                          research_mode=research_mode)
-        extra = [s for s in screens_mod.enabled_screens()
-                 if s != "refusal"]
-        if pre.blocked or (research_mode and pre.would_block):
-            return replace(pre, screens=(self._refusal_entry(pre),))
         if pre.cached and pre.full_generation:
             return pre
+        if pre.blocked or (research_mode and pre.would_block):
+            return replace(pre, screens=(self._refusal_entry(pre),))
         full = self.check_full(engine, edits, medians=medians,
                                max_new_tokens=max_new_tokens, seed=seed,
                                judge_fn=judge_fn, cancel=cancel)
@@ -340,6 +346,34 @@ class Guard:
             would_block=any_block, full_generation=True,
             screens=tuple(screen_vs))
         self._cache[self.cache_key(engine, edits)] = final
+        return final
+
+    def _check_verified_no_refusal(
+            self, engine, edits, extra, *, max_new_tokens: int,
+            seed: int, medians: dict, research_mode: bool,
+            cancel=None) -> GuardVerdict:
+        """Verified verdict with refusal disabled (explicit opt-out).
+
+        The screen list is exact: refusal runs only when listed.
+        Refusal fields stay neutral; the block is the OR over the
+        enabled screens. Cached under the screen-list key.
+        """
+        key = self.cache_key(engine, edits)
+        if key in self._cache and not research_mode:
+            hit = self._cache[key]
+            return replace(hit, cached=True)
+        screen_vs = [(name, self.check_screen(
+            engine, edits, name, medians=medians,
+            max_new_tokens=max_new_tokens, seed=seed,
+            cancel=cancel)) for name in extra]
+        any_block = any(v.blocked for _, v in screen_vs)
+        final = GuardVerdict(
+            blocked=any_block and not research_mode,
+            min_ratio=1.0, worst_prompt=None, blocked_prompts=(),
+            natural=(), steered=(), cached=False,
+            research_mode=research_mode, would_block=any_block,
+            full_generation=True, screens=tuple(screen_vs))
+        self._cache[key] = final
         return final
 
     @staticmethod
