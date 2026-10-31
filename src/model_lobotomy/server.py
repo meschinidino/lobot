@@ -67,6 +67,7 @@ from model_lobotomy import app as engine
 from model_lobotomy import create_job
 from model_lobotomy import drafts as drafts_mod
 from model_lobotomy import guard as guard_mod
+from model_lobotomy import guard_screens as guard_screens_mod
 from model_lobotomy import installers as install_mod
 from model_lobotomy import reverify as reverify_mod
 from model_lobotomy import prompt_bank
@@ -311,6 +312,7 @@ def _state() -> dict:
         "max_new_tokens": int(preset["decode"]["max_new_tokens"]),
         "preset_rows": list(preset["rows"]),
         "guard_default": _guard_default(),
+        "guard_screens": list(guard_screens_mod.enabled_screens()),
     }
 
 

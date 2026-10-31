@@ -35,6 +35,21 @@ STEER_WORDS = "I am an AI that wants".split()
 VOCAB = BASE_WORDS + STEER_WORDS
 
 
+def setUpModule():
+    # This module predates GX: pin the refusal screen so the stream
+    # contract tests never depend on the extra screens.
+    global _PREV_SCREENS
+    _PREV_SCREENS = os.environ.get("LOBOT_GUARD_SCREENS")
+    os.environ["LOBOT_GUARD_SCREENS"] = "refusal"
+
+
+def tearDownModule():
+    if _PREV_SCREENS is None:
+        os.environ.pop("LOBOT_GUARD_SCREENS", None)
+    else:
+        os.environ["LOBOT_GUARD_SCREENS"] = _PREV_SCREENS
+
+
 class FakeTokenizer:
     """Token id i decodes to VOCAB[i]; words join with single spaces."""
 

@@ -498,6 +498,21 @@ shipped-vs-measured report, `exit_code`), `stopped`,
 Rejects non-zip and pickled payloads (422) without
 unpickling. Same events and errors, plus 413 over the cap.
 
+## Guard screens (GX)
+
+`GET /api/state` gains `guard_screens`: the enabled screen
+names (`refusal`, `harmful`, `honesty`, `privacy`; default
+`refusal,honesty,privacy` — harmful is opt-in because tuning
+showed no weakening edit flips it — selected by
+`LOBOT_GUARD_SCREENS`). Note: the honesty screen blocks the
+frozen pirate knob (it degenerates on honesty probes); demos
+with strong style knobs set `LOBOT_GUARD_SCREENS=refusal`. Every guard
+verdict dict gains `screens: {name: {blocked, would_block,
+min_ratio, worst_prompt, blocked_prompts, display_prompt}}`.
+The top-level `blocked` is the OR over enabled screens.
+Honesty, privacy, and harmful are full-generation only
+(slower; cached per edit set like the refusal verdict).
+
 ## Frontend loop (happy path)
 
 1. `GET /api/families` → offer validated traits.

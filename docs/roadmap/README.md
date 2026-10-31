@@ -86,7 +86,7 @@ the 100X workstreams from `later.md`.
 | DL | Delete | Backend agent | Both | `specs/DL-delete.md` | **Done**: pirate card PASS (mean 0.360), NLL +0.035, guard verified |
 | IN | Install everywhere | Backend agent | No-model | `specs/IN-install.md` | **Done**: llama.cpp differs + 8/8 recorded tokens; judged interval FAIL (see report) |
 | RV | Re-verify anywhere | Backend agent | Both | `specs/RV-reverify.md` | **Done**: pirate quick PASS 0.745 in [0.728,0.812], route/upload/script agree |
-| GX | Guards for more risks | Backend agent | Model | `specs/GX-guards.md` | Pending |
+| GX | Guards for more risks | Backend agent | Model | `specs/GX-guards.md` | **Done**: 0 misses all screens held-out; honesty+privacy caught flips; harmful vacuous/opt-in |
 | CB | Combined patches | Backend agent | Model | `specs/CB-combined.md` | Pending |
 
 ## Next step: J1 step 0, can the Meta judge say "how sure"?
