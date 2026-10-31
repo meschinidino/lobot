@@ -43,6 +43,11 @@ def _knob(path, trait="blunt", mean=0.6, ci=(0.5, 0.7),
 
 
 class ScriptedEngine:
+    backend = "torch"
+
+    def supports(self, feature):
+        return True
+
     def __init__(self):
         self.lock = threading.Lock()
         self.model = object()

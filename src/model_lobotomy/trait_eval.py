@@ -143,6 +143,23 @@ class BaseCache:
             self.hits += 1
         return self.texts[prompt]
 
+    def base_many(self, lane, prompts, max_new: int,
+                  cancel=None) -> list[str]:
+        """base() for many prompts; misses generate in one lane batch."""
+        todo = []
+        for q in prompts:
+            if q in self.texts or q in todo:
+                self.hits += 1
+            else:
+                self.misses += 1
+                todo.append(q)
+        if todo:
+            texts = lane.gen_many(todo, engine_mod.EMPTY_EDITS,
+                                  max_new, cancel=cancel)
+            _check(cancel)
+            self.texts.update(zip(todo, texts))
+        return [self.texts[q] for q in prompts]
+
 
 def capture_cache_path(store_root, model_id: str, trait: str,
                        seed: int) -> Path:
@@ -640,6 +657,133 @@ def _gen(eng, prompt, edits, max_new=GEN_TOKENS, seed=0, cancel=None):
                    seed=seed, cancel=cancel)["text"]
 
 
+class TorchLane:
+    """Create's generation/judge/NLL calls on the torch engine.
+
+    The stages hand whole prompt lists to a lane. This lane loops
+    over the same calls as before (one eng.run, judge_score or
+    spike.nll per item), so torch numbers do not change. Judge and
+    NLL results are memoized per run: both are pure functions of
+    their text inputs, and the verbs score the same base reply
+    many times.
+    """
+
+    name = "torch"
+
+    def __init__(self, eng, spec):
+        self.eng, self.spec = eng, spec
+        self._judged: dict[tuple, float] = {}
+        self._nlls: dict[tuple, float] = {}
+
+    def info(self) -> dict:
+        return {"lane": self.name}
+
+    def gen_many(self, prompts, edits, max_new, cancel=None) -> list[str]:
+        out = []
+        for q in prompts:
+            _check(cancel)
+            out.append(_gen(self.eng, q, edits, max_new=max_new,
+                            cancel=cancel))
+        return out
+
+    def judge_many(self, pairs, label) -> list[float]:
+        keys = [(q, r, label) for q, r in pairs]
+        todo = list(dict.fromkeys(k for k in keys if k not in self._judged))
+        self._judged.update(zip(todo, self._judge_raw(todo)))
+        return [self._judged[k] for k in keys]
+
+    def nll_many(self, pairs) -> list[float]:
+        keys = [(q, r) for q, r in pairs]
+        todo = list(dict.fromkeys(k for k in keys if k not in self._nlls))
+        self._nlls.update(zip(todo, self._nll_raw(todo)))
+        return [self._nlls[k] for k in keys]
+
+    def _judge_raw(self, keys) -> list[float]:
+        return [judge_score(self.eng.model, self.eng.tokenizer, self.spec,
+                            q, r, label) for q, r, label in keys]
+
+    def _nll_raw(self, keys) -> list[float]:
+        return [spike.nll(self.eng.model, self.eng.tokenizer, self.spec,
+                          q, r) for q, r in keys]
+
+
+class LlamaLane(TorchLane):
+    """Create's lane on a batched lobot-llamad (LOBOT_CREATE_LANE=llama).
+
+    Vector-only and empty EditSets generate in batches on the daemon
+    (one sequence per prompt, same cvec); ablation EditSets fall back
+    to torch. Judge and NLL run as batched score requests with the
+    same prompt wrapping, tokenization and formulas as judge_score
+    and spike.nll. Capture and the guard stay on torch.
+    """
+
+    name = "llama"
+
+    def __init__(self, eng, spec, daemon):
+        super().__init__(eng, spec)
+        self.daemon = daemon
+        self.tok = daemon.tokenizer
+        self._torch_gens: dict[tuple, str] = {}
+
+    def info(self) -> dict:
+        return {"lane": self.name, **self.daemon.info()}
+
+    def _wrap(self, text: str) -> list[int]:
+        wrapped = steer.wrap_prompt_notk(self.tok, text, self.spec)
+        return [int(i) for i in self.tok(wrapped)["input_ids"]]
+
+    def gen_many(self, prompts, edits, max_new, cancel=None) -> list[str]:
+        if edits.ablate or edits.read or edits.neuron:
+            # Torch fallback, memoized: update_down and delete share
+            # one shuffled-ablation control on the same prompts, and
+            # greedy text is a pure function of (prompt, edits).
+            keys = [(q, edits, max_new) for q in prompts]
+            todo = list(dict.fromkeys(
+                k for k in keys if k not in self._torch_gens))
+            texts = super().gen_many([k[0] for k in todo], edits, max_new,
+                                     cancel)
+            self._torch_gens.update(zip(todo, texts))
+            return [self._torch_gens[k] for k in keys]
+        _check(cancel)
+        outs = self.daemon.gen_ids_many(
+            [self._wrap(q) for q in prompts], edits, max_new,
+            cancel=cancel)
+        _check(cancel)
+        return [self.tok.decode(o, skip_special_tokens=True)
+                for o in outs]
+
+    def _judge_raw(self, keys) -> list[float]:
+        import math
+        y, n = spike._yes_no_ids(self.tok)
+        scores = [0.0] * len(keys)
+        idx, items = [], []
+        for i, (q, r, label) in enumerate(keys):
+            if refusal_gate(r):
+                continue
+            idx.append(i)
+            items.append({"ids": self._wrap(judge_prompt(q, r, label)),
+                          "last_ids": [y, n]})
+        for i, res in zip(idx, self.daemon.score_many(items)):
+            ly, ln = res["last"]
+            scores[i] = 1.0 / (1.0 + math.exp(ln - ly))
+        return scores
+
+    def _nll_raw(self, keys) -> list[float]:
+        out = [float("nan")] * len(keys)
+        idx, items = [], []
+        for i, (q, r) in enumerate(keys):
+            rep = [int(t) for t in self.tok(
+                r, add_special_tokens=False)["input_ids"]]
+            if not rep:
+                continue
+            ctx = self._wrap(q)
+            idx.append(i)
+            items.append({"ids": ctx + rep, "from": len(ctx)})
+        for i, res in zip(idx, self.daemon.score_many(items)):
+            out[i] = -sum(res["lp"]) / len(res["lp"])
+        return out
+
+
 def derive_direction(eng, spec, cfg, prompts):
     """Mean-diff unit + threshold per layer on contrast prefixes."""
     A = eng.capture([f"{cfg['pos']}\n\n{q}" for q in prompts],
@@ -657,10 +801,11 @@ def _seps(A, B, layers):
 
 def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
                     cancel=None, progress=None, params=None,
-                    base_cache=None):
+                    base_cache=None, lane=None):
     """Pick (layer, dose) on the tuning split; returns frozen choice + table."""
     _check(cancel)
     params = dict(SCHEDULES["full"]) if params is None else params
+    lane = lane or TorchLane(eng, spec)
     tuning = list(tuning)[:params["tune_n"]]
     mid = range(spec.layers // 4, 3 * spec.layers // 4)
     seps = _seps(A, B, list(mid))
@@ -677,22 +822,20 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
             _check(cancel)
             edits = engine_mod.EMPTY_EDITS if d == 0 else engine_mod.EditSet(
                 vector=(_vec_edit(L, seps[L]["unit"], med[L], d),))
-            js, ns = [], []
-            for q in tuning:
-                _check(cancel)
-                if d == 0 and base_cache is not None:
-                    r = base_cache.base(eng, q, max_new, cancel=cancel)
-                else:
-                    r = _gen(eng, q, edits, max_new=max_new,
-                             cancel=cancel)
-                done += 1
-                if progress is not None:
-                    progress("tune", done, total)
-                js.append(judge_score(eng.model, eng.tokenizer, spec, q, r,
-                                      cfg["judge"]))
-                ns.append(min(spike.nll(eng.model, eng.tokenizer, spec, q, r),
-                              spike.nll(eng.model, eng.tokenizer, spec,
-                                        f"{cfg['pos']}\n\n{q}", r)))
+            if d == 0 and base_cache is not None:
+                rs = base_cache.base_many(lane, tuning, max_new,
+                                          cancel=cancel)
+            else:
+                rs = lane.gen_many(tuning, edits, max_new, cancel=cancel)
+            _check(cancel)
+            done += len(tuning)
+            if progress is not None:
+                progress("tune", done, total)
+            js = lane.judge_many(list(zip(tuning, rs)), cfg["judge"])
+            nl = lane.nll_many(
+                list(zip(tuning, rs))
+                + [(f"{cfg['pos']}\n\n{q}", r) for q, r in zip(tuning, rs)])
+            ns = [min(a, b) for a, b in zip(nl[:len(rs)], nl[len(rs):])]
             gen[d] = {"judge": sum(js) / len(js), "nll": sum(ns) / len(ns)}
         table[L] = gen
         bd = spike.best_dose(gen)
@@ -707,7 +850,7 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
 
 def final_gains(eng, spec, cfg, frozen, med, final, sign=+1.0,
                 cancel=None, progress=None, stage="final",
-                params=None, base_cache=None):
+                params=None, base_cache=None, lane=None):
     """Per-prompt gains on the final split for a signed vector dose."""
     _check(cancel)
     params = dict(SCHEDULES["full"]) if params is None else params
@@ -715,12 +858,12 @@ def final_gains(eng, spec, cfg, frozen, med, final, sign=+1.0,
     edits = engine_mod.EditSet(vector=(_vec_edit(L, unit, med[L],
                                                  sign * frozen["dose"]),))
     return _loop_gains(eng, spec, cfg, final, edits, sign, params,
-                       base_cache, cancel, progress, stage)
+                       base_cache, cancel, progress, stage, lane)
 
 
 def delete_gains(eng, spec, cfg, frozen, final,
                  cancel=None, progress=None, stage="final",
-                 params=None, base_cache=None):
+                 params=None, base_cache=None, lane=None):
     """Per-prompt removal gains for directional ablation on final."""
     _check(cancel)
     params = dict(SCHEDULES["full"]) if params is None else params
@@ -728,61 +871,73 @@ def delete_gains(eng, spec, cfg, frozen, final,
     edits = engine_mod.EditSet(
         ablate=(engine_mod.Ablation(L, tuple(frozen["unit"].tolist())),))
     return _loop_gains(eng, spec, cfg, final, edits, -1.0, params,
-                       base_cache, cancel, progress, stage)
+                       base_cache, cancel, progress, stage, lane)
+
+
+def _base_texts(eng, spec, lane, base_cache, prompts, max_new, cancel):
+    """Greedy base replies for prompts, through the cache when given."""
+    if base_cache is not None:
+        return base_cache.base_many(lane, prompts, max_new, cancel=cancel)
+    out = lane.gen_many(prompts, engine_mod.EMPTY_EDITS, max_new,
+                        cancel=cancel)
+    _check(cancel)
+    return out
 
 
 def _loop_gains(eng, spec, cfg, final, edits, sign, params,
-                base_cache, cancel, progress, stage):
+                base_cache, cancel, progress, stage, lane=None):
     """All-prompts (trait only) gains; the no-early-stop path."""
+    _check(cancel)
+    lane = lane or TorchLane(eng, spec)
     max_new = params["gen_tokens"]
+    final = list(final)
+    bases = _base_texts(eng, spec, lane, base_cache, final, max_new, cancel)
+    sts = lane.gen_many(final, edits, max_new, cancel=cancel)
+    _check(cancel)
+    if progress is not None:
+        progress(stage, len(final), len(final))
+    jbs = lane.judge_many(list(zip(final, bases)), cfg["judge"])
+    jss = lane.judge_many(list(zip(final, sts)), cfg["judge"])
     gains, pairs = [], []
-    for i, q in enumerate(final):
-        _check(cancel)
-        if base_cache is not None:
-            base = base_cache.base(eng, q, max_new, cancel=cancel)
-        else:
-            base = _gen(eng, q, engine_mod.EMPTY_EDITS,
-                        max_new=max_new, cancel=cancel)
-        st = _gen(eng, q, edits, max_new=max_new, cancel=cancel)
-        if progress is not None:
-            progress(stage, i + 1, len(final))
-        jb = judge_score(eng.model, eng.tokenizer, spec, q, base, cfg["judge"])
-        js = judge_score(eng.model, eng.tokenizer, spec, q, st, cfg["judge"])
+    for q, base, st, jb, js in zip(final, bases, sts, jbs, jss):
         gains.append(js - jb if sign > 0 else jb - js)
         pairs.append({"q": q, "base": base, "steered": st,
                       "jb": jb, "js": js})
     return gains, pairs
 
 
-def _gain_step(eng, spec, cfg, label, q, t_prompt, t_edits,
-               c_prompt, c_edits, tsign, csign, max_new,
-               base_cache, cancel):
-    """One interleaved pair: trait gain, control gain, trait pair dict.
+def _gain_steps(eng, spec, cfg, label, qs, t_prompts, t_edits,
+                c_prompts, c_edits, tsign, csign, max_new,
+                base_cache, cancel, lane):
+    """Interleaved pairs for many prompts: trait gains, control gains,
+    trait pair dicts.
 
     Base comes from the cache when given (greedy texts are
     deterministic, so the shared text equals a fresh generation).
     """
     _check(cancel)
-    if base_cache is not None:
-        base = base_cache.base(eng, q, max_new, cancel=cancel)
-    else:
-        base = _gen(eng, q, engine_mod.EMPTY_EDITS,
-                    max_new=max_new, cancel=cancel)
-    st = _gen(eng, t_prompt, t_edits, max_new=max_new, cancel=cancel)
-    ct = _gen(eng, c_prompt, c_edits, max_new=max_new, cancel=cancel)
-    jb = judge_score(eng.model, eng.tokenizer, spec, q, base, label)
-    js = judge_score(eng.model, eng.tokenizer, spec, q, st, label)
-    jc = judge_score(eng.model, eng.tokenizer, spec, q, ct, label)
-    tg = js - jb if tsign > 0 else jb - js
-    cg = jc - jb if csign > 0 else jb - jc
-    pair = {"q": q, "base": base, "steered": st, "jb": jb, "js": js}
-    return tg, cg, pair
+    bases = _base_texts(eng, spec, lane, base_cache, qs, max_new, cancel)
+    sts = lane.gen_many(t_prompts, t_edits, max_new, cancel=cancel)
+    _check(cancel)
+    cts = lane.gen_many(c_prompts, c_edits, max_new, cancel=cancel)
+    _check(cancel)
+    jbs = lane.judge_many(list(zip(qs, bases)), label)
+    jss = lane.judge_many(list(zip(qs, sts)), label)
+    jcs = lane.judge_many(list(zip(qs, cts)), label)
+    out = []
+    for q, base, st, jb, js, jc in zip(qs, bases, sts, jbs, jss, jcs):
+        tg = js - jb if tsign > 0 else jb - js
+        cg = jc - jb if csign > 0 else jb - jc
+        out.append((tg, cg, {"q": q, "base": base, "steered": st,
+                             "jb": jb, "js": js}))
+    return out
 
 
 def verb_final(eng, spec, cfg, label, final, t_edits, c_edits,
                tsign=+1.0, csign=+1.0, t_prefix="", c_prefix="",
                cancel=None, progress=None, stage="final", n0=None,
-               nmax=None, max_new=GEN_TOKENS, base_cache=None):
+               nmax=None, max_new=GEN_TOKENS, base_cache=None,
+               lane=None):
     """Interleaved trait+control pairs with early stop (C2).
 
     Runs trait and control steered generations per prompt (base
@@ -791,15 +946,31 @@ def verb_final(eng, spec, cfg, label, final, t_edits, c_edits,
     Returns {"gains", "control", "pairs", "n", "stopped_early"}.
     """
     _check(cancel)
+    lane = lane or TorchLane(eng, spec)
     prompts = list(final)[:nmax]
     total = len(prompts)
     gains, control, pairs = [], [], []
     stopped = False
+    if n0 is None:
+        # No early stop: every prompt runs, so run them as one batch.
+        steps = _gain_steps(
+            eng, spec, cfg, label, prompts,
+            [f"{t_prefix}{q}" for q in prompts], t_edits,
+            [f"{c_prefix}{q}" for q in prompts], c_edits, tsign, csign,
+            max_new, base_cache, cancel, lane)
+        for tg, cg, pair in steps:
+            gains.append(tg)
+            control.append(cg)
+            pairs.append(pair)
+        if progress is not None:
+            progress(stage, total, total)
+        return {"gains": gains, "control": control, "pairs": pairs,
+                "n": len(gains), "stopped_early": False}
     for i, q in enumerate(prompts):
-        tg, cg, pair = _gain_step(
-            eng, spec, cfg, label, q, f"{t_prefix}{q}", t_edits,
-            f"{c_prefix}{q}", c_edits, tsign, csign, max_new,
-            base_cache, cancel)
+        (tg, cg, pair), = _gain_steps(
+            eng, spec, cfg, label, [q], [f"{t_prefix}{q}"], t_edits,
+            [f"{c_prefix}{q}"], c_edits, tsign, csign, max_new,
+            base_cache, cancel, lane)
         gains.append(tg)
         control.append(cg)
         pairs.append(pair)
@@ -836,7 +1007,7 @@ def _shuffled_unit(eng, spec, cfg, extraction, layer,
 
 def control_gains(eng, spec, cfg, med, extraction, final, layer, dose,
                   cancel=None, progress=None, params=None,
-                  base_cache=None, unit=None):
+                  base_cache=None, unit=None, lane=None):
     """Unsupervised control: shuffled derivation, same (layer, dose)."""
     if unit is None:
         unit = _shuffled_unit(eng, spec, cfg, extraction, layer,
@@ -844,12 +1015,12 @@ def control_gains(eng, spec, cfg, med, extraction, final, layer, dose,
     edits = engine_mod.EditSet(vector=(_vec_edit(layer, unit, med[layer], dose),))
     return _paired_gains(eng, spec, cfg, final, edits, sign=+1.0,
                          cancel=cancel, progress=progress, params=params,
-                         base_cache=base_cache)
+                         base_cache=base_cache, lane=lane)
 
 
 def control_removal_gains(eng, spec, cfg, extraction, final, layer,
                           cancel=None, progress=None, params=None,
-                          base_cache=None, unit=None):
+                          base_cache=None, unit=None, lane=None):
     """Unsupervised control for removal verbs: shuffled ablation."""
     if unit is None:
         unit = _shuffled_unit(eng, spec, cfg, extraction, layer,
@@ -858,35 +1029,23 @@ def control_removal_gains(eng, spec, cfg, extraction, final, layer,
         ablate=(engine_mod.Ablation(layer, tuple(unit.tolist())),))
     return _paired_gains(eng, spec, cfg, final, edits, sign=-1.0,
                          cancel=cancel, progress=progress, params=params,
-                         base_cache=base_cache)
+                         base_cache=base_cache, lane=lane)
 
 
 def _paired_gains(eng, spec, cfg, final, edits, sign,
                   cancel=None, progress=None, stage="final",
-                  params=None, base_cache=None):
+                  params=None, base_cache=None, lane=None):
     _check(cancel)
     params = dict(SCHEDULES["full"]) if params is None else params
-    max_new = params["gen_tokens"]
-    gains = []
-    for i, q in enumerate(final):
-        _check(cancel)
-        if base_cache is not None:
-            base = base_cache.base(eng, q, max_new, cancel=cancel)
-        else:
-            base = _gen(eng, q, engine_mod.EMPTY_EDITS,
-                        max_new=max_new, cancel=cancel)
-        st = _gen(eng, q, edits, max_new=max_new, cancel=cancel)
-        if progress is not None:
-            progress(stage, i + 1, len(final))
-        jb = judge_score(eng.model, eng.tokenizer, spec, q, base, cfg["judge"])
-        js = judge_score(eng.model, eng.tokenizer, spec, q, st, cfg["judge"])
-        gains.append(js - jb if sign > 0 else jb - js)
+    gains, _pairs = _loop_gains(eng, spec, cfg, final, edits, sign,
+                                params, base_cache, cancel, progress,
+                                stage, lane)
     return gains
 
 
 def read_gate(eng, spec, cfg, frozen, med, agree_qs,
               cancel=None, progress=None, params=None,
-              base_cache=None):
+              base_cache=None, lane=None):
     """O1: readout-vs-read-prompt agreement on held-out natural behavior.
 
     Probe (mean-diff unit + threshold) fit on 20 extraction prompts;
@@ -910,16 +1069,12 @@ def read_gate(eng, spec, cfg, frozen, med, agree_qs,
     probe_labels, read_labels, disag = [], [], []
     H = _capture_chunked(eng, list(rest), [L], cancel=cancel,
                          progress=progress, stage="read_gate")[L]
-    for i, q in enumerate(rest):
-        _check(cancel)
-        if base_cache is not None:
-            base = base_cache.base(eng, q, max_new, cancel=cancel)
-        else:
-            base = _gen(eng, q, engine_mod.EMPTY_EDITS,
-                        max_new=max_new, cancel=cancel)
-        if progress is not None:
-            progress("read_gate", i + 1, len(rest))
-        js = judge_score(eng.model, eng.tokenizer, spec, q, base, cfg["judge"])
+    lane = lane or TorchLane(eng, spec)
+    bases = _base_texts(eng, spec, lane, base_cache, rest, max_new, cancel)
+    if progress is not None:
+        progress("read_gate", len(rest), len(rest))
+    jss = lane.judge_many(list(zip(rest, bases)), cfg["judge"])
+    for i, (q, base, js) in enumerate(zip(rest, bases, jss)):
         pl, rl = bool((H[i] @ u).item() > thr), bool(js >= 0.5)
         probe_labels.append(pl)
         read_labels.append(rl)
@@ -934,10 +1089,11 @@ NEUTRAL_INSTRUCTION = "Answer the question directly."
 
 def baseline_top1(eng, spec, cfg, label, tuning, final,
                   cancel=None, progress=None, params=None,
-                  base_cache=None):
+                  base_cache=None, lane=None):
     """O4: six instructions tuned on tuning; top-1 evaluated on final."""
     _check(cancel)
     params = dict(SCHEDULES["full"]) if params is None else params
+    lane = lane or TorchLane(eng, spec)
     max_new = params["gen_tokens"]
     inss = list(cfg.get("baselines") or
                 BASELINE_INSTRUCTIONS[cfg["name"]])[:params["base_instructions"]]
@@ -948,22 +1104,18 @@ def baseline_top1(eng, spec, cfg, label, tuning, final,
                                        else min(nmax, len(final)))
     done = 0
     for ins in inss:
-        gains = []
-        for q in tuning:
-            _check(cancel)
-            if base_cache is not None:
-                base = base_cache.base(eng, q, max_new, cancel=cancel)
-            else:
-                base = _gen(eng, q, engine_mod.EMPTY_EDITS,
-                            max_new=max_new, cancel=cancel)
-            st = _gen(eng, f"{ins}\n\n{q}", engine_mod.EMPTY_EDITS,
-                      max_new=max_new, cancel=cancel)
-            jb = judge_score(eng.model, eng.tokenizer, spec, q, base, label)
-            js = judge_score(eng.model, eng.tokenizer, spec, q, st, label)
-            gains.append(js - jb)
-            done += 1
-            if progress is not None:
-                progress("baseline", done, total)
+        _check(cancel)
+        bases = _base_texts(eng, spec, lane, base_cache, tuning, max_new,
+                            cancel)
+        sts = lane.gen_many([f"{ins}\n\n{q}" for q in tuning],
+                            engine_mod.EMPTY_EDITS, max_new, cancel=cancel)
+        _check(cancel)
+        jbs = lane.judge_many(list(zip(tuning, bases)), label)
+        jss = lane.judge_many(list(zip(tuning, sts)), label)
+        gains = [js - jb for jb, js in zip(jbs, jss)]
+        done += len(tuning)
+        if progress is not None:
+            progress("baseline", done, total)
         scored.append((statistics.fmean(gains), ins))
     scored.sort(reverse=True)
     top = scored[0][1]
@@ -978,7 +1130,7 @@ def baseline_top1(eng, spec, cfg, label, tuning, final,
                      c_prefix=f"{NEUTRAL_INSTRUCTION}\n\n",
                      cancel=cancel, progress=_count, stage="baseline",
                      n0=params["base_final_n0"], nmax=nmax,
-                     max_new=max_new, base_cache=base_cache)
+                     max_new=max_new, base_cache=base_cache, lane=lane)
     return {"instructions": scored, "top": top,
             "final_gains": fin["gains"], "neutral_gains": fin["control"],
             "n": fin["n"], "stopped_early": fin["stopped_early"]}
@@ -986,16 +1138,20 @@ def baseline_top1(eng, spec, cfg, label, tuning, final,
 
 def run_trait(eng, spec, trait_name, bank, seed, workdir,
               model_id, revision, cancel=None, progress=None,
-              guard=False, research_mode=False, schedule="full"):
+              guard=False, research_mode=False, schedule="full",
+              lane=None):
     """One complete trait end to end. Writes report.json + report.md.
 
     cancel (threading.Event) raises Stopped at generation granularity;
     progress(stage, done, total) reports per-stage counts.
     schedule is "full" (today's pipeline, number for number) or
     "fast" (fewer prompts, shorter generations, early stop).
+    lane runs generation, judge and NLL (default TorchLane on eng;
+    LlamaLane batches them on lobot-llamad). Capture stays on eng.
     """
     _check(cancel)
     params = schedule_params(schedule)
+    lane = lane or TorchLane(eng, spec)
     t0 = time.time()
     timings: dict[str, float] = {}
     workdir = Path(workdir)
@@ -1009,6 +1165,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     out = {"trait": trait_name, "seed": seed, "schedule": schedule,
            "fingerprint": eng.fingerprint(),
            "judge": judge_info("local", model_id, None),
+           "lane": lane.info(),
            "splits": {"extraction": ext, "tuning": tun, "final": fin,
                       "reserve": splits.reserve}}
     base_cache = BaseCache()
@@ -1044,7 +1201,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     frozen, table, cand_stats = tune_layer_dose(
         eng, spec, cfg, med, A, B, tun, cfg["judge"],
         cancel=cancel, progress=progress, params=params,
-        base_cache=base_cache)
+        base_cache=base_cache, lane=lane)
     timings["tune"] = round(time.time() - t_stage, 1)
     out["tuning"] = {"candidates": cand_stats,
                      "table": {str(L): {str(d): v for d, v in g.items()}
@@ -1070,7 +1227,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         eng, spec, cfg, frozen, med,
         {"fit": ext[:20], "heldout": ext[20:] + tun + fin},
         cancel=cancel, progress=progress, params=params,
-        base_cache=base_cache)
+        base_cache=base_cache, lane=lane)
     timings["read_gate"] = round(time.time() - t_stage, 1)
     out["read_gate"] = {"agreement": agree, "disagreements": disag,
                         "pass": agree["margin"] >= 0.10}
@@ -1099,17 +1256,17 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
                     up_ctrl, cancel=cancel, progress=progress,
                     stage="final", n0=params["final_n0"],
                     nmax=params["final_nmax"], max_new=max_new,
-                    base_cache=base_cache)
+                    base_cache=base_cache, lane=lane)
     dn = verb_final(eng, spec, cfg, cfg["judge"], fin, dn_edits,
                     rm_ctrl, tsign=-1.0, csign=-1.0,
                     cancel=cancel, progress=progress, stage="final",
                     n0=params["final_n0"], nmax=params["final_nmax"],
-                    max_new=max_new, base_cache=base_cache)
+                    max_new=max_new, base_cache=base_cache, lane=lane)
     dele = verb_final(eng, spec, cfg, cfg["judge"], fin, del_edits,
                       rm_ctrl, tsign=-1.0, csign=-1.0,
                       cancel=cancel, progress=progress, stage="final",
                       n0=params["final_n0"], nmax=params["final_nmax"],
-                      max_new=max_new, base_cache=base_cache)
+                      max_new=max_new, base_cache=base_cache, lane=lane)
     timings["final"] = round(time.time() - t_stage, 1)
     cards = {
         "update_up": E.report_card_pass(up["gains"], up["control"]),
@@ -1137,7 +1294,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     t_stage = time.time()
     base = baseline_top1(eng, spec, cfg, cfg["judge"], tun, fin,
                          cancel=cancel, progress=progress, params=params,
-                         base_cache=base_cache)
+                         base_cache=base_cache, lane=lane)
     timings["baseline"] = round(time.time() - t_stage, 1)
     base_card = E.report_card_pass(base["final_gains"],
                                    base["neutral_gains"])

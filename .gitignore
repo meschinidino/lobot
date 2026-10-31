@@ -39,3 +39,7 @@ store/sae/**/tokens.json
 # local debug and calibration dumps
 calib-*.json
 .claude/launch.json
+
+# llama.cpp backend: converted weights + pinned toolchain (see docs/plans/llama-backend.md)
+models/
+third_party/

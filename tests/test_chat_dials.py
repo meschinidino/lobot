@@ -42,6 +42,11 @@ class FakeTok:
 class FakeChatEngine:
     """Scripted run_stream: script_for(call_index, prompt) -> events."""
 
+    backend = "torch"
+
+    def supports(self, feature):
+        return True
+
     def __init__(self):
         import threading
         self.lock = threading.Lock()
