@@ -53,3 +53,5 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-31 06:33 ET  backend  DL  meta-llama/Llama-3.2-3B-Instruct  end  pirate card PASS (mean 0.360), NLL +0.035, refusal 7/8 both, guard verified; 205.7s
 2026-10-31 06:39 ET  backend  IN  meta-llama/Llama-3.2-3B-Instruct  start  live install pirate into llama.cpp + judged verify
 2026-10-31 06:43 ET  backend  IN  meta-llama/Llama-3.2-3B-Instruct  end  pirate installed into llama.cpp; differs + 8/8 recorded tokens; interval miss x2 (see reports/IN.md)
+2026-10-31 06:52 ET  backend  RV  meta-llama/Llama-3.2-3B-Instruct  start  live POST /api/verify pirate quick + script parity
+2026-10-31 07:02 ET  backend  RV  meta-llama/Llama-3.2-3B-Instruct  end  pirate quick PASS 0.745 in [0.728,0.812] via route, upload, script (identical)
