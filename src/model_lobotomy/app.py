@@ -100,7 +100,8 @@ def load_engine(model_id: str | None = None):
     rung = _ENGINE.load(model_id)
     preset = _PRESETS[model_id]
     steer.check_preset_binding(preset, model_id)
-    steer.assert_text_dims(_ENGINE.model, steer.get_spec(model_id))
+    if _ENGINE.backend == "torch":
+        steer.assert_text_dims(_ENGINE.model, steer.get_spec(model_id))
     return _ENGINE.model, _ENGINE.tokenizer, rung
 
 

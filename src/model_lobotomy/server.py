@@ -76,7 +76,8 @@ from model_lobotomy import sae as sae_mod
 from model_lobotomy import steer
 from model_lobotomy import trait_eval
 from model_lobotomy import trait_store
-from model_lobotomy.engine import EMPTY_EDITS, Ablation, EditSet, Read, VectorEdit, apply_edits, get_engine
+from model_lobotomy.engine import EMPTY_EDITS, FEATURES, Ablation, EditSet, Read, VectorEdit, apply_edits, get_engine
+from model_lobotomy.llama_backend import UnsupportedError
 from model_lobotomy.steer import RecipeRow
 
 try:
@@ -108,6 +109,23 @@ def _get_runner() -> create_job.CreateRunner:
     return _runner
 
 api = FastAPI(title="lobot", docs_url=None, redoc_url=None)
+
+
+def _need_torch(eng, feature: str) -> None:
+    if not eng.supports(feature):
+        raise HTTPException(501, f"{feature} needs LOBOT_BACKEND=torch. "
+                                 f"This server runs the {eng.backend} backend.")
+
+
+@api.exception_handler(UnsupportedError)
+async def _unsupported_handler(_req, exc: UnsupportedError):
+    """Backstop: a missed torch-only call is a 501, never a 500.
+
+    Torch never raises UnsupportedError, so torch behavior does not
+    change. Explicit _need_torch gates stay mandatory: this cannot
+    help after a stream has started.
+    """
+    return JSONResponse(status_code=501, content={"detail": str(exc)})
 
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -303,9 +321,12 @@ class ChatRequest(BaseModel):
 def _state() -> dict:
     spec = engine.active_spec()
     preset = engine.active_preset()
+    eng = get_engine()
     return {
         "active_model": engine._active_model_id,
         "warm": engine._model is not None and engine._model_id == engine._active_model_id,
+        "backend": eng.backend,
+        "torch_only": sorted(f for f in FEATURES if not eng.supports(f)),
         "no_model": NO_MODEL,
         "replay": REPLAY,
         "models": [{"id": mid, "short": steer.model_short_name(mid),
@@ -435,6 +456,8 @@ def run(req: RunRequest):
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
+    if req.dial_trait is not None:
+        _need_torch(get_engine(), "dial")
     if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     _cancel.clear()
@@ -467,6 +490,7 @@ def create(req: CreateRequest):
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
+    _need_torch(get_engine(), "create")
     runner = _get_runner()
     try:
         job_id = runner.start(req.description, seed=req.seed,
@@ -846,6 +870,7 @@ def delete(req: DeleteRequest):
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
+    _need_torch(get_engine(), "ablate")
     if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     _cancel.clear()
@@ -951,6 +976,7 @@ def delete_check(req: DeleteCheckRequest):
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
+    _need_torch(get_engine(), "ablate")
     eng = get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
@@ -1152,6 +1178,7 @@ def verify(req: VerifyRequest):
     if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. "
                                  "Wait for it to finish.")
+    _need_torch(get_engine(), "verify")
     _verify_pin(patch_path)
     _cancel.clear()
     return StreamingResponse(_verify_stream(patch_path, req.quick),
@@ -1168,6 +1195,7 @@ async def verify_upload(file: UploadFile = File(...)):
     if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. "
                                  "Wait for it to finish.")
+    _need_torch(get_engine(), "verify")
     data = b""
     while True:
         chunk = await file.read(1024 * 1024)
@@ -1323,6 +1351,8 @@ def combine_check(req: CombineCheckRequest):
                                  "(MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to combine.")
     names, patches = _combine_patches(req.patch_ids)
+    if any(p["meta"].get("edit_kind") == "ablate" for p in patches):
+        _need_torch(get_engine(), "ablate")
     if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. "
                                  "Wait for it to finish.")
@@ -1351,6 +1381,8 @@ def combine_installed():
                                  "(MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to combine.")
     names, patches = _combine_patches(list(found))
+    if any(p["meta"].get("edit_kind") == "ablate" for p in patches):
+        _need_torch(get_engine(), "ablate")
     if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. "
                                  "Wait for it to finish.")
@@ -1384,12 +1416,17 @@ def _calibrate(eng, layers):
         engine._active_model_id, eng.revision, eng.tokenizer,
         str(steer.DTYPE), steer.DEVICE)
     with eng.clean():
-        return steer.calibrate_layer_medians(
-            eng.model, eng.tokenizer, list(preset["calibration_prompts"]),
-            layers or [0],
-            cache_path=ROOT / steer.calibration_path_for(
-                engine._active_model_id),
-            key=key, spec=spec)
+        try:
+            return steer.calibrate_layer_medians(
+                eng.model, eng.tokenizer, list(preset["calibration_prompts"]),
+                layers or [0],
+                cache_path=ROOT / steer.calibration_path_for(
+                    engine._active_model_id),
+                key=key, spec=spec)
+        except UnsupportedError:
+            raise UnsupportedError(
+                f"no cached medians for layers {layers}; run once "
+                f"with LOBOT_BACKEND=torch") from None
 
 
 def _model_slug(model_id: str) -> str:
@@ -1542,6 +1579,7 @@ def neurons(req: NeuronsRequest):
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
+    _need_torch(get_engine(), "capture")
     eng = get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
@@ -1628,6 +1666,7 @@ def neuron_card(layer: int, neuron: int, k: int = Query(12, ge=1, le=50)):
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
+    _need_torch(get_engine(), "reader")
     eng = get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
@@ -1663,6 +1702,7 @@ def find(word: str = "", layers: str | None = None,
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
+    _need_torch(get_engine(), "reader")
     eng = get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
@@ -1696,6 +1736,7 @@ def lift(req: LiftRequest):
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
+    _need_torch(get_engine(), "reader")
     eng = get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
@@ -1787,6 +1828,7 @@ def feature_card(layer: int, index: int, k: int = Query(12, ge=1, le=50)):
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
+    _need_torch(get_engine(), "sae")
     eng = get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
@@ -1827,6 +1869,7 @@ def feature_lift(req: FeatureLiftRequest):
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
+    _need_torch(get_engine(), "sae")
     eng = get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
@@ -1903,6 +1946,8 @@ def chat_start(req: ChatStartRequest):
             raise HTTPException(404, f"No finished Create job for trait "
                                      f"'{trait}' with a saved direction. "
                                      f"Create the trait first.")
+    if dial_traits:
+        _need_torch(get_engine(), "dial")
     if len(_chats) >= MAX_CHAT_SESSIONS:
         oldest = min(_chats, key=lambda k: _chats[k]["created"])
         del _chats[oldest]
@@ -2023,6 +2068,8 @@ def chat_replay(req: ReplayRequest):
     if len(start.dial_traits) > MAX_CHAT_DIALS:
         raise HTTPException(400, f"Too many dial traits. "
                                  f"The limit is {MAX_CHAT_DIALS}.")
+    if start.dial_traits:
+        _need_torch(get_engine(), "dial")
     if len(_chats) >= MAX_CHAT_SESSIONS:
         oldest = min(_chats, key=lambda k: _chats[k]["created"])
         del _chats[oldest]
@@ -2091,6 +2138,8 @@ def chat(req: ChatRequest):
                                  "Restart without it to run experiments.")
     if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    if sess.get("dial_traits"):
+        _need_torch(get_engine(), "dial")
     _cancel.clear()
     max_new = sess["max_new_tokens"]
     if req.max_new_tokens is not None:

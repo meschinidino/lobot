@@ -32,6 +32,11 @@ KNOB = {"layer": 17, "dose": 1.5, "direction": [0.1, 0.2],
 
 
 class FakeDeleteEngine:
+    backend = "torch"
+
+    def supports(self, feature):
+        return True
+
     def __init__(self):
         self.lock = threading.Lock()
         self.model = object()
