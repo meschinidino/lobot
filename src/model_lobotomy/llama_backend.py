@@ -303,15 +303,21 @@ class DaemonProc:
     close(). A dead child or a garbage line raises DaemonError.
     """
 
-    def __init__(self, binary: str | Path, gguf: str | Path):
+    def __init__(self, binary: str | Path, gguf: str | Path,
+                 extra_args: list[str] | None = None):
         binary = str(binary)
         if not (Path(binary).is_file()
                 and os.access(binary, os.X_OK)):
             raise RuntimeError(
                 f"lobot-llamad missing: {binary}; run "
                 f"scripts/build_llamacpp.sh")
+        args = [binary, "-m", str(gguf), *(extra_args or [])]
+        # KV prefix reuse across requests with the same cvec (daemon
+        # default). LOBOT_LLAMA_PREFIX_CACHE=0 makes every request cold.
+        if os.environ.get("LOBOT_LLAMA_PREFIX_CACHE", "1") == "0":
+            args.append("--no-prefix-cache")
         self._proc = subprocess.Popen(
-            [binary, "-m", str(gguf)],
+            args,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         self._stderr_tail: deque[str] = deque(maxlen=20)
@@ -374,9 +380,19 @@ class DaemonProc:
                 f"lobot-llamad spoke garbage: {e}") from e
 
     def _request(self, obj: dict) -> dict:
+        """One request, one reply line.
+
+        Skips bare {"ok": true} lines: older daemons ack cancel,
+        and an ack that lands after a generate's done line would
+        otherwise answer this request (and every later reply would
+        belong to the request before it).
+        """
         with self._io_lock:
             self._send(obj)
-            return self._readline()
+            while True:
+                resp = self._readline()
+                if resp != {"ok": True}:
+                    return resp
 
     def prefill(self, ids: list[int],
                 cvec: tuple[str, int, int] | None) -> bytes:
@@ -389,7 +405,90 @@ class DaemonProc:
             raise DaemonError(
                 f"lobot-llamad prefill failed: "
                 f"{resp.get('error')}")
+        if "logits_b64" not in resp:
+            raise DaemonError(
+                f"lobot-llamad prefill reply has no logits: "
+                f"{str(resp)[:200]}")
         return base64.b64decode(resp["logits_b64"])
+
+    def _cancel_watcher(self, cancel: threading.Event | None):
+        """(stop event, thread) sending one cancel when cancel is set."""
+        stop = threading.Event()
+        if cancel is None:
+            return stop, None
+
+        def _watch():
+            while not stop.wait(0.01):
+                if cancel.is_set():
+                    try:
+                        self._send({"op": "cancel"})
+                    except DaemonError:
+                        pass
+                    return
+        t = threading.Thread(target=_watch, daemon=True)
+        t.start()
+        return stop, t
+
+    def _batch_request(self, req: dict,
+                       cancel: threading.Event | None) -> dict:
+        """One batch op with a cancel watcher; one reply line."""
+        with self._io_lock:
+            self._send(req)
+            stop, watcher = self._cancel_watcher(cancel)
+            try:
+                while True:
+                    resp = self._readline()
+                    if resp != {"ok": True}:
+                        return resp
+            finally:
+                stop.set()
+                if watcher is not None:
+                    watcher.join(timeout=5)
+
+    def generate_batch(self, prompts: list[list[int]], max_new: int,
+                       stop_ids: list[int],
+                       cvec: tuple[str, int, int] | None,
+                       cancel: threading.Event | None = None) -> dict:
+        """Greedy ids per prompt, one sequence each (--parallel).
+
+        Returns the done_batch dict: outs, stop, prefill_ms,
+        decode_ms. A daemon error raises DaemonError; a cancel
+        returns stop == "cancel" with partial outs.
+        """
+        req: dict = {"op": "generate_batch", "prompts": prompts,
+                     "max_new": max_new, "stop_ids": stop_ids}
+        if cvec is not None:
+            req["cvec_b64"], req["il_start"], req["il_end"] = cvec
+        resp = self._batch_request(req, cancel)
+        if resp.get("type") != "done_batch":
+            raise DaemonError(
+                f"lobot-llamad spoke garbage: {str(resp)[:200]}")
+        if resp.get("stop") == "error":
+            raise DaemonError(
+                f"lobot-llamad generate_batch failed: "
+                f"{resp.get('error')}")
+        return resp
+
+    def score_batch(self, items: list[dict],
+                    cvec: tuple[str, int, int] | None = None,
+                    cancel: threading.Event | None = None,
+                    ) -> list[dict] | None:
+        """Per item: {"lp": [...], "last": [...]} (see the daemon).
+
+        Items are {"ids", "from"?, "last_ids"?}. Returns None when
+        cancelled; any other failure raises DaemonError.
+        """
+        req: dict = {"op": "score_batch", "items": items}
+        if cvec is not None:
+            req["cvec_b64"], req["il_start"], req["il_end"] = cvec
+        resp = self._batch_request(req, cancel)
+        if resp.get("cancelled"):
+            return None
+        if not resp.get("ok") or "items" not in resp:
+            raise DaemonError(
+                f"lobot-llamad score_batch failed: "
+                f"{resp.get('error') or str(resp)[:200]}")
+        return resp["items"]
 
     def generate(self, ids: list[int], max_new: int,
                  stop_ids: list[int],
@@ -432,8 +531,8 @@ class DaemonProc:
                         done = ev
                         yield ("done", ev)
                         return
-                    elif "ok" in ev:
-                        continue  # cancel ack; the done line follows
+                    elif ev == {"ok": True}:
+                        continue  # older daemons ack cancel
                     else:
                         raise DaemonError(
                             f"lobot-llamad spoke garbage: "
@@ -891,3 +990,107 @@ class LlamaEngine:
             "rows": rows, "fallback_used": False,
             "hook_calls": sum(r["hook_calls"] for r in rows),
             "reads": {}}}
+
+
+# -- Create lane daemon ----------------------------------------------------------
+
+
+class CreateDaemon:
+    """A batched lobot-llamad for Create (trait_eval.LlamaLane).
+
+    Separate from LlamaEngine: Create keeps the torch engine for
+    capture and the guard, and sends generation, judge and NLL here.
+    The daemon runs --parallel sequences in one unified KV buffer;
+    quant comes from LOBOT_CREATE_QUANT (default f16, the parity
+    lane: 12/12 byte-exact generations vs torch).
+    """
+
+    PARALLEL = 32
+    CTX = 16384
+
+    def __init__(self, model_id: str, revision: str, tokenizer,
+                 quant: str | None = None, proc_factory=None):
+        self.quant = quant or os.environ.get("LOBOT_CREATE_QUANT", "f16")
+        self.model_id, self.revision = model_id, revision
+        self.tokenizer = tokenizer
+        self.spec = steer.get_spec(model_id)
+        prev = os.environ.get("LOBOT_LLAMA_QUANT")
+        os.environ["LOBOT_LLAMA_QUANT"] = self.quant
+        try:
+            gguf, self.sidecar = resolve_gguf(model_id, revision)
+        finally:
+            if prev is None:
+                os.environ.pop("LOBOT_LLAMA_QUANT", None)
+            else:
+                os.environ["LOBOT_LLAMA_QUANT"] = prev
+        binary = os.environ.get("LOBOT_LLAMAD_BIN", str(DAEMON_BIN))
+        factory = proc_factory or DaemonProc
+        self.proc = factory(binary, gguf, [
+            "--parallel", str(self.PARALLEL), "--ctx-size", str(self.CTX),
+            "--no-prefix-cache"])
+        info = self.proc.info
+        if (info.get("n_layer") != self.spec.layers
+                or info.get("n_embd") != self.spec.hidden):
+            self.proc.close()
+            raise RuntimeError(
+                f"GGUF dims {info.get('n_layer')}/{info.get('n_embd')} "
+                f"!= spec {self.spec.layers}/{self.spec.hidden}")
+        self.stop_ids = LlamaEngine._resolve_stop_ids(model_id, tokenizer)
+
+    def info(self) -> dict:
+        return {"quant": self.quant,
+                "gguf_sha256": self.sidecar.get("gguf_sha256"),
+                "llamacpp_commit": self.sidecar.get("llamacpp_commit"),
+                "parallel": self.PARALLEL}
+
+    def _cvec(self, edits: engine_mod.EditSet):
+        conv = edits_to_cvec(edits, self.spec, {}, None)
+        if conv is None:
+            return None
+        raw, lo, hi = conv
+        return (base64.b64encode(raw).decode("ascii"), lo, hi)
+
+    def gen_ids_many(self, prompts: list[list[int]],
+                     edits: engine_mod.EditSet, max_new: int,
+                     cancel: threading.Event | None = None,
+                     ) -> list[list[int]]:
+        """Greedy reply ids per prompt (stop id kept, like run()).
+
+        Vector-only or empty EditSets; chunks of PARALLEL prompts
+        within the context budget. A cancel returns what is done
+        (the caller checks its cancel event).
+        """
+        if edits.ablate or edits.read or edits.neuron:
+            raise UnsupportedError(
+                "Create lane batches vector edits only")
+        max_new = min(max_new, steer.MAX_NEW_TOKENS_CAP)
+        cvec = self._cvec(edits)
+        outs: list[list[int]] = []
+        i = 0
+        while i < len(prompts):
+            j, budget = i, 0
+            while (j < len(prompts) and j - i < self.PARALLEL
+                   and (j == i or budget + len(prompts[j]) + max_new
+                        <= self.CTX)):
+                budget += len(prompts[j]) + max_new
+                j += 1
+            resp = self.proc.generate_batch(
+                prompts[i:j], max_new, self.stop_ids, cvec, cancel)
+            outs.extend([[int(t) for t in o] for o in resp["outs"]])
+            if resp.get("stop") == "cancel":
+                break
+            i = j
+        return outs
+
+    def score_many(self, items: list[dict],
+                   cancel: threading.Event | None = None) -> list[dict]:
+        """score_batch with no cvec (judge and NLL read the base model)."""
+        if not items:
+            return []
+        res = self.proc.score_batch(items, None, cancel)
+        if res is None:
+            return []
+        return res
+
+    def close(self) -> None:
+        self.proc.close()

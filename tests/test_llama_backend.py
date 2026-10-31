@@ -7,9 +7,11 @@ model-backed lane in docs/plans/llama-backend.md, D5 parts 2-5).
 """
 import base64
 import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 import numpy as np
 import torch
@@ -447,6 +449,94 @@ class PrefillTest(unittest.TestCase):
         eng = _llama(proc=Short())
         with self.assertRaises(lb.DaemonError):
             eng.prefill("q")
+
+
+LATE_ACK_DAEMON = '''
+import base64, json, struct, sys
+for line in sys.stdin:
+    req = json.loads(line)
+    op = req["op"]
+    if op == "info":
+        out = {"ok": True, "n_layer": 4, "n_embd": 8, "n_vocab": 2,
+               "argv": sys.argv[1:]}
+    elif op == "prefill":
+        raw = struct.pack("<2f", float(sum(req["ids"])), 0.0)
+        out = {"ok": True,
+               "logits_b64": base64.b64encode(raw).decode()}
+    elif op == "generate":
+        for t in range(req["max_new"]):
+            print(json.dumps({"type": "token", "id": t}), flush=True)
+        out = {"type": "done", "stop": "maxlen", "cancelled": False}
+    elif op == "cancel":
+        out = {"ok": True}  # old daemon: acks after the done line
+    else:
+        break
+    print(json.dumps(out), flush=True)
+'''
+
+
+class DaemonProtocolTest(unittest.TestCase):
+    """DaemonProc over a fake daemon subprocess (no weights).
+
+    The fake is single-threaded, so it answers cancel only after
+    the generate's done line: the stale-ack race, every time.
+    """
+
+    def setUp(self):
+        import sys
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        path = Path(self._tmp.name) / "fake-llamad"
+        path.write_text(f"#!{sys.executable}\n{LATE_ACK_DAEMON}")
+        path.chmod(0o755)
+        self.proc = lb.DaemonProc(path, "fake.gguf")
+
+    def tearDown(self):
+        self.proc.close()
+        self._tmp.cleanup()
+
+    def _first(self, ids):
+        return float(np.frombuffer(self.proc.prefill(ids, None),
+                                   dtype=np.float32)[0])
+
+    def test_late_ack_after_early_close_is_skipped(self):
+        stream = self.proc.generate([1], 3, [], None)
+        for i, _ev in enumerate(stream):
+            if i == 2:
+                break
+        stream.close()  # sends cancel; done is already queued
+        self.assertEqual(self._first([10, 20]), 30.0)
+        self.assertEqual(self._first([5]), 5.0)
+
+    def test_late_ack_after_watcher_cancel_is_skipped(self):
+        cancel = threading.Event()
+        stream = self.proc.generate([1], 3, [], None, cancel)
+        next(stream)
+        cancel.set()
+        time.sleep(0.1)  # let the 10 ms watcher send its cancel
+        for _ev in stream:
+            pass
+        self.assertEqual(self._first([7]), 7.0)
+        self.assertEqual(self._first([8, 1]), 9.0)
+
+    def test_prefix_cache_on_by_default(self):
+        self.assertNotIn("--no-prefix-cache", self.proc.info["argv"])
+
+    def test_prefix_cache_env_off_passes_flag(self):
+        path = Path(self._tmp.name) / "fake-llamad"
+        with mock.patch.dict("os.environ",
+                             {"LOBOT_LLAMA_PREFIX_CACHE": "0"}):
+            cold = lb.DaemonProc(path, "fake.gguf")
+        try:
+            self.assertIn("--no-prefix-cache", cold.info["argv"])
+        finally:
+            cold.close()
+
+    def test_prefill_reply_without_logits_raises(self):
+        with mock.patch.object(self.proc, "_request",
+                               return_value={"ok": True, "x": 1}):
+            with self.assertRaises(lb.DaemonError):
+                self.proc.prefill([1], None)
 
 
 class HandleTest(unittest.TestCase):
