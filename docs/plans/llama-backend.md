@@ -19,8 +19,14 @@ Decisions: two Claude consults (binding). Session id in
 - Tokenization stays in Python: HF tokenizer wraps (`wrap_prompt_
   notk`), tokenizes, and cumulative-decodes exactly like torch.
   GGUF template/tokenizer never used. Greedy (argmax) decode.
-- Each request: `llama_memory_clear`, set cvec or clear with
-  `data=NULL`, decode. No cross-request state. No prompt cache v1.
+- Each request: same cvec as the last request → keep the KV of
+  the shared token prefix, decode the rest. Other cvec →
+  `llama_memory_clear`, set cvec or clear with `data=NULL`,
+  decode all. Recurrent layers (Qwen3.5) refuse a partial
+  rollback; then the daemon clears all. `--no-prefix-cache`
+  (`LOBOT_LLAMA_PREFIX_CACHE=0`) makes every request cold.
+- `cancel` has no reply. The reader thread resets the cancel
+  flag when it queues a request, so an early cancel survives.
 - Daemon crash raises loudly; never silent-fallback to torch.
   Restart on next `load`.
 - `load` checks daemon `n_vocab`/`n_layer`/`n_embd` against the
@@ -135,6 +141,32 @@ Decisions: two Claude consults (binding). Session id in
   `/api/*` once; 2xx or 501 only. Full torch suite unchanged
   except full-`_state()` comparisons.
 
+## Create lane (opt-in)
+
+- `LOBOT_CREATE_LANE=llama` (server) or `run_trait.py --lane
+  llama`: Create keeps the torch engine for capture and the
+  guard, and sends generation, judge and NLL to a second
+  daemon (`CreateDaemon`, `--parallel 32`, n_ctx 16384,
+  unified KV, no prefix cache). Quant: `LOBOT_CREATE_QUANT`
+  (default f16, the parity lane). Default stays torch.
+- Stages hand whole prompt lists to a lane (`TorchLane` /
+  `LlamaLane` in `trait_eval.py`). `TorchLane` makes the same
+  calls as before, one by one. Both memoize judge and NLL per
+  run (pure functions of text). Ablation EditSets fall back to
+  torch (memoized: update_down and delete share one control).
+- Daemon ops: `generate_batch` (one sequence per prompt, same
+  cvec, greedy, stop id kept) and `score_batch` (last-position
+  logits at given ids, and log P of tokens from `from`;
+  judge = softmax over Yes/No, NLL = mean −log P).
+- `verb_final` batches only without early stop (full
+  schedule). The fast schedule keeps its one-by-one path.
+- Check (Llama F16, 16 pirate tuning prompts, lane vs torch):
+  generations 15/16 identical (base and steered), batch vs
+  single daemon requests 8/8 identical, judge |Δ| ≤ 0.004
+  (16/16 same side of 0.5), NLL |Δ| ≤ 0.005. Time for 16:
+  generation 31.7 → 3.3 s, judge 2.9 → 1.8 s, NLL 5.2 →
+  3.7 s (prefill-bound on both stacks).
+
 ## Results (2026-10-31)
 
 - F16 parity PASS on both models: 12/12 generations byte-exact,
@@ -151,6 +183,23 @@ Decisions: two Claude consults (binding). Session id in
   parity), stop ids come from the text config (Qwen gen eos
   248044 != tokenizer eos 248046), vocab check reads the
   config size (Qwen pads to 248320).
+- Q4_K_M fails the Q8 bar on both models: Llama baseline
+  top-1 2/3 with splits at gaps 0.70 and 0.34; Qwen refusal
+  |d| 0.034. Speed 75.6 (Llama) / 55.2 (Qwen) tok/s. Stays
+  report-only. Reports: `logs/parity_llama/*q4_k_m/`.
+- Prefix cache, Q8_0, cached vs cold daemon, 6-turn chats,
+  baseline + steered: 24/24 turns same greedy ids, judge
+  prefill cosine 1.0, cvec switch reuses 0. Llama TTFT at
+  620 prompt tokens 686 -> 56 ms (baseline), 688 -> 159 ms
+  (steered: only the previous prompt is reused; the re-templated
+  reply differs from the cached reply ids, cause not checked).
+  Qwen: recurrent rollback is refused, so the daemon saves one
+  sequence-state checkpoint 8 tokens before each prompt end
+  (the template drops "<think>\n" from history) and restores
+  it. Qwen 12/12 turns same ids, reuses 462-472 of ~590
+  tokens at turn 6, TTFT 825 -> 215 ms.
+- `prefill_ms` now waits for the GPU (`llama_synchronize`):
+  older numbers measured only the submit (22 vs 94 ms).
 
 ## Build order
 
