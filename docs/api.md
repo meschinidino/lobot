@@ -421,6 +421,39 @@ turn in a fresh session and returns `{"match", "session_id",
 empty message), 404 (knob vanished), 409 (busy, model pin),
 503 NO_MODEL.
 
+## Delete (DL run-time ablation)
+
+One prompt, two columns: off (clean) and on (trait direction
+ablated at the saved knob layer). Only traits with a finished
+Create job and a saved direction are eligible; the traits list
+marks them with `delete_eligible`.
+
+`POST /api/delete {"prompt", "trait", "max_new_tokens": 150,
+"guard": false, "research_mode": false}` → NDJSON. Events:
+
+| stage | fields |
+|---|---|
+| `weights` | (model load when needed) |
+| `guard` | (verified guard runs on the ablation) |
+| `blocked` | `guard` (verdict dict; only when enforced) |
+| `columns` | `modes`: `["off", "on"]`, `guard` |
+| `token` | `col` (0 off, 1 on), `mode`, `text` (append), `dial` (on-column only, when the trait resolves a dial spec) |
+| `stopped` | `after`: `weights`, `guard`, or `columns` |
+| `error` | `message` |
+| `done` | `result`: `{model_id, prompt, trait, layer, columns: [{mode, text, tokens}], guard, seconds, cache_hit}` |
+
+Errors: 400 empty prompt, 422 trait not eligible, 409 busy,
+503 NO_MODEL.
+
+`POST /api/delete/check {"trait", "prompts": null}` →
+the ablation report card: `{"trait", "layer", "n", "gains",
+"control_gains", "card", "nll": {base_mean, deleted_mean,
+delta}, "refusal": {base_rate, deleted_rate, n}, "guard",
+"seconds"}`. Default prompts are the first 12 of the bank;
+at most 24 custom prompts. Errors: 400 (no usable prompts,
+too many), 422 (no knob, no registered family), 409 busy,
+503 NO_MODEL.
+
 ## Frontend loop (happy path)
 
 1. `GET /api/families` → offer validated traits.
