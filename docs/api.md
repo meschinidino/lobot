@@ -454,6 +454,34 @@ at most 24 custom prompts. Errors: 400 (no usable prompts,
 too many), 422 (no knob, no registered family), 409 busy,
 503 NO_MODEL.
 
+## Install (IN one-click install + verify)
+
+`GET /api/install/targets` → `{"targets": [{target,
+available, version, detail}]}` for `llamacpp` and `ollama`.
+Probes the real binaries; needs no weights.
+
+`POST /api/install {"trait_id", "target", "model_ref"}` →
+`{"install_id", "trait_id", "target", "model_ref", "run",
+"detail"}`. Exports the trait's `knob.lobot` and installs it:
+llama.cpp writes the control-vector GGUF (model_ref is the
+model GGUF path, which must exist); Ollama writes the GGUF +
+Modelfile and runs `ollama create`. Errors: 400 (bad target,
+empty model_ref), 404 (unknown trait, missing patch), 409
+(an install or verify is running), 422 (target unavailable
+or install failed, with the probe detail).
+
+`POST /api/install/{id}/verify {"prompt", "judge": null |
+"local", "max_new_tokens": 64}` → `{"install_id", "prompt",
+"base_text", "patched_text", "differs", "comparison",
+"seconds"}`. Runs the target with and without the patch.
+With `"local"`, the frozen torch judge scores both texts and
+`comparison` holds the shipped-vs-measured check (`pass`,
+shipped/measured means, `judge_base`, `judge_patched`); it
+loads weights lazily. Verify transcripts land next to the
+install record. Errors: 400 (empty prompt, bad judge), 404
+unknown install, 409 busy, 422 (a run failed), 503 (judged
+verify with NO_MODEL).
+
 ## Frontend loop (happy path)
 
 1. `GET /api/families` → offer validated traits.
