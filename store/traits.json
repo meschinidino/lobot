@@ -11,7 +11,8 @@
         "hand_labels": 6,
         "agreement": null,
         "note": "O1 gate not run for this family yet"
-      }
+      },
+      "baselines": []
     },
     {
       "name": "cheerful",
@@ -24,7 +25,8 @@
         "hand_labels": 12,
         "agreement": 0.9166666666666666,
         "note": "O1/O3 probe validation, min 0.8"
-      }
+      },
+      "baselines": []
     },
     {
       "name": "hostility",
@@ -37,7 +39,8 @@
         "hand_labels": 12,
         "agreement": 1.0,
         "note": "O1/O3 probe validation, min 0.8"
-      }
+      },
+      "baselines": []
     },
     {
       "name": "melancholic",
@@ -50,7 +53,8 @@
         "hand_labels": 12,
         "agreement": 1.0,
         "note": "O1/O3 probe validation, min 0.8"
-      }
+      },
+      "baselines": []
     },
     {
       "name": "paranoid",
@@ -63,7 +67,8 @@
         "hand_labels": 12,
         "agreement": 0.8333333333333334,
         "note": "O1/O3 probe validation, min 0.8"
-      }
+      },
+      "baselines": []
     },
     {
       "name": "pirate",
@@ -76,7 +81,8 @@
         "hand_labels": 12,
         "agreement": 1.0,
         "note": "O1/O3 probe validation, min 0.8"
-      }
+      },
+      "baselines": []
     },
     {
       "name": "shakespeare",
@@ -89,7 +95,29 @@
         "hand_labels": 12,
         "agreement": 1.0,
         "note": "O1/O3 probe validation, min 0.8"
-      }
+      },
+      "baselines": []
+    },
+    {
+      "name": "speaks-like-a-noir-detective",
+      "aliases": [],
+      "pos": "Describe a crime scene with a gritty, hard-boiled tone.",
+      "neg": "Describe a sunny day at the beach.",
+      "judge": "Uses phrases like 'the rain poured down like a dirty blanket' or 'the city streets were a labyrinth of corruption'.",
+      "hand_validated": true,
+      "validation": {
+        "hand_labels": 20,
+        "agreement": 0.85,
+        "note": "C3 open-description validation"
+      },
+      "baselines": [
+        "Describe a beautiful sunset.",
+        "Explain a scientific concept in simple terms.",
+        "Tell a joke.",
+        "Describe a peaceful forest.",
+        "Explain a historical event in detail.",
+        "Describe a futuristic city."
+      ]
     }
   ]
 }

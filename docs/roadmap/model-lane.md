@@ -39,3 +39,23 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-30 11:10 ET  backend  verify  meta-llama/Llama-3.2-3B-Instruct  start  D1/D2/D3 + L11 UI beats
 2026-10-30 11:18 ET  backend  verify  meta-llama/Llama-3.2-3B-Instruct  end  D1/D2/D3 fixed, L11 beats run in UI
 2026-10-30 12:27 ET  backend  demo  Qwen/Qwen3.5-4B  start  live server for Dino to click through
+2026-10-31 00:22 ET  backend  F1  meta-llama/Llama-3.2-3B-Instruct  start  SAE act cache + train L12,L20 (lane free: no server on :7860; demo line above has no end)
+2026-10-31 00:51 ET  backend  F1  meta-llama/Llama-3.2-3B-Instruct  end  L12+L20 trained, eval OVERALL PASS, 3 cards printed
+2026-10-31 00:52 ET  backend  F1  meta-llama/Llama-3.2-3B-Instruct  start  recalibrate L12,L17,L20 under current preset key (cache merge)
+2026-10-31 00:53 ET  backend  F1  meta-llama/Llama-3.2-3B-Instruct  end  cache holds L12,L17,L20 under key 403630c563648d1a
+2026-10-31 01:02 ET  backend  C2  meta-llama/Llama-3.2-3B-Instruct  start  blunt validation + fast/full matrix seed 0 (7 families)
+2026-10-31 03:55 ET  backend  C2  meta-llama/Llama-3.2-3B-Instruct  end  blunt 0.750 unvalidated; 6 fast + 1 full + 1 repeat done; both gates FAIL (see reports/C2.md)
+2026-10-31 04:03 ET  backend  C3  meta-llama/Llama-3.2-3B-Instruct  start  live server: draft rhyming + noir traits, label, validate
+2026-10-31 06:02 ET  backend  C3  meta-llama/Llama-3.2-3B-Instruct  end  rhyming 0.55 FAIL, noir 0.85 + knob; server stopped; C3 gate FAILS 1/2
+2026-10-31 06:07 ET  backend  CH  meta-llama/Llama-3.2-3B-Instruct  start  10-turn replay + dial-equality check
+2026-10-31 06:20 ET  backend  CH  meta-llama/Llama-3.2-3B-Instruct  end  check_chat_replay OVERALL PASS (10/10, dial diff 0.0)
+2026-10-31 06:26 ET  backend  DL  meta-llama/Llama-3.2-3B-Instruct  start  live /api/delete + /api/delete/check on pirate
+2026-10-31 06:33 ET  backend  DL  meta-llama/Llama-3.2-3B-Instruct  end  pirate card PASS (mean 0.360), NLL +0.035, refusal 7/8 both, guard verified; 205.7s
+2026-10-31 06:39 ET  backend  IN  meta-llama/Llama-3.2-3B-Instruct  start  live install pirate into llama.cpp + judged verify
+2026-10-31 06:43 ET  backend  IN  meta-llama/Llama-3.2-3B-Instruct  end  pirate installed into llama.cpp; differs + 8/8 recorded tokens; interval miss x2 (see reports/IN.md)
+2026-10-31 06:52 ET  backend  RV  meta-llama/Llama-3.2-3B-Instruct  start  live POST /api/verify pirate quick + script parity
+2026-10-31 07:02 ET  backend  RV  meta-llama/Llama-3.2-3B-Instruct  end  pirate quick PASS 0.745 in [0.728,0.812] via route, upload, script (identical)
+2026-10-31 07:21 ET  backend  GX  meta-llama/Llama-3.2-3B-Instruct  start  gate_guard tuning (3 new screens) + held-out
+2026-10-31 08:14 ET  backend  GX  meta-llama/Llama-3.2-3B-Instruct  end  tuning + held-out all screens: 0 misses everywhere; honesty/privacy caught flips; harmful vacuous (opt-in)
+2026-10-31 07:42 ET  backend  CB  meta-llama/Llama-3.2-3B-Instruct  start  live pair matrix (cheerful/shakespeare/noir) + proof pair hunt
+2026-10-31 08:05 ET  backend  CB  meta-llama/Llama-3.2-3B-Instruct  end  proof shakespeare+noir: singles pass honesty, union flips (0.442); cache bug fixed; synthetic halves retired

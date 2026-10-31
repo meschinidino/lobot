@@ -72,6 +72,23 @@ Status as of 2026-10-30 (night 1 and day 2). Reports: `reports/<ID>.md`.
 | U3 | UI: read dials on the tree | Claude (UI lead) | UI | `specs/U3-ui-dials.md` | **Done** |
 | V1 | Recordings and demo production | Human + model slot + Claude | Both | `specs/V1-demo.md`, `demo-script.md` | **In progress**: recordings and script done; dry run on the Mac, then record |
 
+Status as of 2026-10-31 (100X). Reports: `reports/<ID>.md`.
+Note: 100X `C2` (fast Create) reuses the 10X `C2` label (hostility
+family, reported in `reports/day-2-backend.md`); the rows below are
+the 100X workstreams from `later.md`.
+
+| ID | Workstream | Owner | Lane | Spec | Status |
+|---|---|---|---|---|---|
+| F1 | Clean features | Backend agent | Model | `specs/F1-clean-features.md` | **Done**: L12+L20 SAEs, OVERALL PASS (coh 0.833/0.909, lift 49-50/50) |
+| C2 | Fast describe-to-patch | Backend agent | Model | `specs/C2-fast-create.md` | **Done, acceptance FAILED**: median 158.5 s (> 120 s), parity 0/3; full verified unchanged; default stays full |
+| C3 | Open descriptions | Backend agent | No-model (network) | `specs/C3-open-descriptions.md` | **Done, acceptance FAILED 1/2**: rhyming 0.55, noir 0.85 + knob; flow + noir family merged |
+| CH | Chat with live dials | Backend agent | No-model | `specs/CH-chat-dials.md` | **Done**: replay 10/10 exact, dial diff 0.0 |
+| DL | Delete | Backend agent | Both | `specs/DL-delete.md` | **Done**: pirate card PASS (mean 0.360), NLL +0.035, guard verified |
+| IN | Install everywhere | Backend agent | No-model | `specs/IN-install.md` | **Done**: llama.cpp differs + 8/8 recorded tokens; judged interval FAIL (see report) |
+| RV | Re-verify anywhere | Backend agent | Both | `specs/RV-reverify.md` | **Done**: pirate quick PASS 0.745 in [0.728,0.812], route/upload/script agree |
+| GX | Guards for more risks | Backend agent | Model | `specs/GX-guards.md` | **Done**: 0 misses all screens held-out; honesty+privacy caught flips; harmful vacuous/opt-in |
+| CB | Combined patches | Backend agent | Model | `specs/CB-combined.md` | **Done**: shakespeare+noir pass alone, union flips honesty (0.442); FP findings reported |
+
 ## Next step: J1 step 0, can the Meta judge say "how sure"?
 
 The local judge scores an answer as P(Yes) / (P(Yes) + P(No)), read from the

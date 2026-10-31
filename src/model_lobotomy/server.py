@@ -23,6 +23,15 @@ Endpoints:
     GET  /api/neuron/{layer}/{neuron} one neuron card (R2)
     GET  /api/find    neurons that push one word (R2)
     POST /api/lift    steering lift for one neuron (R2)
+    GET  /api/features  trained SAEs for the active model (F1)
+    GET  /api/feature/{layer}/{index} one SAE feature card (F1)
+    POST /api/feature-lift  steering lift for one SAE feature (F1)
+    POST /api/drafts  draft a family from words (C3)
+    GET  /api/drafts/{id}  draft parts + labeling queue (C3)
+    POST /api/drafts/{id}/labels  submit user labels (C3)
+    POST /api/drafts/{id}/validate  agreement + registration (C3)
+    GET  /api/chat/{id}/transcript  replay spec for a chat (CH)
+    POST /api/chat/replay  re-run a transcript, report match (CH)
     POST /api/chat/start  open a chat session (edits persist, E2)
     POST /api/chat         one chat turn, streamed tokens
     GET  /api/chat/{id}    chat history (reattach)
@@ -42,24 +51,32 @@ import re
 import threading
 import time
 import uuid
+from typing import Literal
 from os.path import commonprefix
 from pathlib import Path
 
 import torch
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 from starlette.responses import FileResponse, JSONResponse
 
 from model_lobotomy import app as engine
 from model_lobotomy import create_job
+from model_lobotomy import drafts as drafts_mod
 from model_lobotomy import guard as guard_mod
+from model_lobotomy import guard_screens as guard_screens_mod
+from model_lobotomy import combine as combine_mod
+from model_lobotomy import installers as install_mod
+from model_lobotomy import reverify as reverify_mod
+from model_lobotomy import prompt_bank
+from model_lobotomy import sae as sae_mod
 from model_lobotomy import steer
 from model_lobotomy import trait_eval
 from model_lobotomy import trait_store
-from model_lobotomy.engine import EMPTY_EDITS, EditSet, Read, VectorEdit, apply_edits, get_engine
+from model_lobotomy.engine import EMPTY_EDITS, Ablation, EditSet, Read, VectorEdit, apply_edits, get_engine
 from model_lobotomy.steer import RecipeRow
 
 try:
@@ -162,6 +179,21 @@ class CreateRequest(BaseModel):
     seed: int = 0
     guard: bool = Field(default_factory=_guard_default)
     research_mode: bool = False
+    schedule: Literal["fast", "full"] = "full"
+
+
+class DraftRequest(BaseModel):
+    description: str
+    seed: int = 0
+
+
+class LabelRow(BaseModel):
+    reply_id: str
+    label: StrictBool
+
+
+class LabelsRequest(BaseModel):
+    labels: list[LabelRow] = Field(min_length=1)
 
 
 class UpdateRequest(BaseModel):
@@ -198,6 +230,50 @@ class LiftRequest(BaseModel):
     prompts: list[str] | None = None
 
 
+class FeatureLiftRequest(BaseModel):
+    layer: int
+    index: int
+    dose: float = Field(ge=engine.DOSE_MIN, le=engine.DOSE_MAX)
+    words: list[str] | None = None
+    prompts: list[str] | None = None
+
+
+class DeleteRequest(BaseModel):
+    prompt: str
+    trait: str
+    max_new_tokens: int = 150
+    guard: bool = False
+    research_mode: bool = False
+
+
+class InstallRequest(BaseModel):
+    trait_id: str = ""
+    target: str = ""
+    model_ref: str = ""
+
+
+class CombineCheckRequest(BaseModel):
+    patch_ids: list = []
+    max_new_tokens: int = 24
+    seed: int = 0
+
+
+class VerifyRequest(BaseModel):
+    trait_id: str = ""
+    quick: bool = True
+
+
+class InstallVerifyRequest(BaseModel):
+    prompt: str = ""
+    judge: str | None = None
+    max_new_tokens: int = 64
+
+
+class DeleteCheckRequest(BaseModel):
+    trait: str
+    prompts: list[str] | None = None
+
+
 class ChatStartRequest(BaseModel):
     rows: list[Row] = []
     trait: str | None = None
@@ -205,6 +281,16 @@ class ChatStartRequest(BaseModel):
     max_new_tokens: int = 150
     guard: bool = False
     research_mode: bool = False
+    dial_traits: list[str] = []
+
+
+class ReplayTurn(BaseModel):
+    message: str
+    rows: list[Row] = []
+
+
+class ReplayRequest(BaseModel):
+    transcript: dict
 
 
 class ChatRequest(BaseModel):
@@ -233,6 +319,7 @@ def _state() -> dict:
         "max_new_tokens": int(preset["decode"]["max_new_tokens"]),
         "preset_rows": list(preset["rows"]),
         "guard_default": _guard_default(),
+        "guard_screens": list(guard_screens_mod.enabled_screens()),
     }
 
 
@@ -385,7 +472,8 @@ def create(req: CreateRequest):
         job_id = runner.start(req.description, seed=req.seed,
                               model_id=engine._active_model_id,
                               guard=req.guard,
-                              research_mode=req.research_mode)
+                              research_mode=req.research_mode,
+                              schedule=req.schedule)
     except trait_store.UnsupportedTrait as e:
         raise HTTPException(422, str(e)) from None
     return {"job_id": job_id, **runner.status(job_id)}
@@ -483,6 +571,8 @@ def _trait_items() -> list[dict]:
                       if guard is not None else None),
             "patch": (f"/api/traits/{job['id']}/patch"
                       if (trait_dir / "knob.lobot").is_file() else None),
+            "delete_eligible": bool(frozen) and (
+                trait_dir / "direction.safetensors").is_file(),
         })
     items.sort(key=lambda t: (t["created"] or 0, t["id"]))
     seen: dict = {}
@@ -492,6 +582,154 @@ def _trait_items() -> list[dict]:
         item["version"] = seen[key]
     items.sort(key=lambda t: (t["created"] or 0, t["id"]), reverse=True)
     return items
+
+
+_DRAFT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{0,60}$")
+
+
+def _draft_or_404(draft_id: str):
+    if not _DRAFT_ID_RE.match(draft_id or ""):
+        raise HTTPException(404, f"Unknown draft '{draft_id}'.")
+    try:
+        return drafts_mod.load_draft(ROOT / "store", draft_id)
+    except KeyError:
+        raise HTTPException(404, f"Unknown draft '{draft_id}'.") from None
+
+
+@api.post("/api/drafts")
+def draft_create(req: DraftRequest):
+    """Draft model-written parts + 20 candidate replies (C3)."""
+    allowed, reason = guard_mod.draft_description_allowed(
+        req.description)
+    if not allowed:
+        raise HTTPException(422, reason)
+    if REPLAY:
+        raise HTTPException(503, "Drafts need the model. "
+                                 "Replay mode has no recordings for them.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        try:
+            parts = drafts_mod.draft_family(eng, req.description,
+                                            seed=req.seed)
+        except drafts_mod.DraftError as e:
+            raise HTTPException(422, str(e)) from None
+        try:
+            replies = drafts_mod.candidate_replies(
+                eng, parts, prompt_bank.PROMPT_BANK, seed=req.seed)
+        except drafts_mod.DraftError as e:
+            raise HTTPException(500, str(e)) from None
+        draft_id = drafts_mod.new_draft_id(ROOT / "store",
+                                           req.description)
+        record = drafts_mod.build_draft_record(
+            draft_id, req.description, parts, eng.model_id,
+            eng.revision)
+        drafts_mod.save_draft(ROOT / "store", draft_id, record,
+                              replies)
+        return {"id": draft_id, "description": record["description"],
+                "parts": {k: record[k] for k in
+                          ("pos", "neg", "judge", "baselines")},
+                "replies": [drafts_mod.public_reply(r) for r in replies],
+                "labeled": 0, "total": len(replies)}
+    finally:
+        eng.lock.release()
+
+
+@api.get("/api/drafts/{draft_id}")
+def draft_get(draft_id: str):
+    """One draft: parts + labeling queue with labels so far (C3)."""
+    record, replies, labels = _draft_or_404(draft_id)
+    rows = []
+    for entry in replies:
+        row = drafts_mod.public_reply(entry)
+        row["label"] = labels.get(entry["reply_id"])
+        rows.append(row)
+    return {"id": draft_id, "description": record["description"],
+            "parts": {k: record[k] for k in
+                      ("pos", "neg", "judge", "baselines")},
+            "replies": rows, "labeled": len(labels),
+            "total": len(replies)}
+
+
+@api.post("/api/drafts/{draft_id}/labels")
+def draft_label(draft_id: str, req: LabelsRequest):
+    """Submit user labels for candidate replies (C3)."""
+    _record, replies, labels = _draft_or_404(draft_id)
+    reply_ids = {r["reply_id"] for r in replies}
+    try:
+        merged = drafts_mod.merge_labels(
+            labels, [row.model_dump() for row in req.labels],
+            reply_ids)
+    except drafts_mod.DraftError as e:
+        raise HTTPException(400, str(e)) from None
+    drafts_mod.save_labels(ROOT / "store", draft_id, merged)
+    return {"id": draft_id, "labeled": len(merged),
+            "total": len(replies)}
+
+
+@api.post("/api/drafts/{draft_id}/validate")
+def draft_validate(draft_id: str):
+    """Judge-vs-user agreement; registers the family on pass (C3)."""
+    record, replies, labels = _draft_or_404(draft_id)
+    if len(labels) < len(replies):
+        raise HTTPException(
+            422, f"Label all {len(replies)} replies first "
+                 f"({len(labels)} labeled).")
+    if REPLAY:
+        raise HTTPException(503, "Validation needs the model. "
+                                 "Replay mode has no recordings for it.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        from model_lobotomy import trait_eval as trait_eval_mod
+        spec = engine.active_spec()
+        scores = {}
+        for entry in replies:
+            scores[entry["reply_id"]] = trait_eval_mod.judge_score(
+                eng.model, eng.tokenizer, spec, entry["prompt"],
+                entry["reply"], record["judge"])
+        got = drafts_mod.label_agreement(labels, scores)
+        if got["fraction"] < drafts_mod.AGREEMENT_GATE:
+            disag = [rid for rid in sorted(labels)
+                     if (scores[rid] >= 0.5) != bool(labels[rid])]
+            raise HTTPException(422, {
+                "registered": False,
+                "agreement": round(got["fraction"], 4),
+                "gate": drafts_mod.AGREEMENT_GATE,
+                "disagreements": disag,
+            })
+        runner = _get_runner()
+        store = runner.store
+        fam = trait_store.TraitFamily(
+            name=draft_id, pos=record["pos"], neg=record["neg"],
+            judge=record["judge"],
+            baselines=tuple(record["baselines"]))
+        try:
+            store.register(fam)
+        except ValueError:
+            raise HTTPException(422, f"A family named '{draft_id}' "
+                                     f"already exists.") from None
+        store.mark_validated(draft_id, n_labels=got["n"],
+                             agreement=round(got["fraction"], 4),
+                             note="C3 open-description validation")
+        store.save()
+        return {"registered": True, "family": draft_id,
+                "agreement": round(got["fraction"], 4),
+                "gate": drafts_mod.AGREEMENT_GATE}
+    finally:
+        eng.lock.release()
 
 
 @api.get("/api/traits")
@@ -586,6 +824,538 @@ def update(req: UpdateRequest):
                        spec, guard=req.guard,
                        research_mode=req.research_mode),
         media_type="application/x-ndjson")
+
+
+def _delete_edits(knob: dict):
+    """Ablation EditSet from a saved knob (DL)."""
+    return EditSet(ablate=(Ablation(
+        int(knob["layer"]), tuple(knob["direction"])),))
+
+
+@api.post("/api/delete")
+def delete(req: DeleteRequest):
+    """Run one prompt clean vs trait-ablated, two columns (DL)."""
+    prompt = req.prompt.strip()
+    if not prompt:
+        raise HTTPException(400, "The prompt is empty. Type a prompt first.")
+    knob = _latest_knob(req.trait)
+    if knob is None:
+        raise HTTPException(422, f"Delete is not eligible for "
+                                 f"'{req.trait}': no finished Create job "
+                                 f"with a saved direction.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    if get_engine().lock.locked():
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    _cancel.clear()
+    return StreamingResponse(
+        _delete_stream(prompt, req.trait, knob,
+                       min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
+                       guard=req.guard,
+                       research_mode=req.research_mode),
+        media_type="application/x-ndjson")
+
+
+def _delete_stream(prompt: str, trait: str, knob: dict, max_new: int,
+                   guard: bool = False, research_mode: bool = False):
+    """Off/on ablation filmstrip: guard, then two streamed columns.
+
+    Columns run sequentially (off, then on); each streams its
+    tokens as they decode. The on-column carries dial values when
+    the trait resolves a dial spec. Holds the Engine lock
+    throughout; /api/stop ends the stream after the current token.
+    """
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        yield _event(stage="error", message="A run is in progress. Wait for it to finish.")
+        return
+    try:
+        layer = int(knob["layer"])
+        t_all = time.perf_counter()
+        yield _event(stage="weights")
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        medians, cal_info = _calibrate(eng, [layer])
+        if _cancel.is_set():
+            yield _event(stage="stopped", after="weights")
+            return
+        edits = _delete_edits(knob)
+        yield _event(stage="guard")
+        gv = _verified_guard(
+            eng, edits, medians,
+            guard_mod.should_enforce(guard, research_mode))
+        if gv.blocked:
+            yield _event(stage="blocked", guard=_guard_event_dict(gv))
+            return
+        if _cancel.is_set():
+            yield _event(stage="stopped", after="guard")
+            return
+        try:
+            dial_spec = _dial_spec(eng, trait)
+        except KeyError:
+            dial_spec = None
+        yield _event(stage="columns", modes=["off", "on"],
+                     guard=_guard_event_dict(gv))
+        texts, counts = ["", ""], [0, 0]
+        for col, sets in ((0, EMPTY_EDITS), (1, edits)):
+            for ev in eng.run_stream(
+                    prompt, sets, medians=medians,
+                    max_new_tokens=max_new, seed=engine.SEED,
+                    cancel=_cancel,
+                    dial=dial_spec if col == 1 else None):
+                if ev["type"] == "token":
+                    texts[col] += ev["text"]
+                    tok_ev: dict = {"col": col, "text": ev["text"],
+                                    "mode": "off" if col == 0 else "on"}
+                    if ev.get("dial") is not None:
+                        tok_ev["dial"] = ev["dial"]
+                    yield _event(stage="token", **tok_ev)
+                else:
+                    counts[col] = ev["result"]["new_tokens"]
+            if _cancel.is_set():
+                yield _event(stage="stopped", after="columns")
+                return
+        yield _event(stage="complete", result={
+            "model_id": engine._active_model_id, "prompt": prompt,
+            "trait": trait, "layer": layer,
+            "columns": [{"mode": "off", "text": texts[0],
+                         "tokens": counts[0]},
+                        {"mode": "on", "text": texts[1],
+                         "tokens": counts[1]}],
+            "guard": _guard_event_dict(gv),
+            "seconds": round(time.perf_counter() - t_all, 1),
+            "cache_hit": cal_info["cache_hit"],
+        })
+    except Exception as e:  # noqa: BLE001 — surface engine errors in the UI
+        yield _event(stage="error", message=f"Delete failed: {e}")
+    finally:
+        eng.lock.release()
+
+
+@api.post("/api/delete/check")
+def delete_check(req: DeleteCheckRequest):
+    """Ablation report card with side effects + guard re-check (DL)."""
+    knob = _latest_knob(req.trait)
+    if knob is None:
+        raise HTTPException(422, f"Delete is not eligible for "
+                                 f"'{req.trait}': no finished Create job "
+                                 f"with a saved direction.")
+    prompts = None
+    if req.prompts is not None:
+        prompts = [p for p in req.prompts if p and p.strip()]
+        if not prompts:
+            raise HTTPException(400, "Give at least one prompt.")
+        if len(prompts) > 24:
+            raise HTTPException(400, "Give at most 24 prompts.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        t_all = time.perf_counter()
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        spec = engine.active_spec()
+        medians, _ = _calibrate(eng, [int(knob["layer"])])
+        try:
+            cfg = trait_eval.family_cfg(req.trait)
+        except KeyError:
+            raise HTTPException(422, f"Delete is not eligible for "
+                                     f"'{req.trait}': no registered family.") from None
+        try:
+            out = trait_eval.delete_check(
+                eng, spec, cfg, knob, medians, prompt_bank.PROMPT_BANK,
+                prompts=prompts, cancel=_cancel)
+        except ValueError as e:
+            raise HTTPException(400, f"{e}.") from None
+        out["seconds"] = round(time.perf_counter() - t_all, 1)
+        return out
+    finally:
+        eng.lock.release()
+
+
+_install_lock = threading.Lock()
+_INSTALL_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+@api.get("/api/install/targets")
+def install_targets():
+    """Probe llama.cpp and Ollama. Needs no weights (IN)."""
+    return {"targets": [install_mod.probe(t)
+                        for t in install_mod.TARGETS]}
+
+
+@api.post("/api/install")
+def install_patch(req: InstallRequest):
+    """Export a trait patch and install it into one target (IN)."""
+    if req.target not in install_mod.TARGETS:
+        raise HTTPException(400, f"Unknown target {req.target!r}; "
+                                 f"use one of {install_mod.TARGETS}.")
+    if not req.model_ref.strip():
+        raise HTTPException(400, "Give a model_ref.")
+    job_dir = _trait_job_dir(req.trait_id)
+    patch_path = job_dir / "trait" / "knob.lobot"
+    if not patch_path.is_file():
+        raise HTTPException(404, f"Unknown trait {req.trait_id}.")
+    if not _install_lock.acquire(blocking=False):
+        raise HTTPException(409, "An install or verify is running. "
+                                 "Wait for it to finish.")
+    try:
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        install_id = (f"{req.trait_id}-{req.target}-{stamp}")
+        out_dir = install_mod.INSTALLS_ROOT / install_id
+        got = install_mod.install(req.target, patch_path, out_dir,
+                                  req.model_ref.strip())
+        if not got["ok"]:
+            raise HTTPException(422, got["detail"])
+        record = {"install_id": install_id,
+                  "trait_id": req.trait_id,
+                  "target": req.target,
+                  "model_ref": req.model_ref.strip(),
+                  "run": {k: got[k] for k in got
+                          if k not in ("ok", "detail")},
+                  "detail": got["detail"]}
+        install_mod.save_install(record)
+        return record
+    finally:
+        _install_lock.release()
+
+
+@api.post("/api/install/{install_id}/verify")
+def install_verify(install_id: str, req: InstallVerifyRequest):
+    """Run with and without the installed patch; compare (IN)."""
+    if not _INSTALL_ID_RE.fullmatch(install_id or ""):
+        raise HTTPException(404, f"Unknown install {install_id}.")
+    prompt = req.prompt.strip()
+    if not prompt:
+        raise HTTPException(400, "The prompt is empty. "
+                                 "Type a prompt first.")
+    if req.judge not in (None, "local"):
+        raise HTTPException(400, "judge must be null or 'local'.")
+    record = install_mod.load_install(install_id)
+    if record is None:
+        raise HTTPException(404, f"Unknown install {install_id}.")
+    if not _install_lock.acquire(blocking=False):
+        raise HTTPException(409, "An install or verify is running. "
+                                 "Wait for it to finish.")
+    try:
+        t_all = time.perf_counter()
+        max_new = min(max(int(req.max_new_tokens), 1), 256)
+        base = install_mod.generate(record["target"], record["run"],
+                                    prompt, patched=False,
+                                    max_new=max_new)
+        if not base["ok"]:
+            raise HTTPException(422, f"Unpatched run failed: "
+                                     f"{base['detail']}")
+        patched = install_mod.generate(record["target"], record["run"],
+                                       prompt, patched=True,
+                                       max_new=max_new)
+        if not patched["ok"]:
+            raise HTTPException(422, f"Patched run failed: "
+                                     f"{patched['detail']}")
+        out = {"install_id": install_id, "prompt": prompt,
+               "base_text": base["text"],
+               "patched_text": patched["text"],
+               "differs": patched["text"] != base["text"],
+               "comparison": None,
+               "seconds": round(time.perf_counter() - t_all, 1)}
+        if req.judge == "local":
+            out["comparison"] = _install_compare(record, prompt,
+                                                 base["text"],
+                                                 patched["text"])
+            out["seconds"] = round(time.perf_counter() - t_all, 1)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        (install_mod.INSTALLS_ROOT / install_id /
+         f"verify-{stamp}.json").write_text(json.dumps(out, indent=2))
+        return out
+    finally:
+        _install_lock.release()
+
+
+def _install_compare(record: dict, prompt: str, base: str,
+                     patched: str) -> dict:
+    """Judge gain vs the patch's shipped interval (IN)."""
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded "
+                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to judge.")
+    from model_lobotomy import patch as patch_mod
+    job_dir = _trait_job_dir(record["trait_id"])
+    try:
+        meta = patch_mod.load_patch(
+            job_dir / "trait" / "knob.lobot")["meta"]
+    except patch_mod.PatchRejected as e:
+        raise HTTPException(422, f"patch rejected: {e}") from None
+    card = meta.get("report_card") or {}
+    if "trait_mean" not in card or "trait_ci" not in card:
+        return {"pass": None,
+                "reason": "patch has no shipped numbers"}
+    trait = meta.get("trait", "")
+    try:
+        label = trait_eval.family_cfg(trait)["judge"]
+    except KeyError:
+        raise HTTPException(422, f"no registered family for "
+                                 f"{trait!r}") from None
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. "
+                                 "Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        spec = engine.active_spec()
+        jb = trait_eval.judge_score(eng.model, eng.tokenizer, spec,
+                                    prompt, base, label)
+        js = trait_eval.judge_score(eng.model, eng.tokenizer, spec,
+                                    prompt, patched, label)
+    finally:
+        eng.lock.release()
+    out = install_mod.compare(card, [js - jb])
+    out["judge_base"] = jb
+    out["judge_patched"] = js
+    return out
+
+
+UPLOAD_BYTES_CAP = 64 * 1024 * 1024
+
+
+def _verify_pin(patch_path) -> dict:
+    """Patch meta, or 422. 409 when its model is not the active one."""
+    from model_lobotomy import patch as patch_mod
+    try:
+        meta = patch_mod.load_patch(patch_path)["meta"]
+    except patch_mod.PatchRejected as e:
+        raise HTTPException(422, f"patch rejected: {e}") from None
+    model_id = (meta.get("fingerprint") or {}).get("model_id")
+    if model_id != engine._active_model_id:
+        raise HTTPException(
+            409, f"Patch model {model_id} is not the active model "
+            f"{engine._active_model_id}. Switch models first.")
+    return meta
+
+
+@api.post("/api/verify")
+def verify(req: VerifyRequest):
+    """Re-run a trait patch's shipped evidence (RV)."""
+    job_dir = _trait_job_dir(req.trait_id)
+    patch_path = job_dir / "trait" / "knob.lobot"
+    if not patch_path.is_file():
+        raise HTTPException(422, f"Trait {req.trait_id} has no saved "
+                                 f"patch to verify.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded "
+                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to verify.")
+    if get_engine().lock.locked():
+        raise HTTPException(409, "A run is in progress. "
+                                 "Wait for it to finish.")
+    _verify_pin(patch_path)
+    _cancel.clear()
+    return StreamingResponse(_verify_stream(patch_path, req.quick),
+                             media_type="application/x-ndjson")
+
+
+@api.post("/api/verify/upload")
+async def verify_upload(file: UploadFile = File(...)):
+    """Verify an uploaded .lobot file (RV). Never unpickles."""
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded "
+                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to verify.")
+    if get_engine().lock.locked():
+        raise HTTPException(409, "A run is in progress. "
+                                 "Wait for it to finish.")
+    data = b""
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        data += chunk
+        if len(data) > UPLOAD_BYTES_CAP:
+            raise HTTPException(413, "Patch file is over 64 MB.")
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        probe = Path(tmp) / "probe.lobot"
+        probe.write_bytes(data)
+        _verify_pin(probe)
+    _cancel.clear()
+    return StreamingResponse(_verify_stream(data, True),
+                             media_type="application/x-ndjson")
+
+
+def _verify_stream(patch, quick: bool):
+    """NDJSON progress per prompt pair, then one result (RV)."""
+    import queue
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        yield _event(stage="error", message="A run is in progress. "
+                                            "Wait for it to finish.")
+        return
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        events: queue.Queue = queue.Queue()
+
+        def progress(done, total):
+            events.put(("progress", done, total))
+
+        outcome = {}
+
+        def run():
+            try:
+                outcome["ret"] = reverify_mod.run_verify_patch(
+                    patch, quick=quick, progress=progress,
+                    cancel=_cancel, engine=eng)
+            except trait_eval.Stopped:
+                outcome["stopped"] = True
+            except Exception as e:  # noqa: BLE001 — report, not crash
+                outcome["error"] = f"Verify failed: {e}"
+            finally:
+                events.put(("end",))
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        while True:
+            item = events.get()
+            if item[0] == "end":
+                break
+            yield _event(stage="progress", done=item[1], total=item[2])
+        worker.join()
+        if outcome.get("stopped", False) or _cancel.is_set():
+            yield _event(stage="stopped", after="verify")
+        elif "error" in outcome:
+            yield _event(stage="error", message=outcome["error"])
+        else:
+            code, report = outcome["ret"]
+            if "error" in report:
+                yield _event(stage="error", message=report["error"])
+            else:
+                yield _event(stage="done", result=report,
+                             exit_code=code)
+    finally:
+        eng.lock.release()
+
+
+def _combine_patches(patch_ids: list) -> tuple[list, list]:
+    """(names, loaded patches) for trait ids, or 404/422."""
+    from model_lobotomy import patch as patch_mod
+    if not patch_ids:
+        raise HTTPException(400, "Give at least one patch id.")
+    if len(patch_ids) > combine_mod.MAX_PATCHES:
+        raise HTTPException(
+            400, f"Give at most {combine_mod.MAX_PATCHES} patches.")
+    names, patches = [], []
+    for pid in patch_ids:
+        job_dir = _trait_job_dir(pid)
+        path = job_dir / "trait" / "knob.lobot"
+        if not path.is_file():
+            raise HTTPException(422, f"Trait {pid} has no saved "
+                                     f"patch to combine.")
+        try:
+            loaded = patch_mod.load_patch(path)
+        except patch_mod.PatchRejected as e:
+            raise HTTPException(422, f"patch rejected: {e}") from None
+        model_id = (loaded["meta"].get("fingerprint") or {}).get(
+            "model_id")
+        if model_id != engine._active_model_id:
+            raise HTTPException(
+                422, f"Patch {pid} targets {model_id}, not the "
+                f"active model {engine._active_model_id}.")
+        names.append(loaded["meta"].get("trait", pid))
+        patches.append(loaded)
+    seen: dict[str, int] = {}
+    for i, n in enumerate(names):
+        seen[n] = seen.get(n, 0) + 1
+        if seen[n] > 1:
+            names[i] = f"{n} #{seen[n]}"
+    return names, patches
+
+
+def _combine_matrix(names, patches, max_new: int, seed: int) -> dict:
+    """Pair matrix + install order on the engine (CB)."""
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. "
+                                 "Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        layers = sorted({int(p["meta"]["layer"]) for p in patches})
+        medians, _ = _calibrate(eng, layers)
+        guard = guard_mod.Guard()
+        kw = dict(medians=medians,
+                  max_new_tokens=min(max(int(max_new), 1), 64),
+                  seed=seed, guard=guard)
+        try:
+            matrix = combine_mod.pair_matrix(
+                names, patches, eng, cancel=_cancel, **kw)
+        except trait_eval.Stopped:
+            raise HTTPException(409, "Stopped by user.") from None
+        by_name = {n: p for n, p in zip(names, patches)}
+
+        def blocked_screens(sub):
+            sub = sorted(sub)
+            out = combine_mod.check_set(
+                sub, [by_name[n] for n in sub], eng,
+                cancel=_cancel, **kw)
+            return {n for n, s in out["guard"].get(
+                "screens", {}).items() if s["blocked"]}
+
+        try:
+            order = combine_mod.install_order(names,
+                                              blocked_screens)
+        except trait_eval.Stopped:
+            raise HTTPException(409, "Stopped by user.") from None
+        matrix["install_order"] = order
+        return matrix
+    finally:
+        eng.lock.release()
+
+
+@api.post("/api/combine/check")
+def combine_check(req: CombineCheckRequest):
+    """Pair matrix + install order for saved patches (CB)."""
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded "
+                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to combine.")
+    names, patches = _combine_patches(req.patch_ids)
+    if get_engine().lock.locked():
+        raise HTTPException(409, "A run is in progress. "
+                                 "Wait for it to finish.")
+    return _combine_matrix(names, patches, req.max_new_tokens,
+                           req.seed)
+
+
+@api.get("/api/combine/installed")
+def combine_installed():
+    """Pair matrix for the traits installed via /api/install (CB)."""
+    root = install_mod.INSTALLS_ROOT
+    found: dict[str, float] = {}
+    if root.is_dir():
+        for rec in sorted(root.glob("*/install.json"),
+                          key=lambda p: p.stat().st_mtime):
+            try:
+                tid = json.loads(rec.read_text()).get("trait_id")
+            except ValueError:
+                continue
+            if tid and tid not in found:
+                found[tid] = rec.stat().st_mtime
+    if not found:
+        return {"installed": [], "matrix": None}
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded "
+                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to combine.")
+    names, patches = _combine_patches(list(found))
+    if get_engine().lock.locked():
+        raise HTTPException(409, "A run is in progress. "
+                                 "Wait for it to finish.")
+    return {"installed": list(found),
+            "matrix": _combine_matrix(names, patches, 24, 0)}
 
 
 def _trait_vector(knob: dict, dose: float, scale: float):
@@ -942,6 +1712,149 @@ def lift(req: LiftRequest):
         eng.lock.release()
 
 
+# Loaded SAEs: str(dir) -> (weights mtime, sae, config). Refreshed
+# when the weights file changes; tests clear it between cases.
+_sae_cache: dict = {}
+
+
+def _load_sae_cached(sae_dir: Path):
+    key = str(sae_dir)
+    mtime = (sae_dir / sae_mod.WEIGHTS_NAME).stat().st_mtime
+    hit = _sae_cache.get(key)
+    if hit is not None and hit[0] == mtime:
+        return hit[1], hit[2]
+    sae, cfg = sae_mod.load_sae(sae_dir)
+    _sae_cache[key] = (mtime, sae, cfg)
+    return sae, cfg
+
+
+def _sae_layers() -> list:
+    """(layer, dir, config) per trained SAE for the active model."""
+    base = ROOT / "store" / "sae" / _model_slug(engine._active_model_id)
+    out = []
+    if base.is_dir():
+        for child in sorted(base.iterdir()):
+            if not child.is_dir() or not child.name.startswith("L"):
+                continue
+            try:
+                layer = int(child.name[1:])
+            except ValueError:
+                continue
+            cfg_path = child / sae_mod.CONFIG_NAME
+            w_path = child / sae_mod.WEIGHTS_NAME
+            if not cfg_path.is_file() or not w_path.is_file():
+                continue
+            try:
+                cfg = json.loads(cfg_path.read_text())
+            except (OSError, ValueError):
+                continue
+            out.append((layer, child, cfg))
+    return out
+
+
+@api.get("/api/features")
+def features():
+    """Trained SAEs for the active model (F1). No model needed."""
+    saes = []
+    for layer, _dir, cfg in _sae_layers():
+        saes.append({
+            "model_id": cfg.get("model_id", engine._active_model_id),
+            "layer": layer,
+            "features": int(cfg.get("features", 0)),
+            "top_k": int(cfg.get("top_k", 0)),
+            "live": cfg.get("live"),
+            "dead": cfg.get("dead"),
+            "mse": cfg.get("mse_last"),
+        })
+    return {"saes": saes}
+
+
+@api.get("/api/feature/{layer}/{index}")
+def feature_card(layer: int, index: int, k: int = Query(12, ge=1, le=50)):
+    """One SAE feature card: pushes plus cached fires (F1)."""
+    spec = engine.active_spec()
+    if not 0 <= layer < spec.layers:
+        raise HTTPException(400, f"Layer {layer} is out of bounds "
+                                 f"[0,{spec.layers}).")
+    found = next((d for L, d, _c in _sae_layers() if L == layer), None)
+    if found is None:
+        raise HTTPException(404, f"No trained SAE for layer {layer} on "
+                                 f"{engine._active_model_id}. Train one with "
+                                 f"scripts/train_sae.py.")
+    if REPLAY:
+        raise HTTPException(503, "Feature cards need the model. "
+                                 "Replay mode has no recordings for them.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        sae, _cfg = _load_sae_cached(found)
+        if not 0 <= index < sae.features:
+            raise HTTPException(400, f"Feature {index} is out of bounds "
+                                     f"[0,{sae.features}).")
+        return sae_mod.feature_card(eng, sae, layer, index,
+                                    cache_dir=found, k=k)
+    finally:
+        eng.lock.release()
+
+
+@api.post("/api/feature-lift")
+def feature_lift(req: FeatureLiftRequest):
+    """Steering lift for one SAE feature (F1)."""
+    spec = engine.active_spec()
+    if not 0 <= req.layer < spec.layers:
+        raise HTTPException(400, f"Layer {req.layer} is out of bounds "
+                                 f"[0,{spec.layers}).")
+    found = next((d for L, d, _c in _sae_layers() if L == req.layer), None)
+    if found is None:
+        raise HTTPException(404, f"No trained SAE for layer {req.layer} on "
+                                 f"{engine._active_model_id}. Train one with "
+                                 f"scripts/train_sae.py.")
+    prompts = req.prompts
+    if prompts is None:
+        path = ROOT / "store" / "reader" / "lift_prompts.json"
+        if not path.exists():
+            raise HTTPException(500, "The lift prompts are missing from the server.")
+        prompts = json.loads(path.read_text())
+    if REPLAY:
+        raise HTTPException(503, "Feature lift needs the model. "
+                                 "Replay mode has no recordings for it.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        sae, _cfg = _load_sae_cached(found)
+        if not 0 <= req.index < sae.features:
+            raise HTTPException(400, f"Feature {req.index} is out of bounds "
+                                     f"[0,{sae.features}).")
+        words = req.words
+        if words is None:
+            words = sae_mod.top_words(reader.pushes_of_direction(
+                eng, sae_mod.feature_direction(sae, req.index),
+                layer=req.layer))
+        if not words:
+            raise HTTPException(422, "Give at least one word.")
+        medians, _ = _calibrate(eng, [req.layer])
+        try:
+            return reader.steer_lift_vector(
+                eng, req.layer, sae_mod.feature_direction(sae, req.index),
+                req.dose, words, prompts, medians)
+        except ValueError as e:
+            raise HTTPException(400, f"{e}.") from None
+    finally:
+        eng.lock.release()
+
+
 def _chat_edits(sess, rows=None, scale=None):
     """(edits, layers) for a chat turn; rows=None keeps the session's.
 
@@ -981,12 +1894,22 @@ def chat_start(req: ChatStartRequest):
                                      f"'{req.trait}' with a saved direction. "
                                      f"Create the trait first.")
         dose = req.dose if req.dose is not None else float(knob["dose"])
+    dial_traits = list(req.dial_traits or [])
+    if len(dial_traits) > MAX_CHAT_DIALS:
+        raise HTTPException(400, f"Too many dial traits. "
+                                 f"The limit is {MAX_CHAT_DIALS}.")
+    for trait in dial_traits:
+        if _latest_knob(trait) is None:
+            raise HTTPException(404, f"No finished Create job for trait "
+                                     f"'{trait}' with a saved direction. "
+                                     f"Create the trait first.")
     if len(_chats) >= MAX_CHAT_SESSIONS:
         oldest = min(_chats, key=lambda k: _chats[k]["created"])
         del _chats[oldest]
     sid = uuid.uuid4().hex[:16]
     _chats[sid] = {"messages": [], "rows": rows, "trait": req.trait,
-                   "dose": dose,
+                   "dose": dose, "dial_traits": dial_traits,
+                   "turn_records": [],
                    "max_new_tokens": min(req.max_new_tokens,
                                          steer.MAX_NEW_TOKENS_CAP),
                    "guard": req.guard, "research_mode": req.research_mode,
@@ -1002,7 +1925,141 @@ def chat_history(session_id: str):
     if sess is None:
         raise HTTPException(404, f"Unknown chat {session_id}.")
     return {"session_id": session_id, "model_id": sess["model_id"],
-            "turns": list(sess["messages"])}
+            "turns": list(sess["messages"]),
+            "dial_traits": list(sess.get("dial_traits") or []),
+            "dial_turns": [
+                {"reply": rec["reply"], "dials": rec["dials"]}
+                for rec in sess.get("turn_records") or []]}
+
+
+@api.get("/api/chat/{session_id}/transcript")
+def chat_transcript(session_id: str):
+    """Full replay spec for a chat: per-turn messages, rows, dials (CH)."""
+    sess = _chats.get(session_id)
+    if sess is None:
+        raise HTTPException(404, f"Unknown chat {session_id}.")
+    return {
+        "model_id": sess["model_id"],
+        "trait": sess.get("trait"),
+        "dose": sess.get("dose", 1.0),
+        "dial_traits": list(sess.get("dial_traits") or []),
+        "guard": bool(sess.get("guard", False)),
+        "research_mode": bool(sess.get("research_mode", False)),
+        "turns": [
+            {"message": rec["message"], "rows": rec["rows"],
+             "max_new_tokens": rec.get("max_new_tokens"),
+             "reply": rec["reply"], "dials": rec["dials"]}
+            for rec in sess.get("turn_records") or []],
+    }
+
+
+def _dials_max_diff(a: dict, b: dict) -> float | None:
+    """Max abs value diff over shared dial lists; None when shapes differ."""
+    if set(a) != set(b):
+        return None
+    worst = 0.0
+    for trait in a:
+        la, lb = a[trait], b[trait]
+        if len(la) != len(lb):
+            return None
+        for ea, eb in zip(la, lb):
+            if ea["text"] != eb["text"]:
+                return None
+            va, vb = ea["value"], eb["value"]
+            if (va is None) != (vb is None):
+                return None
+            if va is not None:
+                worst = max(worst, abs(float(va) - float(vb)))
+    return worst
+
+
+@api.post("/api/chat/replay")
+def chat_replay(req: ReplayRequest):
+    """Re-run a transcript in a fresh session; report per-turn match (CH)."""
+    data = req.transcript or {}
+    turns = data.get("turns")
+    if not isinstance(turns, list) or not turns:
+        raise HTTPException(400, "The transcript has no turns.")
+    if data.get("model_id") != engine._active_model_id:
+        raise HTTPException(
+            409, f"Transcript is pinned to {data.get('model_id')}; "
+                 f"the active model is {engine._active_model_id}. "
+                 f"Switch back or start a new chat.")
+    try:
+        parsed = [ReplayTurn(**t) for t in turns]
+    except Exception as e:
+        raise HTTPException(400, f"Bad transcript turn: {e}.") from None
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    if get_engine().lock.locked():
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    spec = engine.active_spec()
+    for turn in parsed:
+        rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose)
+                for r in turn.rows]
+        try:
+            if rows:
+                steer.validate_recipe(rows, spec)
+        except ValueError as e:
+            raise HTTPException(400, f"Invalid row: {e}.") from None
+        if not turn.message.strip():
+            raise HTTPException(400, "A transcript message is empty.")
+    start = ChatStartRequest(
+        trait=data.get("trait"), dose=data.get("dose", 1.0),
+        guard=bool(data.get("guard", False)),
+        research_mode=bool(data.get("research_mode", False)),
+        dial_traits=list(data.get("dial_traits") or []))
+    try:
+        if start.trait is not None and _latest_knob(start.trait) is None:
+            raise KeyError(start.trait)
+        for trait in start.dial_traits:
+            if _latest_knob(trait) is None:
+                raise KeyError(trait)
+    except KeyError as e:
+        raise HTTPException(404, f"No finished Create job for trait "
+                                 f"'{e.args[0]}' with a saved direction. "
+                                 f"Create the trait first.") from None
+    if len(start.dial_traits) > MAX_CHAT_DIALS:
+        raise HTTPException(400, f"Too many dial traits. "
+                                 f"The limit is {MAX_CHAT_DIALS}.")
+    if len(_chats) >= MAX_CHAT_SESSIONS:
+        oldest = min(_chats, key=lambda k: _chats[k]["created"])
+        del _chats[oldest]
+    sid = uuid.uuid4().hex[:16]
+    _chats[sid] = {"messages": [], "rows": [], "trait": start.trait,
+                   "dose": start.dose if start.trait is not None else 1.0,
+                   "dial_traits": start.dial_traits, "turn_records": [],
+                   "max_new_tokens": steer.MAX_NEW_TOKENS_CAP,
+                   "guard": start.guard,
+                   "research_mode": start.research_mode,
+                   "model_id": engine._active_model_id,
+                   "created": time.time()}
+    results = []
+    for i, (turn, want) in enumerate(zip(parsed, turns), start=1):
+        rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose)
+                for r in turn.rows]
+        _cancel.clear()
+        reply, dials, err = None, None, None
+        max_new = want.get("max_new_tokens") or steer.MAX_NEW_TOKENS_CAP
+        max_new = min(int(max_new), steer.MAX_NEW_TOKENS_CAP)
+        for chunk in _chat_stream(sid, turn.message, rows, max_new):
+            ev = json.loads(chunk.decode())
+            if ev.get("stage") == "done":
+                reply = ev["result"]["reply"]
+                dials = ev["result"].get("dials", {})
+            elif ev.get("stage") in ("error", "blocked", "stopped"):
+                err = ev.get("message", ev.get("stage"))
+        reply_match = err is None and reply == want.get("reply")
+        diff = _dials_max_diff(dials or {}, want.get("dials") or {})
+        dials_match = err is None and diff == 0.0
+        results.append({"turn": i, "match": bool(reply_match and dials_match),
+                        "reply_match": bool(reply_match),
+                        "dials_match": bool(dials_match),
+                        "dials_max_diff": diff,
+                        "error": err})
+    match = all(r["match"] for r in results)
+    return {"match": match, "session_id": sid, "turns": results}
 
 
 @api.post("/api/chat")
@@ -1066,12 +2123,29 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
                 f"No finished Create job for trait '{sess['trait']}' "
                 f"with a saved direction. Create the trait first."))
             return
+        sess.setdefault("turn_records", [])
+        dial_traits = list(sess.get("dial_traits") or [])
+        try:
+            dial_specs = [_dial_spec(eng, trait)
+                          for trait in dial_traits]
+        except KeyError as e:
+            yield _event(stage="error", message=(
+                f"No finished Create job for trait '{e.args[0]}' "
+                f"with a saved direction. Create the trait first."))
+            return
+        layers = sorted(set(layers)
+                        | {int(s["layer"]) for s in dial_specs})
         medians, _ = _calibrate(eng, layers)
         scale = None
         if sess["trait"] is not None:
             knob = _latest_knob(sess["trait"])
             scale = float(medians[int(knob["layer"])])
         edits, _ = _chat_edits(sess, scale=scale)
+        if dial_specs:
+            reads = tuple(Read(layer=int(s["layer"]))
+                          for s in dial_specs)
+            edits = EditSet(neuron=edits.neuron, vector=edits.vector,
+                            ablate=edits.ablate, read=edits.read + reads)
         gv = _verified_guard(
             eng, edits, medians,
             guard_mod.should_enforce(sess["guard"], sess["research_mode"]))
@@ -1085,12 +2159,19 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
                                               "content": message}]
         wrapped = _wrap_chat(eng.tokenizer, messages, spec)
         reply = None
+        dial_lists: dict[str, list] = {t: [] for t in dial_traits}
         for ev in eng.run_stream(
                 message, edits, medians=medians,
                 max_new_tokens=max_new, seed=engine.SEED,
-                cancel=_cancel, wrapped=wrapped):
+                cancel=_cancel, wrapped=wrapped,
+                dials=dial_specs or None):
             if ev["type"] == "token":
-                yield _event(stage="token", text=ev["text"])
+                tok_ev: dict = {"text": ev["text"]}
+                if ev.get("dial") is not None:
+                    tok_ev["dial"] = ev["dial"]
+                for trait in dial_traits:
+                    dial_lists[trait].append(_dial_entry(ev, trait))
+                yield _event(stage="token", **tok_ev)
             else:
                 reply = ev["result"]
         if reply.get("cancelled"):
@@ -1098,12 +2179,21 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
             return
         sess["messages"] = (messages + [{"role": "assistant",
                                          "content": reply["text"]}])
+        sess["turn_records"].append({
+            "message": message,
+            "rows": [{"layer": r.layer, "neuron": r.neuron,
+                      "dose": r.dose} for r in sess["rows"]],
+            "max_new_tokens": max_new,
+            "reply": reply["text"], "dials": dial_lists})
         while len(sess["messages"]) // 2 > MAX_CHAT_TURNS:
             del sess["messages"][:2]
+            if sess["turn_records"]:
+                del sess["turn_records"][:1]
         yield _event(stage="done", result={
             "session_id": session_id, "turn": len(sess["messages"]) // 2,
             "reply": reply["text"], "tokens": reply["new_tokens"],
-            "seconds": round(time.perf_counter() - t_all, 1)})
+            "seconds": round(time.perf_counter() - t_all, 1),
+            "dials": dial_lists})
     except Exception as e:  # noqa: BLE001 — surface engine errors in the UI
         yield _event(stage="error", message=f"Chat failed: {e}")
     finally:
@@ -1143,11 +2233,14 @@ _DIAL_NEUTRALS = (
     "Have you read any good books lately?",
 )
 
-# Chat sessions: id -> {messages, rows, trait, dose, max_new_tokens,
-# guard, research_mode, model_id, created}. In memory; a restart clears.
+# Chat sessions: id -> {messages, rows, trait, dose, dial_traits,
+# turn_records, max_new_tokens, guard, research_mode, model_id,
+# created}. In memory; a restart clears. turn_records holds one
+# {message, rows, reply, dials} per turn for replay (CH).
 _chats: dict = {}
 MAX_CHAT_SESSIONS = 16
 MAX_CHAT_TURNS = 40
+MAX_CHAT_DIALS = 4
 
 
 def _dial_spec(eng, trait: str) -> dict:
@@ -1161,9 +2254,10 @@ def _dial_spec(eng, trait: str) -> dict:
     knob = _latest_knob(trait)
     if knob is None:
         raise KeyError(trait)
-    cfg = trait_eval.spike.BEHAVIORS.get(trait)
-    if cfg is None:
-        raise KeyError(trait)
+    try:
+        cfg = trait_eval.family_cfg(trait)
+    except KeyError:
+        raise KeyError(trait) from None
     layer = int(knob["layer"])
     u = torch.tensor(knob["direction"], dtype=torch.float32)
     n = float(u.norm().item())

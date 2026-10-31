@@ -546,6 +546,7 @@ class Engine:
     def run_stream(self, prompt: str, edits: EditSet, *, medians: dict,
                    max_new_tokens: int, seed: int, cancel=None,
                    dial: dict | None = None,
+                   dials: list[dict] | None = None,
                    wrapped: str | None = None):
         """run() as token events, then one done event (filmstrip live).
 
@@ -554,9 +555,11 @@ class Engine:
         finally {"type": "done", "result": <run() dict>}. Generation
         runs in a worker thread; closing the generator (disconnect)
         sets cancel, joins the worker and removes the hooks. dial is
-        {"trait", "layer", "unit", "b0", "b1"}: token events then
-        carry {"dial": {trait: value}} for the read dial. wrapped is
-        a pre-wrapped prompt (chat history).
+        one {"trait", "layer", "unit", "b0", "b1"} read-dial spec;
+        dials is a list of them (dial stays as the one-spec
+        shorthand; both may combine). Token events then carry
+        {"dial": {trait: value}} per spec whose tap kept up.
+        wrapped is a pre-wrapped prompt (chat history).
         """
         if self.model is None:
             raise RuntimeError("no model loaded")
@@ -564,13 +567,18 @@ class Engine:
         _validate_edits(self.model, spec, edits)
         if cancel is None:
             cancel = threading.Event()
+        specs = list(dials or [])
+        if dial is not None:
+            specs.append(dial)
         streamer = steer.RowStreamer()
         counter: list = [0]
         reads: dict = {}
         taps: dict | None = None
-        tap: list = []
-        if dial is not None:
-            taps = {int(dial["layer"]): tap}
+        tap_lists: dict[int, list] = {}
+        if specs:
+            for entry in specs:
+                tap_lists.setdefault(int(entry["layer"]), [])
+            taps = tap_lists
         t0 = time.perf_counter()
         self._register_hooks(edits, medians, counter, reads, spec, taps)
         result: dict = {}
@@ -601,12 +609,17 @@ class Engine:
                 prev = text
                 if delta:
                     ev = {"type": "token", "text": delta}
-                    if dial is not None:
-                        v = dial_for_index(
-                            tap, len(ids) - 1, dial["unit"],
-                            dial["b0"], dial["b1"])
-                        if v is not None:
-                            ev["dial"] = {dial["trait"]: v}
+                    if specs:
+                        per = {}
+                        for entry in specs:
+                            v = dial_for_index(
+                                tap_lists[int(entry["layer"])],
+                                len(ids) - 1, entry["unit"],
+                                entry["b0"], entry["b1"])
+                            if v is not None:
+                                per[entry["trait"]] = v
+                        if per:
+                            ev["dial"] = per
                     yield ev
         except GeneratorExit:
             cancel.set()
