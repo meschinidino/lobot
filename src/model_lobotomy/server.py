@@ -203,6 +203,15 @@ class CreateRequest(BaseModel):
 class DraftRequest(BaseModel):
     description: str
     seed: int = 0
+    # "muse": Muse Spark (Meta model API) writes the parts; "local":
+    # the loaded model does (C3 default).
+    drafter: Literal["local", "muse"] = "local"
+
+
+class AgentRequest(BaseModel):
+    description: str
+    lane: Literal["torch", "llama"] = "torch"
+    max_rounds: int = Field(3, ge=1, le=5)
 
 
 class LabelRow(BaseModel):
@@ -648,8 +657,11 @@ def draft_create(req: DraftRequest):
         if eng.model is None or eng.model_id != engine._active_model_id:
             eng.load(engine._active_model_id)
         try:
-            parts = drafts_mod.draft_family(eng, req.description,
-                                            seed=req.seed)
+            if req.drafter == "muse":
+                parts = _muse().draft_parts(req.description)
+            else:
+                parts = drafts_mod.draft_family(eng, req.description,
+                                                seed=req.seed)
         except drafts_mod.DraftError as e:
             raise HTTPException(422, str(e)) from None
         try:
@@ -671,6 +683,130 @@ def draft_create(req: DraftRequest):
                 "labeled": 0, "total": len(replies)}
     finally:
         eng.lock.release()
+
+
+def _muse():
+    """A Muse Spark client, or 503 naming what is missing."""
+    from model_lobotomy import muse as muse_mod
+    try:
+        return muse_mod.Muse()
+    except muse_mod.MuseError as e:
+        raise HTTPException(503, f"Muse Spark is not available: {e}. "
+                                 f"Set META_API_KEY.") from None
+
+
+def _muse_call(fn, *args):
+    from model_lobotomy import muse as muse_mod
+    try:
+        return fn(*args)
+    except muse_mod.MuseError as e:
+        raise HTTPException(502, f"Muse Spark failed: {e}") from None
+
+
+@api.post("/api/drafts/{draft_id}/prelabel")
+def draft_prelabel(draft_id: str):
+    """Muse Spark label suggestions; the user still saves the labels."""
+    record, replies, labels = _draft_or_404(draft_id)
+    got = _muse_call(_muse().prelabel, record["description"], replies)
+    return {"id": draft_id, "suggestions": got, "total": len(replies),
+            "suggested": len(got), "labeled": len(labels)}
+
+
+@api.post("/api/traits/{job_id}/explain")
+def trait_explain(job_id: str):
+    """Plain-words explanation of a finished report (Muse Spark).
+
+    Cached in the job dir; the numbers stay the report's own.
+    """
+    job_dir = _trait_job_dir(job_id)
+    cached = job_dir / "trait" / "explanation.txt"
+    if cached.is_file():
+        return {"id": job_id, "explanation": cached.read_text().strip(),
+                "cached": True}
+    report = job_dir / "trait" / "report.json"
+    if not report.is_file():
+        raise HTTPException(404, f"No report for {job_id} yet.")
+    text = _muse_call(_muse().explain, json.loads(report.read_text()))
+    cached.write_text(text + "\n")
+    return {"id": job_id, "explanation": text, "cached": False}
+
+
+_agents: dict[str, dict] = {}
+_agent_lock = threading.Lock()
+
+
+@api.post("/api/agent")
+def agent_start(req: AgentRequest):
+    """Start the Create agent (Muse Spark + local gates) in the background."""
+    allowed, reason = guard_mod.draft_description_allowed(req.description)
+    if not allowed:
+        raise HTTPException(422, reason)
+    if REPLAY or NO_MODEL:
+        raise HTTPException(503, "The agent needs the model loaded.")
+    _need_torch(get_engine(), "create")
+    muse = _muse()
+    if not _agent_lock.acquire(blocking=False):
+        raise HTTPException(409, "An agent run is in progress.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        _agent_lock.release()
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    from model_lobotomy import agent as agent_mod
+    cancel = threading.Event()
+    state = {"status": "running", "steps": [], "result": None,
+             "error": None, "cancel": cancel}
+
+    def progress(_kind, row):
+        state["steps"].append(row)
+
+    def work():
+        try:
+            if eng.model is None or eng.model_id != engine._active_model_id:
+                eng.load(engine._active_model_id)
+            lane = None
+            if req.lane == "llama":
+                from model_lobotomy import llama_backend
+                lane = trait_eval.LlamaLane(eng, eng.spec,
+                                            llama_backend.CreateDaemon(
+                                                eng.model_id, eng.revision,
+                                                eng.tokenizer))
+            ag = agent_mod.CreateAgent(
+                eng, muse, store=_get_runner().store, lane=lane,
+                max_rounds=req.max_rounds, cancel=cancel,
+                progress=progress)
+            state["id"] = ag.id
+            state["result"] = ag.run(req.description)
+            state["status"] = state["result"]["status"]
+        except agent_mod.AgentStopped:
+            state["status"] = "stopped"
+        except Exception as e:  # noqa: BLE001 - reported to the client
+            state["status"] = "failed"
+            state["error"] = f"{type(e).__name__}: {e}"[:2000]
+        finally:
+            eng.lock.release()
+            _agent_lock.release()
+
+    run_id = uuid.uuid4().hex[:12]
+    _agents[run_id] = state
+    threading.Thread(target=work, daemon=True).start()
+    return {"run_id": run_id, "status": "running"}
+
+
+@api.get("/api/agent/{run_id}")
+def agent_status(run_id: str):
+    state = _agents.get(run_id)
+    if state is None:
+        raise HTTPException(404, f"Unknown agent run {run_id}.")
+    return {k: v for k, v in state.items() if k != "cancel"}
+
+
+@api.post("/api/agent/{run_id}/stop")
+def agent_stop(run_id: str):
+    state = _agents.get(run_id)
+    if state is None:
+        raise HTTPException(404, f"Unknown agent run {run_id}.")
+    state["cancel"].set()
+    return {"run_id": run_id, "stopping": True}
 
 
 @api.get("/api/drafts/{draft_id}")
