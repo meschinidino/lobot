@@ -18,6 +18,18 @@ artifacts/
 # Create job outputs (served from disk by /api/create; runtime state)
 jobs/
 
+# Extraction capture cache (regenerate by running Create; keyed, safe to drop)
+store/captures/
+
+# Family drafts (runtime state for the C3 labeling flow)
+store/drafts/
+
+# SAE weights and fires caches (regenerate via scripts/train_sae.py;
+# per-layer config.json files stay committed)
+store/sae/**/*.safetensors
+store/sae/**/fires.npz
+store/sae/**/tokens.json
+
 # Logs
 *.log
 
@@ -27,3 +39,7 @@ jobs/
 # local debug and calibration dumps
 calib-*.json
 .claude/launch.json
+
+# llama.cpp backend: converted weights + pinned toolchain (see docs/plans/llama-backend.md)
+models/
+third_party/

@@ -1,0 +1,22 @@
+{
+  "hidden": 3072,
+  "features": 24576,
+  "top_k": 32,
+  "model_id": "meta-llama/Llama-3.2-3B-Instruct",
+  "revision": "0cb88a4f764b7a12671c53f0838cd831a0843b95",
+  "layer": 12,
+  "expansion": 8,
+  "epochs": 8,
+  "batch": 4096,
+  "lr": 0.0003,
+  "sample": "data/reader_sample.txt",
+  "sample_tokens": 105029,
+  "train_device": "mps",
+  "mse_first": 0.03445753455162048,
+  "mse_last": 0.014559881761670113,
+  "live": 3789,
+  "dead": 20787,
+  "l0_mean": 32.0,
+  "steps": 208,
+  "seed": 0
+}
