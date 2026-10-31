@@ -23,8 +23,10 @@ Spec: `docs/roadmap/specs/RV-reverify.md`. Branch:
   with the sentence). Non-zip and pickled uploads are
   rejected (422) without unpickling. `/api/stop` ends a
   run after the current prompt pair.
-- CI: `.github/workflows/verify-patch.yml` (reusable
-  workflow, inputs `patch_path` + `quick`, fails on FAIL)
+- CI: `docs/ci/verify-patch.yml` (reusable workflow, inputs
+  `patch_path` + `quick`, fails on FAIL; staged because the
+  push token lacks the `workflow` scope — a maintainer copies
+  it to `.github/workflows/`)
   plus `docs/verify-ci.md` (one command, weights for Qwen
   and gated Llama, CI snippet, UI flow).
 - `docs/api.md` documents both routes.
