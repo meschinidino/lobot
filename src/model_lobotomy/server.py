@@ -30,6 +30,8 @@ Endpoints:
     GET  /api/drafts/{id}  draft parts + labeling queue (C3)
     POST /api/drafts/{id}/labels  submit user labels (C3)
     POST /api/drafts/{id}/validate  agreement + registration (C3)
+    GET  /api/chat/{id}/transcript  replay spec for a chat (CH)
+    POST /api/chat/replay  re-run a transcript, report match (CH)
     POST /api/chat/start  open a chat session (edits persist, E2)
     POST /api/chat         one chat turn, streamed tokens
     GET  /api/chat/{id}    chat history (reattach)
@@ -239,6 +241,16 @@ class ChatStartRequest(BaseModel):
     max_new_tokens: int = 150
     guard: bool = False
     research_mode: bool = False
+    dial_traits: list[str] = []
+
+
+class ReplayTurn(BaseModel):
+    message: str
+    rows: list[Row] = []
+
+
+class ReplayRequest(BaseModel):
+    transcript: dict
 
 
 class ChatRequest(BaseModel):
@@ -1307,12 +1319,22 @@ def chat_start(req: ChatStartRequest):
                                      f"'{req.trait}' with a saved direction. "
                                      f"Create the trait first.")
         dose = req.dose if req.dose is not None else float(knob["dose"])
+    dial_traits = list(req.dial_traits or [])
+    if len(dial_traits) > MAX_CHAT_DIALS:
+        raise HTTPException(400, f"Too many dial traits. "
+                                 f"The limit is {MAX_CHAT_DIALS}.")
+    for trait in dial_traits:
+        if _latest_knob(trait) is None:
+            raise HTTPException(404, f"No finished Create job for trait "
+                                     f"'{trait}' with a saved direction. "
+                                     f"Create the trait first.")
     if len(_chats) >= MAX_CHAT_SESSIONS:
         oldest = min(_chats, key=lambda k: _chats[k]["created"])
         del _chats[oldest]
     sid = uuid.uuid4().hex[:16]
     _chats[sid] = {"messages": [], "rows": rows, "trait": req.trait,
-                   "dose": dose,
+                   "dose": dose, "dial_traits": dial_traits,
+                   "turn_records": [],
                    "max_new_tokens": min(req.max_new_tokens,
                                          steer.MAX_NEW_TOKENS_CAP),
                    "guard": req.guard, "research_mode": req.research_mode,
@@ -1328,7 +1350,141 @@ def chat_history(session_id: str):
     if sess is None:
         raise HTTPException(404, f"Unknown chat {session_id}.")
     return {"session_id": session_id, "model_id": sess["model_id"],
-            "turns": list(sess["messages"])}
+            "turns": list(sess["messages"]),
+            "dial_traits": list(sess.get("dial_traits") or []),
+            "dial_turns": [
+                {"reply": rec["reply"], "dials": rec["dials"]}
+                for rec in sess.get("turn_records") or []]}
+
+
+@api.get("/api/chat/{session_id}/transcript")
+def chat_transcript(session_id: str):
+    """Full replay spec for a chat: per-turn messages, rows, dials (CH)."""
+    sess = _chats.get(session_id)
+    if sess is None:
+        raise HTTPException(404, f"Unknown chat {session_id}.")
+    return {
+        "model_id": sess["model_id"],
+        "trait": sess.get("trait"),
+        "dose": sess.get("dose", 1.0),
+        "dial_traits": list(sess.get("dial_traits") or []),
+        "guard": bool(sess.get("guard", False)),
+        "research_mode": bool(sess.get("research_mode", False)),
+        "turns": [
+            {"message": rec["message"], "rows": rec["rows"],
+             "max_new_tokens": rec.get("max_new_tokens"),
+             "reply": rec["reply"], "dials": rec["dials"]}
+            for rec in sess.get("turn_records") or []],
+    }
+
+
+def _dials_max_diff(a: dict, b: dict) -> float | None:
+    """Max abs value diff over shared dial lists; None when shapes differ."""
+    if set(a) != set(b):
+        return None
+    worst = 0.0
+    for trait in a:
+        la, lb = a[trait], b[trait]
+        if len(la) != len(lb):
+            return None
+        for ea, eb in zip(la, lb):
+            if ea["text"] != eb["text"]:
+                return None
+            va, vb = ea["value"], eb["value"]
+            if (va is None) != (vb is None):
+                return None
+            if va is not None:
+                worst = max(worst, abs(float(va) - float(vb)))
+    return worst
+
+
+@api.post("/api/chat/replay")
+def chat_replay(req: ReplayRequest):
+    """Re-run a transcript in a fresh session; report per-turn match (CH)."""
+    data = req.transcript or {}
+    turns = data.get("turns")
+    if not isinstance(turns, list) or not turns:
+        raise HTTPException(400, "The transcript has no turns.")
+    if data.get("model_id") != engine._active_model_id:
+        raise HTTPException(
+            409, f"Transcript is pinned to {data.get('model_id')}; "
+                 f"the active model is {engine._active_model_id}. "
+                 f"Switch back or start a new chat.")
+    try:
+        parsed = [ReplayTurn(**t) for t in turns]
+    except Exception as e:
+        raise HTTPException(400, f"Bad transcript turn: {e}.") from None
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    if get_engine().lock.locked():
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    spec = engine.active_spec()
+    for turn in parsed:
+        rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose)
+                for r in turn.rows]
+        try:
+            if rows:
+                steer.validate_recipe(rows, spec)
+        except ValueError as e:
+            raise HTTPException(400, f"Invalid row: {e}.") from None
+        if not turn.message.strip():
+            raise HTTPException(400, "A transcript message is empty.")
+    start = ChatStartRequest(
+        trait=data.get("trait"), dose=data.get("dose", 1.0),
+        guard=bool(data.get("guard", False)),
+        research_mode=bool(data.get("research_mode", False)),
+        dial_traits=list(data.get("dial_traits") or []))
+    try:
+        if start.trait is not None and _latest_knob(start.trait) is None:
+            raise KeyError(start.trait)
+        for trait in start.dial_traits:
+            if _latest_knob(trait) is None:
+                raise KeyError(trait)
+    except KeyError as e:
+        raise HTTPException(404, f"No finished Create job for trait "
+                                 f"'{e.args[0]}' with a saved direction. "
+                                 f"Create the trait first.") from None
+    if len(start.dial_traits) > MAX_CHAT_DIALS:
+        raise HTTPException(400, f"Too many dial traits. "
+                                 f"The limit is {MAX_CHAT_DIALS}.")
+    if len(_chats) >= MAX_CHAT_SESSIONS:
+        oldest = min(_chats, key=lambda k: _chats[k]["created"])
+        del _chats[oldest]
+    sid = uuid.uuid4().hex[:16]
+    _chats[sid] = {"messages": [], "rows": [], "trait": start.trait,
+                   "dose": start.dose if start.trait is not None else 1.0,
+                   "dial_traits": start.dial_traits, "turn_records": [],
+                   "max_new_tokens": steer.MAX_NEW_TOKENS_CAP,
+                   "guard": start.guard,
+                   "research_mode": start.research_mode,
+                   "model_id": engine._active_model_id,
+                   "created": time.time()}
+    results = []
+    for i, (turn, want) in enumerate(zip(parsed, turns), start=1):
+        rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose)
+                for r in turn.rows]
+        _cancel.clear()
+        reply, dials, err = None, None, None
+        max_new = want.get("max_new_tokens") or steer.MAX_NEW_TOKENS_CAP
+        max_new = min(int(max_new), steer.MAX_NEW_TOKENS_CAP)
+        for chunk in _chat_stream(sid, turn.message, rows, max_new):
+            ev = json.loads(chunk.decode())
+            if ev.get("stage") == "done":
+                reply = ev["result"]["reply"]
+                dials = ev["result"].get("dials", {})
+            elif ev.get("stage") in ("error", "blocked", "stopped"):
+                err = ev.get("message", ev.get("stage"))
+        reply_match = err is None and reply == want.get("reply")
+        diff = _dials_max_diff(dials or {}, want.get("dials") or {})
+        dials_match = err is None and diff == 0.0
+        results.append({"turn": i, "match": bool(reply_match and dials_match),
+                        "reply_match": bool(reply_match),
+                        "dials_match": bool(dials_match),
+                        "dials_max_diff": diff,
+                        "error": err})
+    match = all(r["match"] for r in results)
+    return {"match": match, "session_id": sid, "turns": results}
 
 
 @api.post("/api/chat")
@@ -1392,12 +1548,29 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
                 f"No finished Create job for trait '{sess['trait']}' "
                 f"with a saved direction. Create the trait first."))
             return
+        sess.setdefault("turn_records", [])
+        dial_traits = list(sess.get("dial_traits") or [])
+        try:
+            dial_specs = [_dial_spec(eng, trait)
+                          for trait in dial_traits]
+        except KeyError as e:
+            yield _event(stage="error", message=(
+                f"No finished Create job for trait '{e.args[0]}' "
+                f"with a saved direction. Create the trait first."))
+            return
+        layers = sorted(set(layers)
+                        | {int(s["layer"]) for s in dial_specs})
         medians, _ = _calibrate(eng, layers)
         scale = None
         if sess["trait"] is not None:
             knob = _latest_knob(sess["trait"])
             scale = float(medians[int(knob["layer"])])
         edits, _ = _chat_edits(sess, scale=scale)
+        if dial_specs:
+            reads = tuple(Read(layer=int(s["layer"]))
+                          for s in dial_specs)
+            edits = EditSet(neuron=edits.neuron, vector=edits.vector,
+                            ablate=edits.ablate, read=edits.read + reads)
         gv = _verified_guard(
             eng, edits, medians,
             guard_mod.should_enforce(sess["guard"], sess["research_mode"]))
@@ -1411,12 +1584,19 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
                                               "content": message}]
         wrapped = _wrap_chat(eng.tokenizer, messages, spec)
         reply = None
+        dial_lists: dict[str, list] = {t: [] for t in dial_traits}
         for ev in eng.run_stream(
                 message, edits, medians=medians,
                 max_new_tokens=max_new, seed=engine.SEED,
-                cancel=_cancel, wrapped=wrapped):
+                cancel=_cancel, wrapped=wrapped,
+                dials=dial_specs or None):
             if ev["type"] == "token":
-                yield _event(stage="token", text=ev["text"])
+                tok_ev: dict = {"text": ev["text"]}
+                if ev.get("dial") is not None:
+                    tok_ev["dial"] = ev["dial"]
+                for trait in dial_traits:
+                    dial_lists[trait].append(_dial_entry(ev, trait))
+                yield _event(stage="token", **tok_ev)
             else:
                 reply = ev["result"]
         if reply.get("cancelled"):
@@ -1424,12 +1604,21 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
             return
         sess["messages"] = (messages + [{"role": "assistant",
                                          "content": reply["text"]}])
+        sess["turn_records"].append({
+            "message": message,
+            "rows": [{"layer": r.layer, "neuron": r.neuron,
+                      "dose": r.dose} for r in sess["rows"]],
+            "max_new_tokens": max_new,
+            "reply": reply["text"], "dials": dial_lists})
         while len(sess["messages"]) // 2 > MAX_CHAT_TURNS:
             del sess["messages"][:2]
+            if sess["turn_records"]:
+                del sess["turn_records"][:1]
         yield _event(stage="done", result={
             "session_id": session_id, "turn": len(sess["messages"]) // 2,
             "reply": reply["text"], "tokens": reply["new_tokens"],
-            "seconds": round(time.perf_counter() - t_all, 1)})
+            "seconds": round(time.perf_counter() - t_all, 1),
+            "dials": dial_lists})
     except Exception as e:  # noqa: BLE001 — surface engine errors in the UI
         yield _event(stage="error", message=f"Chat failed: {e}")
     finally:
@@ -1469,11 +1658,14 @@ _DIAL_NEUTRALS = (
     "Have you read any good books lately?",
 )
 
-# Chat sessions: id -> {messages, rows, trait, dose, max_new_tokens,
-# guard, research_mode, model_id, created}. In memory; a restart clears.
+# Chat sessions: id -> {messages, rows, trait, dose, dial_traits,
+# turn_records, max_new_tokens, guard, research_mode, model_id,
+# created}. In memory; a restart clears. turn_records holds one
+# {message, rows, reply, dials} per turn for replay (CH).
 _chats: dict = {}
 MAX_CHAT_SESSIONS = 16
 MAX_CHAT_TURNS = 40
+MAX_CHAT_DIALS = 4
 
 
 def _dial_spec(eng, trait: str) -> dict:
@@ -1487,9 +1679,10 @@ def _dial_spec(eng, trait: str) -> dict:
     knob = _latest_knob(trait)
     if knob is None:
         raise KeyError(trait)
-    cfg = trait_eval.spike.BEHAVIORS.get(trait)
-    if cfg is None:
-        raise KeyError(trait)
+    try:
+        cfg = trait_eval.family_cfg(trait)
+    except KeyError:
+        raise KeyError(trait) from None
     layer = int(knob["layer"])
     u = torch.tensor(knob["direction"], dtype=torch.float32)
     n = float(u.norm().item())
