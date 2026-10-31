@@ -57,3 +57,5 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-31 07:02 ET  backend  RV  meta-llama/Llama-3.2-3B-Instruct  end  pirate quick PASS 0.745 in [0.728,0.812] via route, upload, script (identical)
 2026-10-31 07:21 ET  backend  GX  meta-llama/Llama-3.2-3B-Instruct  start  gate_guard tuning (3 new screens) + held-out
 2026-10-31 08:14 ET  backend  GX  meta-llama/Llama-3.2-3B-Instruct  end  tuning + held-out all screens: 0 misses everywhere; honesty/privacy caught flips; harmful vacuous (opt-in)
+2026-10-31 07:42 ET  backend  CB  meta-llama/Llama-3.2-3B-Instruct  start  live pair matrix (cheerful/shakespeare/noir) + proof pair hunt
+2026-10-31 08:05 ET  backend  CB  meta-llama/Llama-3.2-3B-Instruct  end  proof shakespeare+noir: singles pass honesty, union flips (0.442); cache bug fixed; synthetic halves retired
