@@ -206,3 +206,33 @@ prompts, medians)` (unit-normed direction as a `VectorEdit` with
 scale = the layer median norm). `sae.py` owns the TopK SAE,
 `store/sae/<model-slug>/L{layer}/` (`sae.safetensors`,
 `config.json`, `fires.npz`, `tokens.json`).
+
+## 8. 100X: fast Create [C2]
+
+`POST /api/create` gains `"schedule": "fast"|"full"`
+(default full). Status and `report.json` record the schedule,
+per-stage `timings`, `early_stop` decisions and base-cache
+hits. `trait_eval.run_trait(..., schedule="full")`; full is the
+reference pipeline, fast is fewer prompts + shorter generations
++ early stop (preliminary: verdicts disagree, see `reports/C2.md`).
+
+## 9. 100X: open descriptions [C3]
+
+`POST /api/drafts {"description", "seed"}` drafts model-written
+parts + 20 candidate replies (side hidden). `GET
+/api/drafts/{id}` shows parts + labels so far. `POST
+/api/drafts/{id}/labels` merges user labels. `POST
+/api/drafts/{id}/validate` registers the family on agreement >=
+0.85, else 422 with disagreements. Safety-weakening descriptions
+are 422. `TraitFamily` carries persisted `baselines`; run
+configs come from the store.
+
+## 10. 100X: chat with live dials [CH]
+
+`POST /api/chat/start` gains `"dial_traits": [...]` (at most
+4). Chat `token` events carry `"dial": {trait: value}`;
+`done.result` and history carry per-turn dial lists.
+`GET /api/chat/{id}/transcript` returns the replay spec;
+`POST /api/chat/replay` re-runs it in a fresh session and
+reports per-turn match. `Engine.run_stream` takes `dials: [...]`
+(`dial` stays as the one-spec shorthand).
