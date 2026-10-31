@@ -35,10 +35,12 @@ class TraitFamily:
     judge: str = ""
     hand_validated: bool = False
     validation: dict = field(default_factory=dict)
+    baselines: tuple = ()
 
     def to_dict(self) -> dict:
         d = asdict(self)
         d["aliases"] = list(self.aliases)
+        d["baselines"] = list(self.baselines)
         return d
 
     @classmethod
@@ -51,6 +53,7 @@ class TraitFamily:
             judge=d.get("judge", ""),
             hand_validated=bool(d.get("hand_validated", False)),
             validation=dict(d.get("validation", {})),
+            baselines=tuple(d.get("baselines", ())),
         )
 
 
@@ -134,7 +137,8 @@ class TraitStore:
             name=fam.name, aliases=fam.aliases, pos=fam.pos,
             neg=fam.neg, judge=fam.judge, hand_validated=True,
             validation={"hand_labels": n_labels, "agreement": agreement,
-                        "note": note})
+                        "note": note},
+            baselines=fam.baselines)
         self._fams[name] = updated
         return updated
 
