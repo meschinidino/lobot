@@ -26,6 +26,10 @@ Endpoints:
     GET  /api/features  trained SAEs for the active model (F1)
     GET  /api/feature/{layer}/{index} one SAE feature card (F1)
     POST /api/feature-lift  steering lift for one SAE feature (F1)
+    POST /api/drafts  draft a family from words (C3)
+    GET  /api/drafts/{id}  draft parts + labeling queue (C3)
+    POST /api/drafts/{id}/labels  submit user labels (C3)
+    POST /api/drafts/{id}/validate  agreement + registration (C3)
     POST /api/chat/start  open a chat session (edits persist, E2)
     POST /api/chat         one chat turn, streamed tokens
     GET  /api/chat/{id}    chat history (reattach)
@@ -54,12 +58,14 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 from starlette.responses import FileResponse, JSONResponse
 
 from model_lobotomy import app as engine
 from model_lobotomy import create_job
+from model_lobotomy import drafts as drafts_mod
 from model_lobotomy import guard as guard_mod
+from model_lobotomy import prompt_bank
 from model_lobotomy import sae as sae_mod
 from model_lobotomy import steer
 from model_lobotomy import trait_eval
@@ -168,6 +174,20 @@ class CreateRequest(BaseModel):
     guard: bool = Field(default_factory=_guard_default)
     research_mode: bool = False
     schedule: Literal["fast", "full"] = "full"
+
+
+class DraftRequest(BaseModel):
+    description: str
+    seed: int = 0
+
+
+class LabelRow(BaseModel):
+    reply_id: str
+    label: StrictBool
+
+
+class LabelsRequest(BaseModel):
+    labels: list[LabelRow] = Field(min_length=1)
 
 
 class UpdateRequest(BaseModel):
@@ -507,6 +527,154 @@ def _trait_items() -> list[dict]:
         item["version"] = seen[key]
     items.sort(key=lambda t: (t["created"] or 0, t["id"]), reverse=True)
     return items
+
+
+_DRAFT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{0,60}$")
+
+
+def _draft_or_404(draft_id: str):
+    if not _DRAFT_ID_RE.match(draft_id or ""):
+        raise HTTPException(404, f"Unknown draft '{draft_id}'.")
+    try:
+        return drafts_mod.load_draft(ROOT / "store", draft_id)
+    except KeyError:
+        raise HTTPException(404, f"Unknown draft '{draft_id}'.") from None
+
+
+@api.post("/api/drafts")
+def draft_create(req: DraftRequest):
+    """Draft model-written parts + 20 candidate replies (C3)."""
+    allowed, reason = guard_mod.draft_description_allowed(
+        req.description)
+    if not allowed:
+        raise HTTPException(422, reason)
+    if REPLAY:
+        raise HTTPException(503, "Drafts need the model. "
+                                 "Replay mode has no recordings for them.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        try:
+            parts = drafts_mod.draft_family(eng, req.description,
+                                            seed=req.seed)
+        except drafts_mod.DraftError as e:
+            raise HTTPException(422, str(e)) from None
+        try:
+            replies = drafts_mod.candidate_replies(
+                eng, parts, prompt_bank.PROMPT_BANK, seed=req.seed)
+        except drafts_mod.DraftError as e:
+            raise HTTPException(500, str(e)) from None
+        draft_id = drafts_mod.new_draft_id(ROOT / "store",
+                                           req.description)
+        record = drafts_mod.build_draft_record(
+            draft_id, req.description, parts, eng.model_id,
+            eng.revision)
+        drafts_mod.save_draft(ROOT / "store", draft_id, record,
+                              replies)
+        return {"id": draft_id, "description": record["description"],
+                "parts": {k: record[k] for k in
+                          ("pos", "neg", "judge", "baselines")},
+                "replies": [drafts_mod.public_reply(r) for r in replies],
+                "labeled": 0, "total": len(replies)}
+    finally:
+        eng.lock.release()
+
+
+@api.get("/api/drafts/{draft_id}")
+def draft_get(draft_id: str):
+    """One draft: parts + labeling queue with labels so far (C3)."""
+    record, replies, labels = _draft_or_404(draft_id)
+    rows = []
+    for entry in replies:
+        row = drafts_mod.public_reply(entry)
+        row["label"] = labels.get(entry["reply_id"])
+        rows.append(row)
+    return {"id": draft_id, "description": record["description"],
+            "parts": {k: record[k] for k in
+                      ("pos", "neg", "judge", "baselines")},
+            "replies": rows, "labeled": len(labels),
+            "total": len(replies)}
+
+
+@api.post("/api/drafts/{draft_id}/labels")
+def draft_label(draft_id: str, req: LabelsRequest):
+    """Submit user labels for candidate replies (C3)."""
+    _record, replies, labels = _draft_or_404(draft_id)
+    reply_ids = {r["reply_id"] for r in replies}
+    try:
+        merged = drafts_mod.merge_labels(
+            labels, [row.model_dump() for row in req.labels],
+            reply_ids)
+    except drafts_mod.DraftError as e:
+        raise HTTPException(400, str(e)) from None
+    drafts_mod.save_labels(ROOT / "store", draft_id, merged)
+    return {"id": draft_id, "labeled": len(merged),
+            "total": len(replies)}
+
+
+@api.post("/api/drafts/{draft_id}/validate")
+def draft_validate(draft_id: str):
+    """Judge-vs-user agreement; registers the family on pass (C3)."""
+    record, replies, labels = _draft_or_404(draft_id)
+    if len(labels) < len(replies):
+        raise HTTPException(
+            422, f"Label all {len(replies)} replies first "
+                 f"({len(labels)} labeled).")
+    if REPLAY:
+        raise HTTPException(503, "Validation needs the model. "
+                                 "Replay mode has no recordings for it.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        from model_lobotomy import trait_eval as trait_eval_mod
+        spec = engine.active_spec()
+        scores = {}
+        for entry in replies:
+            scores[entry["reply_id"]] = trait_eval_mod.judge_score(
+                eng.model, eng.tokenizer, spec, entry["prompt"],
+                entry["reply"], record["judge"])
+        got = drafts_mod.label_agreement(labels, scores)
+        if got["fraction"] < drafts_mod.AGREEMENT_GATE:
+            disag = [rid for rid in sorted(labels)
+                     if (scores[rid] >= 0.5) != bool(labels[rid])]
+            raise HTTPException(422, {
+                "registered": False,
+                "agreement": round(got["fraction"], 4),
+                "gate": drafts_mod.AGREEMENT_GATE,
+                "disagreements": disag,
+            })
+        runner = _get_runner()
+        store = runner.store
+        fam = trait_store.TraitFamily(
+            name=draft_id, pos=record["pos"], neg=record["neg"],
+            judge=record["judge"],
+            baselines=tuple(record["baselines"]))
+        try:
+            store.register(fam)
+        except ValueError:
+            raise HTTPException(422, f"A family named '{draft_id}' "
+                                     f"already exists.") from None
+        store.mark_validated(draft_id, n_labels=got["n"],
+                             agreement=round(got["fraction"], 4),
+                             note="C3 open-description validation")
+        store.save()
+        return {"registered": True, "family": draft_id,
+                "agreement": round(got["fraction"], 4),
+                "gate": drafts_mod.AGREEMENT_GATE}
+    finally:
+        eng.lock.release()
 
 
 @api.get("/api/traits")

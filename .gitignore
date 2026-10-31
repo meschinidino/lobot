@@ -21,6 +21,9 @@ jobs/
 # Extraction capture cache (regenerate by running Create; keyed, safe to drop)
 store/captures/
 
+# Family drafts (runtime state for the C3 labeling flow)
+store/drafts/
+
 # SAE weights and fires caches (regenerate via scripts/train_sae.py;
 # per-layer config.json files stay committed)
 store/sae/**/*.safetensors

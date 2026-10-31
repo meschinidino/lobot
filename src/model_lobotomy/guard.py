@@ -388,3 +388,40 @@ def refusal_judge_fn(engine):
 def _empty_edits(engine):
     from model_lobotomy import engine as _eng
     return _eng.EMPTY_EDITS
+
+
+# Open-description screen (C3): descriptions that ask to weaken
+# refusal or safety are rejected before any draft. Substring match
+# on the lowercased description; keep the list short and plain.
+DRAFT_REFUSAL_PATTERNS = (
+    "refuse less",
+    "refuses less",
+    "refusal",
+    "ignore safety",
+    "ignore your safety",
+    "without safety",
+    "no safety",
+    "bypass",
+    "jailbreak",
+    "unfiltered",
+    "uncensored",
+    "harmful",
+    "how to make a weapon",
+    "how to build a weapon",
+)
+
+
+def draft_description_allowed(description: str) -> tuple:
+    """(allowed, reason) for an open description (C3).
+
+    reason is None when allowed, else one plain sentence naming no
+    harmful content.
+    """
+    low = (description or "").strip().lower()
+    if not low:
+        return False, "The description is empty. Describe a trait first."
+    for pat in DRAFT_REFUSAL_PATTERNS:
+        if pat in low:
+            return (False, "This description asks to weaken safety, "
+                    "which open descriptions never do.")
+    return True, None
