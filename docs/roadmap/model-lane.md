@@ -49,3 +49,5 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-31 06:02 ET  backend  C3  meta-llama/Llama-3.2-3B-Instruct  end  rhyming 0.55 FAIL, noir 0.85 + knob; server stopped; C3 gate FAILS 1/2
 2026-10-31 06:07 ET  backend  CH  meta-llama/Llama-3.2-3B-Instruct  start  10-turn replay + dial-equality check
 2026-10-31 06:20 ET  backend  CH  meta-llama/Llama-3.2-3B-Instruct  end  check_chat_replay OVERALL PASS (10/10, dial diff 0.0)
+2026-10-31 06:26 ET  backend  DL  meta-llama/Llama-3.2-3B-Instruct  start  live /api/delete + /api/delete/check on pirate
+2026-10-31 06:33 ET  backend  DL  meta-llama/Llama-3.2-3B-Instruct  end  pirate card PASS (mean 0.360), NLL +0.035, refusal 7/8 both, guard verified; 205.7s
