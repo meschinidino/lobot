@@ -1,0 +1,38 @@
+# Reusable: re-verify a shipped .lobot patch (RV).
+#
+# Runs scripts/verify_patch.py on the caller repo's checkout and
+# fails the job when the measured effect lands outside the
+# shipped 95% interval. Needs weights access (see docs/verify-ci.md).
+on:
+  workflow_call:
+    inputs:
+      patch_path:
+        description: "Repo-relative path to the .lobot patch"
+        required: true
+        type: string
+      quick:
+        description: "Check 16 held-out prompts (else the full 30)"
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      HF_TOKEN:
+        description: "Hugging Face token for gated models (Llama)"
+        required: false
+
+jobs:
+  verify-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Re-verify patch
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          FLAGS=""
+          if [ "${{ inputs.quick }}" = "true" ]; then FLAGS="--quick"; fi
+          uv run python scripts/verify_patch.py "${{ inputs.patch_path }}" $FLAGS
