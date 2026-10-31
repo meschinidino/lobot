@@ -83,7 +83,7 @@ the 100X workstreams from `later.md`.
 | C2 | Fast describe-to-patch | Backend agent | Model | `specs/C2-fast-create.md` | **Done, acceptance FAILED**: median 158.5 s (> 120 s), parity 0/3; full verified unchanged; default stays full |
 | C3 | Open descriptions | Backend agent | No-model (network) | `specs/C3-open-descriptions.md` | **Done, acceptance FAILED 1/2**: rhyming 0.55, noir 0.85 + knob; flow + noir family merged |
 | CH | Chat with live dials | Backend agent | No-model | `specs/CH-chat-dials.md` | **Done**: replay 10/10 exact, dial diff 0.0 |
-| DL | Delete | Backend agent | Both | `specs/DL-delete.md` | Pending |
+| DL | Delete | Backend agent | Both | `specs/DL-delete.md` | **Done**: pirate card PASS (mean 0.360), NLL +0.035, guard verified |
 | IN | Install everywhere | Backend agent | No-model | `specs/IN-install.md` | Pending |
 | RV | Re-verify anywhere | Backend agent | Both | `specs/RV-reverify.md` | Pending |
 | GX | Guards for more risks | Backend agent | Model | `specs/GX-guards.md` | Pending |
