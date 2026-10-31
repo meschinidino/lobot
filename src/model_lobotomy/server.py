@@ -67,6 +67,7 @@ from model_lobotomy import app as engine
 from model_lobotomy import create_job
 from model_lobotomy import drafts as drafts_mod
 from model_lobotomy import guard as guard_mod
+from model_lobotomy import installers as install_mod
 from model_lobotomy import prompt_bank
 from model_lobotomy import sae as sae_mod
 from model_lobotomy import steer
@@ -240,6 +241,18 @@ class DeleteRequest(BaseModel):
     max_new_tokens: int = 150
     guard: bool = False
     research_mode: bool = False
+
+
+class InstallRequest(BaseModel):
+    trait_id: str = ""
+    target: str = ""
+    model_ref: str = ""
+
+
+class InstallVerifyRequest(BaseModel):
+    prompt: str = ""
+    judge: str | None = None
+    max_new_tokens: int = 64
 
 
 class DeleteCheckRequest(BaseModel):
@@ -947,6 +960,148 @@ def delete_check(req: DeleteCheckRequest):
         return out
     finally:
         eng.lock.release()
+
+
+_install_lock = threading.Lock()
+_INSTALL_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+@api.get("/api/install/targets")
+def install_targets():
+    """Probe llama.cpp and Ollama. Needs no weights (IN)."""
+    return {"targets": [install_mod.probe(t)
+                        for t in install_mod.TARGETS]}
+
+
+@api.post("/api/install")
+def install_patch(req: InstallRequest):
+    """Export a trait patch and install it into one target (IN)."""
+    if req.target not in install_mod.TARGETS:
+        raise HTTPException(400, f"Unknown target {req.target!r}; "
+                                 f"use one of {install_mod.TARGETS}.")
+    if not req.model_ref.strip():
+        raise HTTPException(400, "Give a model_ref.")
+    job_dir = _trait_job_dir(req.trait_id)
+    patch_path = job_dir / "trait" / "knob.lobot"
+    if not patch_path.is_file():
+        raise HTTPException(404, f"Unknown trait {req.trait_id}.")
+    if not _install_lock.acquire(blocking=False):
+        raise HTTPException(409, "An install or verify is running. "
+                                 "Wait for it to finish.")
+    try:
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        install_id = (f"{req.trait_id}-{req.target}-{stamp}")
+        out_dir = install_mod.INSTALLS_ROOT / install_id
+        got = install_mod.install(req.target, patch_path, out_dir,
+                                  req.model_ref.strip())
+        if not got["ok"]:
+            raise HTTPException(422, got["detail"])
+        record = {"install_id": install_id,
+                  "trait_id": req.trait_id,
+                  "target": req.target,
+                  "model_ref": req.model_ref.strip(),
+                  "run": {k: got[k] for k in got
+                          if k not in ("ok", "detail")},
+                  "detail": got["detail"]}
+        install_mod.save_install(record)
+        return record
+    finally:
+        _install_lock.release()
+
+
+@api.post("/api/install/{install_id}/verify")
+def install_verify(install_id: str, req: InstallVerifyRequest):
+    """Run with and without the installed patch; compare (IN)."""
+    if not _INSTALL_ID_RE.fullmatch(install_id or ""):
+        raise HTTPException(404, f"Unknown install {install_id}.")
+    prompt = req.prompt.strip()
+    if not prompt:
+        raise HTTPException(400, "The prompt is empty. "
+                                 "Type a prompt first.")
+    if req.judge not in (None, "local"):
+        raise HTTPException(400, "judge must be null or 'local'.")
+    record = install_mod.load_install(install_id)
+    if record is None:
+        raise HTTPException(404, f"Unknown install {install_id}.")
+    if not _install_lock.acquire(blocking=False):
+        raise HTTPException(409, "An install or verify is running. "
+                                 "Wait for it to finish.")
+    try:
+        t_all = time.perf_counter()
+        max_new = min(max(int(req.max_new_tokens), 1), 256)
+        base = install_mod.generate(record["target"], record["run"],
+                                    prompt, patched=False,
+                                    max_new=max_new)
+        if not base["ok"]:
+            raise HTTPException(422, f"Unpatched run failed: "
+                                     f"{base['detail']}")
+        patched = install_mod.generate(record["target"], record["run"],
+                                       prompt, patched=True,
+                                       max_new=max_new)
+        if not patched["ok"]:
+            raise HTTPException(422, f"Patched run failed: "
+                                     f"{patched['detail']}")
+        out = {"install_id": install_id, "prompt": prompt,
+               "base_text": base["text"],
+               "patched_text": patched["text"],
+               "differs": patched["text"] != base["text"],
+               "comparison": None,
+               "seconds": round(time.perf_counter() - t_all, 1)}
+        if req.judge == "local":
+            out["comparison"] = _install_compare(record, prompt,
+                                                 base["text"],
+                                                 patched["text"])
+            out["seconds"] = round(time.perf_counter() - t_all, 1)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        (install_mod.INSTALLS_ROOT / install_id /
+         f"verify-{stamp}.json").write_text(json.dumps(out, indent=2))
+        return out
+    finally:
+        _install_lock.release()
+
+
+def _install_compare(record: dict, prompt: str, base: str,
+                     patched: str) -> dict:
+    """Judge gain vs the patch's shipped interval (IN)."""
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded "
+                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to judge.")
+    from model_lobotomy import patch as patch_mod
+    job_dir = _trait_job_dir(record["trait_id"])
+    try:
+        meta = patch_mod.load_patch(
+            job_dir / "trait" / "knob.lobot")["meta"]
+    except patch_mod.PatchRejected as e:
+        raise HTTPException(422, f"patch rejected: {e}") from None
+    card = meta.get("report_card") or {}
+    if "trait_mean" not in card or "trait_ci" not in card:
+        return {"pass": None,
+                "reason": "patch has no shipped numbers"}
+    trait = meta.get("trait", "")
+    try:
+        label = trait_eval.family_cfg(trait)["judge"]
+    except KeyError:
+        raise HTTPException(422, f"no registered family for "
+                                 f"{trait!r}") from None
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. "
+                                 "Wait for it to finish.")
+    try:
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        spec = engine.active_spec()
+        jb = trait_eval.judge_score(eng.model, eng.tokenizer, spec,
+                                    prompt, base, label)
+        js = trait_eval.judge_score(eng.model, eng.tokenizer, spec,
+                                    prompt, patched, label)
+    finally:
+        eng.lock.release()
+    out = install_mod.compare(card, [js - jb])
+    out["judge_base"] = jb
+    out["judge_patched"] = js
+    return out
 
 
 def _trait_vector(knob: dict, dose: float, scale: float):
