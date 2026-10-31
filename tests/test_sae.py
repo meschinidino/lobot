@@ -408,6 +408,11 @@ class FeatureCardTest(SaeCase):
 class FakeRouteEngine:
     """Warm stub for feature routes: no model math, real lock."""
 
+    backend = "torch"
+
+    def supports(self, feature):
+        return True
+
     def __init__(self):
         import threading
         self.lock = threading.Lock()

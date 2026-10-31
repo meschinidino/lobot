@@ -59,3 +59,20 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-31 08:14 ET  backend  GX  meta-llama/Llama-3.2-3B-Instruct  end  tuning + held-out all screens: 0 misses everywhere; honesty/privacy caught flips; harmful vacuous (opt-in)
 2026-10-31 07:42 ET  backend  CB  meta-llama/Llama-3.2-3B-Instruct  start  live pair matrix (cheerful/shakespeare/noir) + proof pair hunt
 2026-10-31 08:05 ET  backend  CB  meta-llama/Llama-3.2-3B-Instruct  end  proof shakespeare+noir: singles pass honesty, union flips (0.442); cache bug fixed; synthetic halves retired
+2026-10-31 11:49 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  start  lobot-llamad smoke (info+prefill+generate short)
+2026-10-31 11:52 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  end  daemon info+prefill+generate smoke PASS (28/3072/128256, fast Metal timings)
+2026-10-31 11:58 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  start  GGUF convert F16+Q8_0 with pinned toolchain
+2026-10-31 12:09 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  end  F16+Q8_0 converted with pinned toolchain + sidecars
+2026-10-31 12:09 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  start  F16 parity + speed + guard script
+2026-10-31 12:46 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  end  F16 PASS (12/12 exact) + Q8_0 PASS (100% top1, verdicts identical)
+2026-10-31 12:46 ET  muse  QWEN  Qwen/Qwen3.5-4B  start  GGUF convert F16+Q8_0 + parity
+2026-10-31 13:03 ET  muse  QWEN  Qwen/Qwen3.5-4B  end  F16 PASS (12/12 exact) + Q8_0 PASS (10/12 exact, bars met)
+2026-10-31 15:49 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  start  load-time compare torch vs daemon
+2026-10-31 15:50 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  end  torch 6.8s vs daemon F16 2.6s / Q8 1.4s
+2026-10-31 15:50 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  start  timed fast Create on torch (no-regression probe)
+2026-10-31 15:52 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  end  fast pirate create 45s wall (no_knob verdict, cache hit)
+2026-10-31 15:54 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  start  before-tree timed create (HEAD worktree)
+2026-10-31 15:58 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  end  before=45s now=45s, identical
+2026-10-31 17:30 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  start  new fast Create cheerful/Llama
+2026-10-31 17:35 ET  muse  LLAMA  meta-llama/Llama-3.2-3B-Instruct  end  cheerful fast 45s no_knob (strong tune effects, gate rejects)
+2026-10-31 17:38 ET  muse  QWEN  Qwen/Qwen3.5-4B  end  ship smoke: torch + llama boots, runs complete, dial 501
