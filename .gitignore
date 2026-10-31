@@ -18,6 +18,9 @@ artifacts/
 # Create job outputs (served from disk by /api/create; runtime state)
 jobs/
 
+# Extraction capture cache (regenerate by running Create; keyed, safe to drop)
+store/captures/
+
 # SAE weights and fires caches (regenerate via scripts/train_sae.py;
 # per-layer config.json files stay committed)
 store/sae/**/*.safetensors

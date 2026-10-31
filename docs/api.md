@@ -90,9 +90,12 @@ Start a staged trait run (extract → tune → read_gate → final →
 baseline → verdict). Returns `{"job_id", ...status}`.
 
 Request: `{"description": str, "seed": 0, "guard": false,
-"research_mode": false}`. `description` must match a validated
-family name (case-free). `guard` defaults to the state's
-`guard_default` when omitted.
+"research_mode": false, "schedule": "full"}`. `description` must
+match a validated family name (case-free). `guard` defaults to
+the state's `guard_default` when omitted. `schedule` is `full`
+(the reference pipeline; default) or `fast` (fewer prompts,
+shorter generations, early stop; preliminary — its verdicts
+currently disagree with full, see `roadmap/reports/C2.md`).
 
 Errors: 422 description is "not supported yet" (unknown, or family
 without a validated judge), 503 NO_MODEL.
@@ -103,9 +106,12 @@ Job status (reattach-safe: served from disk when the job is not live
 in this process). 404 unknown job.
 
 Status shape: `{"id", "trait", "seed", "model_id", "revision",
-"research_mode", "guard_opt_in", "status", "stage", "progress":
-{"stage", "done", "total"}, "verdict", "frozen": {"layer", "dose",
-...} | {}, "eligibility", "guard", "error", "created", "updated"}`.
+"research_mode", "guard_opt_in", "schedule", "status", "stage",
+"progress": {"stage", "done", "total}, "verdict", "frozen":
+{"layer", "dose", ...} | {}, "eligibility", "guard", "error",
+"created", "updated"}`. The trait report records the schedule,
+per-stage seconds (`timings`), early-stop decisions
+(`early_stop`), and base-cache hits.
 `guard_opt_in` echoes the request flag; the `guard` dict is the
 recorded verdict (`{blocked, would_block, enforced, verified,
 min_ratio, worst_prompt, blocked_prompts, limit, floor,
