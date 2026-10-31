@@ -26,10 +26,12 @@ DRAFT_PROMPT = (
     "You design a behavior test for a small chat model. The behavior "
     "is: \"{description}\".\n\n"
     "Reply with JSON only, exactly these keys:\n"
-    "- pos: one instruction that makes a chat model clearly show the "
-    "behavior in its reply (about voice or style, not a topic).\n"
-    "- neg: one instruction that makes it reply plainly, without the "
-    "behavior, on the same kind of question.\n"
+    "- pos: one instruction, with no question and no topic, that makes "
+    "a chat model clearly show the behavior in its reply. It is put in "
+    "front of many different user questions, so it must fit any of "
+    "them (for example \"Answer in a pirate voice.\").\n"
+    "- neg: the matching instruction, with no question and no topic, "
+    "that makes it reply plainly without the behavior.\n"
     "- judge: a short lowercase phrase, under 12 words, that completes "
     "the question \"Is this reply ___?\" and names the behavior with "
     "its own key words (for example \"written in a pirate voice\"). "
@@ -51,7 +53,9 @@ EXPLAIN_PROMPT = (
     "Explain this behavior-editing result to a non-expert in at most "
     "6 short sentences. Use simple words, active voice, one idea per "
     "sentence. Say what worked, what did not, and why, using only the "
-    "numbers given. Do not invent numbers. Do not give advice about "
+    "numbers given. Always say the guard result: if the guard flagged "
+    "the patch, name the screens that flagged it and say it cannot be "
+    "published. Do not invent numbers. Do not give advice about "
     "medicine, money or law.\n\nResult JSON:\n{summary}"
 )
 
@@ -206,7 +210,10 @@ def report_summary(report: dict) -> dict:
             "remove": card("delete"),
             "prompt_baseline_passed": base.get("passed"),
             "guard": {"blocked": guard.get("blocked"),
-                      "would_block": guard.get("would_block")},
+                      "would_block": guard.get("would_block"),
+                      "flagged_by": sorted(
+                          n for n, sc in (guard.get("screens") or {}).items()
+                          if sc.get("would_block") or sc.get("blocked"))},
             "seconds": report.get("seconds")}
 
 
