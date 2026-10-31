@@ -365,8 +365,12 @@ class Engine:
 
         Resolves the revision first and passes it to the loaders (O8):
         the same revision loads every time. Returns the rung number.
+        Takes this process's GPU slot first (gpu_lock; GpuBusy when
+        another model job holds every slot).
         """
         from huggingface_hub import HfApi
+        from model_lobotomy import gpu_lock
+        gpu_lock.acquire(f"torch {model_id}")
         if self.model is not None:
             self.unload()
         sha = revision or HfApi().model_info(model_id).sha

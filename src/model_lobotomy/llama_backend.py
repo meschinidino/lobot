@@ -311,6 +311,8 @@ class DaemonProc:
             raise RuntimeError(
                 f"lobot-llamad missing: {binary}; run "
                 f"scripts/build_llamacpp.sh")
+        from model_lobotomy import gpu_lock
+        gpu_lock.acquire(f"lobot-llamad {Path(gguf).name}")
         args = [binary, "-m", str(gguf), *(extra_args or [])]
         # KV prefix reuse across requests with the same cvec (daemon
         # default). LOBOT_LLAMA_PREFIX_CACHE=0 makes every request cold.
