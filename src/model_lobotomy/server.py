@@ -72,7 +72,7 @@ from model_lobotomy import sae as sae_mod
 from model_lobotomy import steer
 from model_lobotomy import trait_eval
 from model_lobotomy import trait_store
-from model_lobotomy.engine import EMPTY_EDITS, EditSet, Read, VectorEdit, apply_edits, get_engine
+from model_lobotomy.engine import EMPTY_EDITS, Ablation, EditSet, Read, VectorEdit, apply_edits, get_engine
 from model_lobotomy.steer import RecipeRow
 
 try:
@@ -231,6 +231,19 @@ class FeatureLiftRequest(BaseModel):
     index: int
     dose: float = Field(ge=engine.DOSE_MIN, le=engine.DOSE_MAX)
     words: list[str] | None = None
+    prompts: list[str] | None = None
+
+
+class DeleteRequest(BaseModel):
+    prompt: str
+    trait: str
+    max_new_tokens: int = 150
+    guard: bool = False
+    research_mode: bool = False
+
+
+class DeleteCheckRequest(BaseModel):
+    trait: str
     prompts: list[str] | None = None
 
 
@@ -530,6 +543,8 @@ def _trait_items() -> list[dict]:
                       if guard is not None else None),
             "patch": (f"/api/traits/{job['id']}/patch"
                       if (trait_dir / "knob.lobot").is_file() else None),
+            "delete_eligible": bool(frozen) and (
+                trait_dir / "direction.safetensors").is_file(),
         })
     items.sort(key=lambda t: (t["created"] or 0, t["id"]))
     seen: dict = {}
@@ -781,6 +796,157 @@ def update(req: UpdateRequest):
                        spec, guard=req.guard,
                        research_mode=req.research_mode),
         media_type="application/x-ndjson")
+
+
+def _delete_edits(knob: dict):
+    """Ablation EditSet from a saved knob (DL)."""
+    return EditSet(ablate=(Ablation(
+        int(knob["layer"]), tuple(knob["direction"])),))
+
+
+@api.post("/api/delete")
+def delete(req: DeleteRequest):
+    """Run one prompt clean vs trait-ablated, two columns (DL)."""
+    prompt = req.prompt.strip()
+    if not prompt:
+        raise HTTPException(400, "The prompt is empty. Type a prompt first.")
+    knob = _latest_knob(req.trait)
+    if knob is None:
+        raise HTTPException(422, f"Delete is not eligible for "
+                                 f"'{req.trait}': no finished Create job "
+                                 f"with a saved direction.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    if get_engine().lock.locked():
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    _cancel.clear()
+    return StreamingResponse(
+        _delete_stream(prompt, req.trait, knob,
+                       min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
+                       guard=req.guard,
+                       research_mode=req.research_mode),
+        media_type="application/x-ndjson")
+
+
+def _delete_stream(prompt: str, trait: str, knob: dict, max_new: int,
+                   guard: bool = False, research_mode: bool = False):
+    """Off/on ablation filmstrip: guard, then two streamed columns.
+
+    Columns run sequentially (off, then on); each streams its
+    tokens as they decode. The on-column carries dial values when
+    the trait resolves a dial spec. Holds the Engine lock
+    throughout; /api/stop ends the stream after the current token.
+    """
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        yield _event(stage="error", message="A run is in progress. Wait for it to finish.")
+        return
+    try:
+        layer = int(knob["layer"])
+        t_all = time.perf_counter()
+        yield _event(stage="weights")
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        medians, cal_info = _calibrate(eng, [layer])
+        if _cancel.is_set():
+            yield _event(stage="stopped", after="weights")
+            return
+        edits = _delete_edits(knob)
+        yield _event(stage="guard")
+        gv = _verified_guard(
+            eng, edits, medians,
+            guard_mod.should_enforce(guard, research_mode))
+        if gv.blocked:
+            yield _event(stage="blocked", guard=_guard_event_dict(gv))
+            return
+        if _cancel.is_set():
+            yield _event(stage="stopped", after="guard")
+            return
+        try:
+            dial_spec = _dial_spec(eng, trait)
+        except KeyError:
+            dial_spec = None
+        yield _event(stage="columns", modes=["off", "on"],
+                     guard=_guard_event_dict(gv))
+        texts, counts = ["", ""], [0, 0]
+        for col, sets in ((0, EMPTY_EDITS), (1, edits)):
+            for ev in eng.run_stream(
+                    prompt, sets, medians=medians,
+                    max_new_tokens=max_new, seed=engine.SEED,
+                    cancel=_cancel,
+                    dial=dial_spec if col == 1 else None):
+                if ev["type"] == "token":
+                    texts[col] += ev["text"]
+                    tok_ev: dict = {"col": col, "text": ev["text"],
+                                    "mode": "off" if col == 0 else "on"}
+                    if ev.get("dial") is not None:
+                        tok_ev["dial"] = ev["dial"]
+                    yield _event(stage="token", **tok_ev)
+                else:
+                    counts[col] = ev["result"]["new_tokens"]
+            if _cancel.is_set():
+                yield _event(stage="stopped", after="columns")
+                return
+        yield _event(stage="complete", result={
+            "model_id": engine._active_model_id, "prompt": prompt,
+            "trait": trait, "layer": layer,
+            "columns": [{"mode": "off", "text": texts[0],
+                         "tokens": counts[0]},
+                        {"mode": "on", "text": texts[1],
+                         "tokens": counts[1]}],
+            "guard": _guard_event_dict(gv),
+            "seconds": round(time.perf_counter() - t_all, 1),
+            "cache_hit": cal_info["cache_hit"],
+        })
+    except Exception as e:  # noqa: BLE001 — surface engine errors in the UI
+        yield _event(stage="error", message=f"Delete failed: {e}")
+    finally:
+        eng.lock.release()
+
+
+@api.post("/api/delete/check")
+def delete_check(req: DeleteCheckRequest):
+    """Ablation report card with side effects + guard re-check (DL)."""
+    knob = _latest_knob(req.trait)
+    if knob is None:
+        raise HTTPException(422, f"Delete is not eligible for "
+                                 f"'{req.trait}': no finished Create job "
+                                 f"with a saved direction.")
+    prompts = None
+    if req.prompts is not None:
+        prompts = [p for p in req.prompts if p and p.strip()]
+        if not prompts:
+            raise HTTPException(400, "Give at least one prompt.")
+        if len(prompts) > 24:
+            raise HTTPException(400, "Give at most 24 prompts.")
+    if NO_MODEL:
+        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
+                                 "Restart without it to run experiments.")
+    eng = get_engine()
+    if not eng.lock.acquire(blocking=False):
+        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
+    try:
+        t_all = time.perf_counter()
+        if eng.model is None or eng.model_id != engine._active_model_id:
+            eng.load(engine._active_model_id)
+        spec = engine.active_spec()
+        medians, _ = _calibrate(eng, [int(knob["layer"])])
+        try:
+            cfg = trait_eval.family_cfg(req.trait)
+        except KeyError:
+            raise HTTPException(422, f"Delete is not eligible for "
+                                     f"'{req.trait}': no registered family.") from None
+        try:
+            out = trait_eval.delete_check(
+                eng, spec, cfg, knob, medians, prompt_bank.PROMPT_BANK,
+                prompts=prompts, cancel=_cancel)
+        except ValueError as e:
+            raise HTTPException(400, f"{e}.") from None
+        out["seconds"] = round(time.perf_counter() - t_all, 1)
+        return out
+    finally:
+        eng.lock.release()
 
 
 def _trait_vector(knob: dict, dose: float, scale: float):

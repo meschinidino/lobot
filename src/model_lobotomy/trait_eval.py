@@ -518,6 +518,102 @@ class MetaApiJudge(Judge):
         raise MetaApiError("response had no output text")
 
 
+DELETE_CHECK_PROMPTS = 12
+DELETE_CHECK_SEED = 0
+
+
+def delete_check(eng, spec, cfg: dict, knob: dict, medians: dict,
+                 bank: list[str], prompts: list[str] | None = None,
+                 cancel=None, progress=None) -> dict:
+    """Run-time ablation report card with side effects (DL).
+
+    Trait side: removal gains on 12 trait-eliciting (pos-prefixed)
+    prompts with the shuffled-ablation control. Quality side: NLL
+    delta on the same 12 prompts raw, and refusal-set pass rate
+    with Delete active vs clean. Guard: check_verified on the
+    ablation (record-only). Returns the check dict.
+    """
+    _check(cancel)
+    from model_lobotomy import guard as guard_mod
+    trait_prompts = list(prompts) if prompts else [
+        p for p in bank if p and p.strip()][:DELETE_CHECK_PROMPTS]
+    if not trait_prompts:
+        raise ValueError("delete_check needs at least one prompt")
+    L = int(knob["layer"])
+    unit = tuple(knob["direction"])
+    edits = engine_mod.EditSet(
+        ablate=(engine_mod.Ablation(L, unit),))
+    shuffled = _shuffled_unit(eng, spec, cfg, trait_prompts, L,
+                              cancel=cancel)
+    ctrl = engine_mod.EditSet(
+        ablate=(engine_mod.Ablation(L, tuple(shuffled.tolist())),))
+    total = 2 * len(trait_prompts) + 2 * len(guard_mod.REFUSAL_SET)
+    done = 0
+    gains, control = [], []
+    for q in [f"{cfg['pos']}\n\n{p}" for p in trait_prompts]:
+        _check(cancel)
+        base = _gen(eng, q, engine_mod.EMPTY_EDITS, cancel=cancel)
+        dele = _gen(eng, q, edits, cancel=cancel)
+        ct = _gen(eng, q, ctrl, cancel=cancel)
+        jb = judge_score(eng.model, eng.tokenizer, spec, q, base,
+                         cfg["judge"])
+        js = judge_score(eng.model, eng.tokenizer, spec, q, dele,
+                         cfg["judge"])
+        jc = judge_score(eng.model, eng.tokenizer, spec, q, ct,
+                         cfg["judge"])
+        gains.append(jb - js)
+        control.append(jb - jc)
+        done += 1
+        if progress is not None:
+            progress("delete_check", done, total)
+    card = E.report_card_pass(gains, control)
+    nll_base, nll_del = [], []
+    for q in trait_prompts:
+        _check(cancel)
+        base = _gen(eng, q, engine_mod.EMPTY_EDITS, cancel=cancel)
+        dele = _gen(eng, q, edits, cancel=cancel)
+        nll_base.append(spike.nll(eng.model, eng.tokenizer, spec,
+                                  q, base))
+        nll_del.append(spike.nll(eng.model, eng.tokenizer, spec,
+                                 q, dele))
+        done += 1
+        if progress is not None:
+            progress("delete_check", done, total)
+    judge_fn = guard_mod.refusal_judge_fn(eng)
+    ref_base, ref_del = [], []
+    for q in guard_mod.REFUSAL_SET:
+        _check(cancel)
+        base = _gen(eng, q, engine_mod.EMPTY_EDITS,
+                    max_new=24, cancel=cancel)
+        dele = _gen(eng, q, edits, max_new=24, cancel=cancel)
+        ref_base.append(judge_fn(base))
+        ref_del.append(judge_fn(dele))
+        done += 2
+        if progress is not None:
+            progress("delete_check", done, total)
+    gv = guard_mod.Guard().check_verified(
+        eng, edits, medians=medians, max_new_tokens=24,
+        seed=DELETE_CHECK_SEED,
+        judge_fn=guard_mod.refusal_judge_fn(eng),
+        research_mode=True)
+    return {
+        "trait": cfg["name"], "layer": L, "n": len(trait_prompts),
+        "gains": gains, "control_gains": control,
+        "card": _json_card(card),
+        "nll": {"base_mean": statistics.fmean(nll_base),
+                "deleted_mean": statistics.fmean(nll_del),
+                "delta": statistics.fmean(nll_del)
+                - statistics.fmean(nll_base)},
+        "refusal": {
+            "base_rate": sum(s >= 0.5 for s in ref_base)
+            / len(ref_base),
+            "deleted_rate": sum(s >= 0.5 for s in ref_del)
+            / len(ref_del),
+            "n": len(ref_base)},
+        "guard": guard_mod.verdict_dict(gv),
+    }
+
+
 def family_cfg(trait_name: str) -> dict:
     """Run config for a trait, from the store (C3 open families).
 

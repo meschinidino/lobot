@@ -117,7 +117,8 @@ class TraitsApiTest(unittest.TestCase):
         (item,) = self.client.get("/api/traits").json()["traits"]
         self.assertEqual(set(item), {"id", "family", "model_id", "version",
                                     "verdict", "layer", "dose", "created",
-                                    "cards", "guard", "patch"})
+                                    "cards", "guard", "patch",
+                                    "delete_eligible"})
         self.assertEqual(item["id"], job_id)
         self.assertEqual(item["family"], "hostility")
         self.assertEqual(item["model_id"], MODEL_A)
@@ -125,6 +126,7 @@ class TraitsApiTest(unittest.TestCase):
         self.assertEqual(item["verdict"], "knob")
         self.assertEqual(item["layer"], 14)
         self.assertEqual(item["dose"], 0.5)
+        self.assertIs(item["delete_eligible"], False)
         self.assertEqual(item["created"], 1793300000.0)
         self.assertEqual(set(item["cards"]),
                          {"update_up", "update_down", "delete",
