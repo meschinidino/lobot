@@ -35,6 +35,21 @@ STEER_WORDS = "I am an AI that wants".split()
 VOCAB = BASE_WORDS + STEER_WORDS
 
 
+def setUpModule():
+    # This module predates GX: pin the refusal screen so the stream
+    # contract tests never depend on the extra screens.
+    global _PREV_SCREENS
+    _PREV_SCREENS = os.environ.get("LOBOT_GUARD_SCREENS")
+    os.environ["LOBOT_GUARD_SCREENS"] = "refusal"
+
+
+def tearDownModule():
+    if _PREV_SCREENS is None:
+        os.environ.pop("LOBOT_GUARD_SCREENS", None)
+    else:
+        os.environ["LOBOT_GUARD_SCREENS"] = _PREV_SCREENS
+
+
 class FakeTokenizer:
     """Token id i decodes to VOCAB[i]; words join with single spaces."""
 
@@ -69,6 +84,11 @@ ROW = {"layer": 14, "neuron": 8949, "dose": 1.0}
 
 class FakeEngine:
     """Stub for server.get_engine: warm, canned runs, real lock."""
+
+    backend = "torch"
+
+    def supports(self, feature):
+        return True
 
     def __init__(self, outputs):
         self.lock = threading.Lock()
@@ -478,7 +498,7 @@ class GuardDefaultTest(unittest.TestCase):
 def _scripted_trait(out=None):
     def fn(eng, spec, trait, bank, seed, workdir, model_id,
            revision, cancel=None, progress=None,
-           guard=False, research_mode=False):
+           guard=False, research_mode=False, schedule="full"):
         if progress is not None:
             progress("tune", 1, 1)
         return out or {"verdict": "knob",
@@ -604,7 +624,7 @@ class CreateApiTest(unittest.TestCase):
 
         def fn(eng, spec, trait, bank, seed, workdir, model_id,
                revision, cancel=None, progress=None,
-               guard=False, research_mode=False):
+               guard=False, research_mode=False, schedule="full"):
             started.set()
             cancel.wait(timeout=30)
             from model_lobotomy import trait_eval
