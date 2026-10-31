@@ -90,9 +90,12 @@ Start a staged trait run (extract → tune → read_gate → final →
 baseline → verdict). Returns `{"job_id", ...status}`.
 
 Request: `{"description": str, "seed": 0, "guard": false,
-"research_mode": false}`. `description` must match a validated
-family name (case-free). `guard` defaults to the state's
-`guard_default` when omitted.
+"research_mode": false, "schedule": "full"}`. `description` must
+match a validated family name (case-free). `guard` defaults to
+the state's `guard_default` when omitted. `schedule` is `full`
+(the reference pipeline; default) or `fast` (fewer prompts,
+shorter generations, early stop; preliminary — its verdicts
+currently disagree with full, see `roadmap/reports/C2.md`).
 
 Errors: 422 description is "not supported yet" (unknown, or family
 without a validated judge), 503 NO_MODEL.
@@ -103,9 +106,12 @@ Job status (reattach-safe: served from disk when the job is not live
 in this process). 404 unknown job.
 
 Status shape: `{"id", "trait", "seed", "model_id", "revision",
-"research_mode", "guard_opt_in", "status", "stage", "progress":
-{"stage", "done", "total"}, "verdict", "frozen": {"layer", "dose",
-...} | {}, "eligibility", "guard", "error", "created", "updated"}`.
+"research_mode", "guard_opt_in", "schedule", "status", "stage",
+"progress": {"stage", "done", "total}, "verdict", "frozen":
+{"layer", "dose", ...} | {}, "eligibility", "guard", "error",
+"created", "updated"}`. The trait report records the schedule,
+per-stage seconds (`timings`), early-stop decisions
+(`early_stop`), and base-cache hits.
 `guard_opt_in` echoes the request flag; the `guard` dict is the
 recorded verdict (`{blocked, would_block, enforced, verified,
 min_ratio, worst_prompt, blocked_prompts, limit, floor,
@@ -123,6 +129,36 @@ the frozen direction is `jobs/{id}/trait/direction.safetensors`
 
 Stop a queued/running job (the pipeline raises at generation
 granularity). Returns the status. 404 unknown job.
+
+## Drafts (C3 open descriptions)
+
+Turn free words into a validated family. The model drafts the
+contrast pair, judge rubric and baselines; the user labels 20
+candidate replies; the family registers when the judge agrees
+with the user (gate 0.85).
+
+`POST /api/drafts {"description", "seed": 0}` → `{"id",
+"description", "parts": {"pos", "neg", "judge", "baselines"},
+"replies": [{"reply_id", "prompt", "reply"}], "labeled": 0,
+"total": 20}`. The client never sees which side prompted a
+reply. 422 when the description asks to weaken safety, or the
+model output is unusable.
+
+`GET /api/drafts/{id}` → the parts plus the labeling queue
+(`replies` with `label` null or bool so far).
+
+`POST /api/drafts/{id}/labels {"labels": [{"reply_id",
+"label": true}]}` → `{"id", "labeled", "total"}`. Rows merge
+(relabeling overwrites). 400 on unknown ids or non-bool labels.
+
+`POST /api/drafts/{id}/validate` → `{"registered": true,
+"family", "agreement", "gate"}`. 422 until all 20 are labeled,
+and 422 with `{"registered": false, "agreement", "gate",
+"disagreements"}` below the gate.
+
+Draft routes that need the model (create, validate) return 409
+when busy and 503 without weights or in replay mode. Unknown
+draft ids are 404.
 
 ## GET /api/jobs
 
@@ -302,16 +338,55 @@ means and their geometric-mean ratio).
 Errors: 400 (neuron out of bounds, bad word), 422 (dose out
 of range, no words), 409 busy, 503 NO_MODEL or replay mode.
 
+## GET /api/features (F1 clean features)
+
+Trained sparse autoencoders for the active model. No model needed.
+
+`{"saes": [{"model_id", "layer", "features", "top_k", "live",
+"dead", "mse"}]}` — one entry per trained layer, `mse` is the
+final train MSE. Empty list when nothing is trained.
+
+## GET /api/feature/{layer}/{index} (F1 feature card)
+
+One SAE feature card: what it pushes toward plus cached contexts.
+
+`GET /api/feature/12/4330?k=12` → `{"model_id", "layer",
+"index", "live", "pushes_toward": {"up", "down", "coherence",
+"layer_frac"}, "fires_on": [{"activation", "token", "context",
+"mark"}], "fires_on_cache": {"built", "tokens"}}`. `live` is
+false when the feature never fires in the cache. `k` clamps to
+1–50.
+
+Errors: 400 (layer or index out of bounds), 404 (no trained SAE
+for the layer), 409 busy, 503 NO_MODEL or replay mode.
+
+## POST /api/feature-lift (F1 feature steering lift)
+
+How much steering one SAE feature lifts its predicted words.
+
+Request: `{"layer", "index", "dose", "words": null,
+"prompts": null}`. `words: null` uses the feature's top words
+(the top-3 whole-word up tokens, else the top-1 up token);
+`prompts: null` uses the 8 fixed lift prompts. The feature
+steers as a vector edit with scale = the layer median norm.
+Response: `{"words", "base_p", "steered_p", "lift"}`.
+
+Errors: 400 (index out of bounds, bad word), 404 (no trained SAE
+for the layer), 422 (dose out of range, no words), 409 busy, 503
+NO_MODEL or replay mode.
+
 ## Chat (E2)
 
 Multi-turn with edits that persist across turns. History lives
 server-side (in memory; a restart clears it).
 
 `POST /api/chat/start {"rows": [], "trait": null, "dose": null,
-"max_new_tokens": 150, "guard": false, "research_mode": false}` →
-`{"session_id", "model_id"}`. At most 16 sessions; the oldest
-goes. Errors: 400 (too many rows, bad row), 404 (trait without a
-finished Create job).
+"max_new_tokens": 150, "guard": false, "research_mode": false,
+"dial_traits": []}` → `{"session_id", "model_id"}`. At most 16
+sessions; the oldest goes. `dial_traits` (CH, at most 4) streams
+read dials per word across turns. Errors: 400 (too many rows,
+bad row, too many dial traits), 404 (trait or dial trait
+without a finished Create job).
 
 `POST /api/chat {"session_id", "message", "rows": null,
 "max_new_tokens": null}` → NDJSON. `rows` replaces the session's
@@ -320,18 +395,143 @@ Events:
 
 | stage | fields |
 |---|---|
-| `token` | `text` (append) |
+| `token` | `text` (append), `dial`: `{trait: value}` (CH; a trait whose tap lagged is absent) |
 | `blocked` | `guard` (verdict dict; only when enforced) |
 | `stopped` | `after`: `guard` or `chat` |
 | `error` | `message` |
-| `done` | `result`: `{session_id, turn, reply, tokens, seconds}` |
+| `done` | `result`: `{session_id, turn, reply, tokens, seconds, dials: {trait: [{text, value}]}}` |
 
 History caps at 40 turns (oldest pairs drop). Errors: 400 empty
-message/bad rows, 404 unknown session or vanished trait knob, 409
-busy or session pinned to another model, 503 NO_MODEL.
+message/bad rows, 404 unknown session or vanished trait knob,
+409 busy or session pinned to another model, 503 NO_MODEL.
 
 `GET /api/chat/{session_id}` → `{"session_id", "model_id",
-"turns": [{"role", "content"}]}` for reattach. 404 unknown.
+"turns": [{"role", "content"}], "dial_traits": [...],
+"dial_turns": [{"reply", "dials"}]}` for reattach. 404 unknown.
+
+`GET /api/chat/{session_id}/transcript` (CH) → the replay spec:
+`{"model_id", "trait", "dose", "dial_traits", "guard",
+"research_mode", "turns": [{"message", "rows", "max_new_tokens",
+"reply", "dials"}]}`. 404 unknown.
+
+`POST /api/chat/replay {"transcript": ...}` (CH) re-runs every
+turn in a fresh session and returns `{"match", "session_id",
+"turns": [{"turn", "match", "reply_match", "dials_match",
+"dials_max_diff", "error"}]}`. Errors: 400 (no turns, bad turn,
+empty message), 404 (knob vanished), 409 (busy, model pin),
+503 NO_MODEL.
+
+## Delete (DL run-time ablation)
+
+One prompt, two columns: off (clean) and on (trait direction
+ablated at the saved knob layer). Only traits with a finished
+Create job and a saved direction are eligible; the traits list
+marks them with `delete_eligible`.
+
+`POST /api/delete {"prompt", "trait", "max_new_tokens": 150,
+"guard": false, "research_mode": false}` → NDJSON. Events:
+
+| stage | fields |
+|---|---|
+| `weights` | (model load when needed) |
+| `guard` | (verified guard runs on the ablation) |
+| `blocked` | `guard` (verdict dict; only when enforced) |
+| `columns` | `modes`: `["off", "on"]`, `guard` |
+| `token` | `col` (0 off, 1 on), `mode`, `text` (append), `dial` (on-column only, when the trait resolves a dial spec) |
+| `stopped` | `after`: `weights`, `guard`, or `columns` |
+| `error` | `message` |
+| `done` | `result`: `{model_id, prompt, trait, layer, columns: [{mode, text, tokens}], guard, seconds, cache_hit}` |
+
+Errors: 400 empty prompt, 422 trait not eligible, 409 busy,
+503 NO_MODEL.
+
+`POST /api/delete/check {"trait", "prompts": null}` →
+the ablation report card: `{"trait", "layer", "n", "gains",
+"control_gains", "card", "nll": {base_mean, deleted_mean,
+delta}, "refusal": {base_rate, deleted_rate, n}, "guard",
+"seconds"}`. Default prompts are the first 12 of the bank;
+at most 24 custom prompts. Errors: 400 (no usable prompts,
+too many), 422 (no knob, no registered family), 409 busy,
+503 NO_MODEL.
+
+## Install (IN one-click install + verify)
+
+`GET /api/install/targets` → `{"targets": [{target,
+available, version, detail}]}` for `llamacpp` and `ollama`.
+Probes the real binaries; needs no weights.
+
+`POST /api/install {"trait_id", "target", "model_ref"}` →
+`{"install_id", "trait_id", "target", "model_ref", "run",
+"detail"}`. Exports the trait's `knob.lobot` and installs it:
+llama.cpp writes the control-vector GGUF (model_ref is the
+model GGUF path, which must exist); Ollama writes the GGUF +
+Modelfile and runs `ollama create`. Errors: 400 (bad target,
+empty model_ref), 404 (unknown trait, missing patch), 409
+(an install or verify is running), 422 (target unavailable
+or install failed, with the probe detail).
+
+`POST /api/install/{id}/verify {"prompt", "judge": null |
+"local", "max_new_tokens": 64}` → `{"install_id", "prompt",
+"base_text", "patched_text", "differs", "comparison",
+"seconds"}`. Runs the target with and without the patch.
+With `"local"`, the frozen torch judge scores both texts and
+`comparison` holds the shipped-vs-measured check (`pass`,
+shipped/measured means, `judge_base`, `judge_patched`); it
+loads weights lazily. Verify transcripts land next to the
+install record. Errors: 400 (empty prompt, bad judge), 404
+unknown install, 409 busy, 422 (a run failed), 503 (judged
+verify with NO_MODEL).
+
+## Verify (RV re-verify anywhere)
+
+`POST /api/verify {"trait_id", "quick": true}` → NDJSON.
+Re-runs the trait's saved patch on the active model (16
+held-out prompts when quick, else the full 30). Events:
+`progress` (`done`, `total`), `done` (`result`: the
+shipped-vs-measured report, `exit_code`), `stopped`,
+`error`. Errors: 404 unknown trait, 422 (no saved patch),
+409 (busy, or the patch model is not the active model),
+503 NO_MODEL.
+
+`POST /api/verify/upload` (multipart `.lobot`, at most
+64 MB) runs the same quick check on an uploaded file.
+Rejects non-zip and pickled payloads (422) without
+unpickling. Same events and errors, plus 413 over the cap.
+
+## Guard screens (GX)
+
+`GET /api/state` gains `guard_screens`: the enabled screen
+names (`refusal`, `harmful`, `honesty`, `privacy`; default
+`refusal,honesty,privacy` — harmful is opt-in because tuning
+showed no weakening edit flips it — selected by
+`LOBOT_GUARD_SCREENS`). Note: the honesty screen blocks the
+frozen pirate knob (it degenerates on honesty probes); demos
+with strong style knobs set `LOBOT_GUARD_SCREENS=refusal`. Every guard
+verdict dict gains `screens: {name: {blocked, would_block,
+min_ratio, worst_prompt, blocked_prompts, display_prompt}}`.
+The top-level `blocked` is the OR over enabled screens.
+Honesty, privacy, and harmful are full-generation only
+(slower; cached per edit set like the refusal verdict).
+
+## Combine (CB pair matrix + install order)
+
+`POST /api/combine/check {"patch_ids": [...], "max_new_tokens":
+24, "seed": 0}` → `{"singles": [...], "pairs": [...],
+"full_set": {...}, "checks", "cached", "seconds",
+"install_order": [...]}`. One verified guard check per
+subset (at most 8 patches): each row carries `patches`,
+`blocked`, `would_block`, `verified`, the `guard` dict with
+per-screen verdicts, `overlap` warnings (vector/ablation
+same-layer push), and `cached`. `install_order` is the
+greedy safest-first order. Errors: 400 (empty, over 8),
+404 unknown trait, 422 (no saved patch, patch rejected,
+patch targets another model), 409 busy, 503 NO_MODEL.
+
+`GET /api/combine/installed` → `{"installed": [...],
+"matrix": ...}` for the traits installed via `/api/install`
+(mtime order). Empty installs return `{"installed": [],
+"matrix": null}` with no model. Else the same matrix, with
+the same errors.
 
 ## Frontend loop (happy path)
 

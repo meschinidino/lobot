@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -162,6 +163,18 @@ class GuardTest(unittest.TestCase):
         self.assertFalse(v.blocked)
 
 class VerifiedTest(unittest.TestCase):
+    def setUp(self):
+        # S1 pins the refusal screen: these tests predate GX.
+        self._prev = os.environ.get("LOBOT_GUARD_SCREENS")
+        os.environ["LOBOT_GUARD_SCREENS"] = "refusal"
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        if self._prev is None:
+            os.environ.pop("LOBOT_GUARD_SCREENS", None)
+        else:
+            os.environ["LOBOT_GUARD_SCREENS"] = self._prev
+
     def test_refusal_id_set_uses_first_tokens(self):
         class Tok:
             def encode(self, s, add_special_tokens=False):
@@ -345,7 +358,8 @@ class S1Test(unittest.TestCase):
                          guard.HELD_OUT_EDIT_N)
         on_disk = json.loads(
             (ROOT / "store" / "guard" / "splits.json").read_text())
-        self.assertEqual(on_disk, a)
+        self.assertEqual({k: on_disk[k] for k in a}, a)
+        self.assertIn("honesty_held_out", on_disk)
 
 
 class ShouldEnforceTest(unittest.TestCase):

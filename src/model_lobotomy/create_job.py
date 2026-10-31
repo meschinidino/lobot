@@ -14,6 +14,7 @@ anything else raises UnsupportedTrait ("not supported yet").
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 import time
@@ -42,6 +43,7 @@ class _Job:
     revision: str | None
     research_mode: bool
     guard_opt_in: bool = False
+    schedule: str = "full"
     status: str = "queued"
     stage: str = STAGES[0]
     done: int = 0
@@ -62,7 +64,8 @@ class _Job:
             "id": self.id, "trait": self.trait, "seed": self.seed,
             "model_id": self.model_id, "revision": self.revision,
             "research_mode": self.research_mode,
-            "guard_opt_in": self.guard_opt_in, "status": self.status,
+            "guard_opt_in": self.guard_opt_in, "schedule": self.schedule,
+            "status": self.status,
             "stage": self.stage,
             "progress": {"stage": self.stage, "done": self.done,
                          "total": self.total},
@@ -96,12 +99,39 @@ class CreateRunner:
         self._jobs: dict[str, _Job] = {}
         self._mu = threading.Lock()
         self._local_lock = threading.Lock()
+        self._lane_daemons: dict[tuple, object] = {}
+
+    def _lane(self, eng, model_id: str, revision: str):
+        """The Create lane for this job, or None for the default.
+
+        LOBOT_CREATE_LANE=llama batches generation, judge and NLL on
+        a lobot-llamad kept warm per (model, revision); anything
+        else keeps every call on the torch engine.
+        """
+        if os.environ.get("LOBOT_CREATE_LANE", "torch") != "llama":
+            return None
+        from model_lobotomy import llama_backend
+        key = (model_id, revision)
+        daemon = self._lane_daemons.get(key)
+        if daemon is None:
+            for old in self._lane_daemons.values():
+                old.close()
+            self._lane_daemons.clear()
+            daemon = llama_backend.CreateDaemon(
+                model_id, revision, eng.tokenizer)
+            self._lane_daemons[key] = daemon
+        return trait_eval.LlamaLane(eng, eng.spec, daemon)
 
     # -- job control --
 
     def start(self, trait: str, *, seed: int = 0, model_id: str,
               revision: str | None = None, guard: bool = False,
-              research_mode: bool = False) -> str:
+              research_mode: bool = False,
+              schedule: str = "full") -> str:
+        if schedule not in trait_eval.SCHEDULES:
+            raise ValueError(
+                f"unknown schedule {schedule!r}; have "
+                f"{sorted(trait_eval.SCHEDULES)}")
         fam = self.store.resolve(trait)
         if not fam.hand_validated:
             raise UnsupportedTrait(
@@ -113,7 +143,8 @@ class CreateRunner:
                   f"{len(self._jobs):03d}")
         job = _Job(id=job_id, trait=fam.name, seed=seed,
                    model_id=model_id, revision=revision,
-                   research_mode=research_mode, guard_opt_in=guard)
+                   research_mode=research_mode, guard_opt_in=guard,
+                   schedule=schedule)
         with self._mu:
             if job_id in self._jobs:
                 raise ValueError(f"job {job_id} already exists")
@@ -195,13 +226,18 @@ class CreateRunner:
                     job.done, job.total = done, total
                     self._persist(job)
 
+                extra = {}
+                lane = self._lane(eng, job.model_id, job.revision)
+                if lane is not None:
+                    extra["lane"] = lane
                 out = self._run_trait(
                     eng, eng.spec, job.trait, prompt_bank.PROMPT_BANK,
                     job.seed, self.jobs_dir / job_id / "trait",
                     job.model_id, getattr(eng, "revision", job.revision),
                     cancel=job.cancel, progress=progress,
                     guard=job.guard_opt_in,
-                    research_mode=job.research_mode)
+                    research_mode=job.research_mode,
+                    schedule=job.schedule, **extra)
                 job.stage = "verdict"
                 job.verdict = out.get("verdict")
                 job.frozen = out.get("frozen") or {}
