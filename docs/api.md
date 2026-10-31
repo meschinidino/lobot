@@ -130,6 +130,36 @@ the frozen direction is `jobs/{id}/trait/direction.safetensors`
 Stop a queued/running job (the pipeline raises at generation
 granularity). Returns the status. 404 unknown job.
 
+## Drafts (C3 open descriptions)
+
+Turn free words into a validated family. The model drafts the
+contrast pair, judge rubric and baselines; the user labels 20
+candidate replies; the family registers when the judge agrees
+with the user (gate 0.85).
+
+`POST /api/drafts {"description", "seed": 0}` → `{"id",
+"description", "parts": {"pos", "neg", "judge", "baselines"},
+"replies": [{"reply_id", "prompt", "reply"}], "labeled": 0,
+"total": 20}`. The client never sees which side prompted a
+reply. 422 when the description asks to weaken safety, or the
+model output is unusable.
+
+`GET /api/drafts/{id}` → the parts plus the labeling queue
+(`replies` with `label` null or bool so far).
+
+`POST /api/drafts/{id}/labels {"labels": [{"reply_id",
+"label": true}]}` → `{"id", "labeled", "total"}`. Rows merge
+(relabeling overwrites). 400 on unknown ids or non-bool labels.
+
+`POST /api/drafts/{id}/validate` → `{"registered": true,
+"family", "agreement", "gate"}`. 422 until all 20 are labeled,
+and 422 with `{"registered": false, "agreement", "gate",
+"disagreements"}` below the gate.
+
+Draft routes that need the model (create, validate) return 409
+when busy and 503 without weights or in replay mode. Unknown
+draft ids are 404.
+
 ## GET /api/jobs
 
 `{"jobs": [status, ...]}` — every job on disk, oldest first.

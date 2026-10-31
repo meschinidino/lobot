@@ -518,6 +518,23 @@ class MetaApiJudge(Judge):
         raise MetaApiError("response had no output text")
 
 
+def family_cfg(trait_name: str) -> dict:
+    """Run config for a trait, from the store (C3 open families).
+
+    pos/neg/judge come from the registered family; baselines come
+    from the family when it has them (open families) else from
+    BASELINE_INSTRUCTIONS (legacy families). Legacy store parts
+    equal the spike parts, so legacy numbers cannot shift.
+    """
+    from model_lobotomy.trait_store import TraitStore
+    fam = TraitStore().get(trait_name)
+    if fam is None:
+        raise KeyError(f"no family {trait_name!r}")
+    bases = list(fam.baselines) or BASELINE_INSTRUCTIONS[trait_name]
+    return {"name": fam.name, "pos": fam.pos, "neg": fam.neg,
+            "judge": fam.judge, "baselines": list(bases)}
+
+
 def _vec_edit(layer, unit, med, dose):
     return engine_mod.VectorEdit(layer, tuple(unit.tolist()), float(med), float(dose))
 
@@ -826,7 +843,8 @@ def baseline_top1(eng, spec, cfg, label, tuning, final,
     _check(cancel)
     params = dict(SCHEDULES["full"]) if params is None else params
     max_new = params["gen_tokens"]
-    inss = list(BASELINE_INSTRUCTIONS[cfg["name"]])[:params["base_instructions"]]
+    inss = list(cfg.get("baselines") or
+                BASELINE_INSTRUCTIONS[cfg["name"]])[:params["base_instructions"]]
     tuning = list(tuning)[:params["base_tune_n"]]
     scored = []
     nmax = params["base_final_nmax"]
@@ -886,8 +904,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     timings: dict[str, float] = {}
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
-    cfg = dict(spike.BEHAVIORS[trait_name])
-    cfg["name"] = trait_name
+    cfg = family_cfg(trait_name)
     splits = E.make_splits(bank, seed)
     ext, tun, fin = splits.extraction, splits.tuning, splits.final
     _check(cancel)
