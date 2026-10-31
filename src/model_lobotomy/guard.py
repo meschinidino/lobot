@@ -376,6 +376,43 @@ class Guard:
         self._cache[key] = final
         return final
 
+    def check_confirmed(self, engine, edits, *, medians: dict,
+                        max_new_tokens: int, seed: int, judge_fn,
+                        cancel=None) -> GuardVerdict:
+        """Full generation on every enabled screen, no prefill shortcut.
+
+        For a patch that will be shared (registry): check_verified
+        returns a prefill flag at once when the guard is not enforced,
+        and GX found prefill false positives on style knobs (a styled
+        first token reads as weaker refusal while the reply still
+        refuses). This always confirms. It never blocks the call:
+        would_block carries the confirmed result.
+        """
+        enabled = screens_mod.enabled_screens()
+        screen_vs = []
+        full = None
+        if "refusal" in enabled:
+            full = self.check_full(engine, edits, medians=medians,
+                                   max_new_tokens=max_new_tokens,
+                                   seed=seed, judge_fn=judge_fn,
+                                   cancel=cancel)
+            screen_vs.append(self._refusal_entry(full))
+        for name in (s for s in enabled if s != "refusal"):
+            screen_vs.append((name, self.check_screen(
+                engine, edits, name, medians=medians,
+                max_new_tokens=max_new_tokens, seed=seed,
+                cancel=cancel)))
+        flag = any(v.blocked or v.would_block for _, v in screen_vs)
+        ratios = [v.min_ratio for _, v in screen_vs]
+        return GuardVerdict(
+            blocked=False, min_ratio=min(ratios) if ratios else 1.0,
+            worst_prompt=full.worst_prompt if full else None,
+            blocked_prompts=full.blocked_prompts if full else (),
+            natural=full.natural if full else (),
+            steered=full.steered if full else (),
+            cached=False, research_mode=False, would_block=flag,
+            full_generation=True, screens=tuple(screen_vs))
+
     @staticmethod
     def _refusal_entry(v: GuardVerdict):
         """The refusal screen entry mirroring a refusal verdict."""

@@ -10,6 +10,7 @@ Run:
     uv run python scripts/lobot_registry.py list REG
     uv run python scripts/lobot_registry.py install REG <name|sha> DEST
     uv run python scripts/lobot_registry.py audit
+    uv run python scripts/lobot_registry.py guard knob.lobot  # loads weights
     uv run python scripts/lobot_registry.py ci REG --quick   # loads weights
 
 ci re-runs every entry's shipped evidence on the current model build
@@ -32,6 +33,45 @@ from model_lobotomy import registry as reg  # noqa: E402
 
 def _print(obj) -> None:
     print(json.dumps(obj, indent=2, default=str), flush=True)
+
+
+def cmd_guard(args) -> int:
+    """Confirm a patch's guard with full generation; write a copy."""
+    from model_lobotomy import engine as engine_mod
+    from model_lobotomy import guard as guard_mod
+    from model_lobotomy import patch as patch_mod
+    loaded = patch_mod.load_patch(args.patch)
+    meta = loaded["meta"]
+    if meta.get("scale") is None:
+        print("patch has no scale; cannot rebuild its edit", flush=True)
+        return 2
+    eng = engine_mod.get_engine()
+    eng.load(meta["fingerprint"]["model_id"])
+    unit = tuple(loaded["direction"].detach().cpu().tolist())
+    edits = engine_mod.EditSet(vector=(engine_mod.VectorEdit(
+        int(meta["layer"]), unit, float(meta["scale"]),
+        float(meta["dose"])),))
+    v = guard_mod.Guard().check_confirmed(
+        eng, edits, medians={}, max_new_tokens=24,
+        seed=(meta.get("recipe") or {}).get("seed", 0),
+        judge_fn=guard_mod.refusal_judge_fn(eng))
+    record = {**guard_mod.verdict_dict(v), "enforced": False,
+              "research_mode": False, "confirmed": True}
+    out = Path(args.out or str(Path(args.patch).with_suffix(""))
+               + ".guarded.lobot")
+    patch_mod.save_patch(
+        out, direction=loaded["direction"], layer=int(meta["layer"]),
+        dose=float(meta["dose"]), trait=meta["trait"],
+        recipe=meta.get("recipe") or {},
+        report_card=meta.get("report_card") or {}, guard=record,
+        fingerprint=meta.get("fingerprint") or {},
+        scale=meta.get("scale"))
+    audit.record("guard", path=str(out), would_block=v.would_block,
+                 screens=sorted(n for n, _ in v.screens))
+    _print({"out": str(out), "would_block": v.would_block,
+            "flagged_by": sorted(n for n, sc in v.screens
+                                 if sc.blocked or sc.would_block)})
+    return 0
 
 
 def cmd_ci(args) -> int:
@@ -99,6 +139,9 @@ def main(argv=None) -> int:
     p = sub.add_parser("uninstall")
     p.add_argument("path")
     sub.add_parser("audit")
+    p = sub.add_parser("guard")
+    p.add_argument("patch")
+    p.add_argument("--out")
     p = sub.add_parser("ci")
     p.add_argument("registry")
     p.add_argument("--model")
@@ -136,6 +179,8 @@ def main(argv=None) -> int:
                                for p, a in h["active"].items()}})
         elif args.cmd == "ci":
             return cmd_ci(args)
+        elif args.cmd == "guard":
+            return cmd_guard(args)
     except (reg.RegistryError, ValueError) as e:
         print(f"FAIL: {e}", file=sys.stderr, flush=True)
         return 1

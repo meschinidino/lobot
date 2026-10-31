@@ -35,7 +35,7 @@ def _patch(path, *, guard=None, card=None, model="meta-llama/x"):
             "passed": True, "trait_mean": 0.6, "trait_ci": [0.5, 0.7]},
         guard=guard if guard is not None else {
             "blocked": False, "would_block": False,
-            "research_mode": False},
+            "research_mode": False, "verified": True},
         fingerprint={"model_id": model, "revision": "rev1"})
 
 
@@ -128,6 +128,21 @@ class RegistryTest(unittest.TestCase):
         with self.assertRaisesRegex(reg.RegistryError, "evidence"):
             reg.publish(self.reg, p, self.alice, audit_log=self.log)
 
+    def test_guard_must_be_confirmed(self):
+        cases = {
+            "prefill only": ({"would_block": True, "verified": False},
+                             "prefill signal only"),
+            "confirmed": ({"would_block": True, "verified": True,
+                           "screens": {"privacy": {"would_block": True}}},
+                          "privacy, confirmed"),
+            "clean unconfirmed": ({"would_block": False,
+                                   "verified": False}, "not confirmed"),
+        }
+        for name, (guard, msg) in cases.items():
+            p = _patch(self.t / f"{name}.lobot", guard=guard)
+            with self.assertRaisesRegex(reg.RegistryError, msg):
+                reg.publish(self.reg, p, self.alice, audit_log=self.log)
+
     def test_duplicate_publish_refused(self):
         self._publish()
         with self.assertRaisesRegex(reg.RegistryError, "already"):
@@ -200,6 +215,35 @@ def _cli():
     return mod
 
 
+class ConfirmedGuardTest(unittest.TestCase):
+    def test_skips_prefill_and_runs_every_screen(self):
+        from model_lobotomy import guard as guard_mod
+        from model_lobotomy import guard_screens as screens_mod
+        g = guard_mod.Guard()
+        full = guard_mod.GuardVerdict(blocked=False, min_ratio=0.9,
+                                      worst_prompt="w",
+                                      full_generation=True)
+        leak = screens_mod.ScreenVerdict(
+            blocked=True, would_block=True, min_ratio=0.0,
+            worst_prompt="p", blocked_prompts=("p",))
+        with mock.patch.object(g, "check") as pre, \
+                mock.patch.object(g, "check_full", return_value=full), \
+                mock.patch.object(g, "check_screen",
+                                  return_value=leak) as scr, \
+                mock.patch.object(screens_mod, "enabled_screens",
+                                  return_value=("refusal", "privacy")):
+            v = g.check_confirmed(object(), object(), medians={},
+                                  max_new_tokens=24, seed=0,
+                                  judge_fn=None)
+        pre.assert_not_called()
+        self.assertEqual(scr.call_count, 1)
+        self.assertTrue(v.would_block)
+        self.assertFalse(v.blocked)
+        self.assertTrue(v.full_generation)
+        self.assertEqual([n for n, _ in v.screens],
+                         ["refusal", "privacy"])
+
+
 class CliTest(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -240,6 +284,36 @@ class CliTest(unittest.TestCase):
         got = json.loads(out)
         self.assertTrue(got["chain"]["ok"])
         self.assertEqual(len(got["active"]), 1)
+
+    def test_guard_command_writes_confirmed_copy(self):
+        from model_lobotomy import engine as engine_mod
+        from model_lobotomy import guard as guard_mod
+        knob = _patch(self.t / "k.lobot", guard={
+            "blocked": False, "would_block": True, "verified": False})
+
+        class Eng:
+            def load(self, model_id):
+                return 1
+
+        clean = guard_mod.GuardVerdict(blocked=False, min_ratio=1.0,
+                                       worst_prompt=None,
+                                       full_generation=True)
+        with mock.patch.object(engine_mod, "get_engine",
+                               return_value=Eng()), \
+                mock.patch.object(guard_mod.Guard, "check_confirmed",
+                                  return_value=clean), \
+                mock.patch.object(guard_mod, "refusal_judge_fn",
+                                  return_value=None):
+            code, out = self._run("guard", str(knob))
+        self.assertEqual(code, 0, out)
+        new = Path(json.loads(out)["out"])
+        meta = patch_mod.load_patch(new)["meta"]
+        old = patch_mod.load_patch(knob)["meta"]
+        self.assertTrue(meta["guard"]["verified"])
+        self.assertTrue(meta["guard"]["confirmed"])
+        self.assertFalse(meta["guard"]["would_block"])
+        self.assertEqual(meta["evidence_sha256"], old["evidence_sha256"])
+        reg.check_publishable(meta)
 
     def test_ci_fails_when_evidence_breaks(self):
         key = reg.generate_key(self.t / "k")
