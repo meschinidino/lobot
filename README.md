@@ -107,6 +107,17 @@ Disk budget: about 15 GB (weights plus dependencies plus cache headroom).
 Compute: Apple Silicon with MPS is the tested path. A CPU fallback exists
 but runs slowly.
 
+GPU slots: one model job at a time by default (fits a 24 GB Mac). A
+second job (another server, a Create run, or the test suite) stops
+with the name of the job that holds the GPU. Change it per machine:
+
+| Setting | Effect |
+|---|---|
+| `LOBOT_GPU_SLOTS=1` | One model job at a time (default) |
+| `LOBOT_GPU_SLOTS=2` | Two jobs at once (for example 48 GB or more) |
+| `LOBOT_GPU_SLOTS=0` | No limit: you manage memory yourself |
+| `LOBOT_GPU_WAIT=1` | Wait for a free slot instead of stopping |
+
 ## More commands
 
 All commands run from the repo root.
