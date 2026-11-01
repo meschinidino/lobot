@@ -66,6 +66,7 @@ from starlette.responses import FileResponse, JSONResponse
 from model_lobotomy import app as engine
 from model_lobotomy import create_job
 from model_lobotomy import drafts as drafts_mod
+from model_lobotomy import followups as followups_mod
 from model_lobotomy import guard as guard_mod
 from model_lobotomy import guard_screens as guard_screens_mod
 from model_lobotomy import combine as combine_mod
@@ -107,6 +108,19 @@ def _get_runner() -> create_job.CreateRunner:
     if _runner is None:
         _runner = create_job.CreateRunner(engine=get_engine())
     return _runner
+
+
+_followups: followups_mod.FollowupRunner | None = None
+
+
+def _get_followups() -> followups_mod.FollowupRunner:
+    """Pareto and repair jobs for finished Creates (U4); Create's lane."""
+    global _followups
+    if _followups is None:
+        runner = _get_runner()
+        _followups = followups_mod.FollowupRunner(
+            runner._engine or get_engine(), lane_fn=runner._lane)
+    return _followups
 
 api = FastAPI(title="lobot", docs_url=None, redoc_url=None)
 
@@ -198,6 +212,8 @@ class CreateRequest(BaseModel):
     guard: bool = Field(default_factory=_guard_default)
     research_mode: bool = False
     schedule: Literal["fast", "full"] = "full"
+    # None: the PP stage runs on the full schedule and not on fast.
+    pareto: bool | None = None
 
 
 class DraftRequest(BaseModel):
@@ -514,7 +530,7 @@ def create(req: CreateRequest):
                               model_id=engine._active_model_id,
                               guard=req.guard,
                               research_mode=req.research_mode,
-                              schedule=req.schedule)
+                              schedule=req.schedule, pareto=req.pareto)
     except trait_store.UnsupportedTrait as e:
         raise HTTPException(422, str(e)) from None
     return {"job_id": job_id, **runner.status(job_id)}
@@ -567,6 +583,83 @@ def _card_summary(card: dict | None) -> dict | None:
             "trait_ci": list(card["trait_ci"])}
 
 
+def _read_json(path: Path):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def _repairs(trait_dir: Path) -> dict:
+    """Every repair record of a run, by method (gr-v1 is "project")."""
+    out = {}
+    for method in followups_mod.REPAIR_METHODS:
+        rec = _read_json(trait_dir / f"{followups_mod.repair_stem(method)}.json")
+        if rec is not None:
+            out[method] = rec
+    return out
+
+
+def _chosen_cell(rep: dict) -> dict | None:
+    """The tuning cell (layer, dose) that Create froze, with its scores."""
+    frozen, table = rep.get("frozen") or {}, (rep.get("tuning") or {}).get("table") or {}
+    if frozen.get("layer") is None or frozen.get("dose") is None:
+        return None
+    row = table.get(str(frozen["layer"])) or {}
+    for d, cell in row.items():
+        if abs(float(d) - float(frozen["dose"])) < 1e-9:
+            return {"layer": frozen["layer"], "dose": frozen["dose"], **cell}
+    return None
+
+
+def _point(pareto: dict | None, dose) -> dict | None:
+    if not pareto or dose is None:
+        return None
+    return next((p for p in pareto.get("points", [])
+                 if p.get("kind") == "vector"
+                 and abs(float(p.get("dose", -1)) - float(dose)) < 1e-9), None)
+
+
+def _screen_states(guard: dict | None) -> dict:
+    """Per-screen state key: blocked, would_block or passed."""
+    if not guard:
+        return {}
+    screens = guard.get("screens") or {"refusal": guard}
+    return {name: ("blocked" if v.get("blocked") else "would_block"
+                   if v.get("would_block") else "passed")
+            for name, v in screens.items()}
+
+
+def _enrich_report(trait_dir: Path, rep: dict) -> dict:
+    """report.json plus the follow-up results that live beside it (U4)."""
+    rep = dict(rep)
+    if not rep.get("pareto"):
+        rep["pareto"] = _read_json(trait_dir / "pareto.json")
+    rep["repair"] = _repairs(trait_dir) or None
+    tuning = dict(rep.get("tuning") or {})
+    tuning["chosen"] = _chosen_cell(rep)
+    rep["tuning"] = tuning
+    return rep
+
+
+def _evidence_summary(trait_dir: Path, rep: dict) -> dict:
+    """List-row summary of the evidence beyond the cards (U4)."""
+    rep = _enrich_report(trait_dir, rep)
+    pareto, chosen = rep.get("pareto"), rep["tuning"]["chosen"]
+    point = _point(pareto, (rep.get("frozen") or {}).get("dose"))
+    rule = (rep["tuning"].get("rule") or {}).get("name")
+    repairs = rep.get("repair") or {}
+    return {
+        "pareto_verdict": (pareto or {}).get("verdict"),
+        "dose_rule": rule,
+        "fluency": (point or {}).get("fluency",
+                                     (chosen or {}).get("fluency")),
+        "screens": _screen_states(rep.get("guard")),
+        "repair": ({m: r.get("status") for m, r in repairs.items()}
+                   or None),
+    }
+
+
 def _trait_items() -> list[dict]:
     """One list item per done job with a readable report, newest first.
 
@@ -614,6 +707,7 @@ def _trait_items() -> list[dict]:
                       if (trait_dir / "knob.lobot").is_file() else None),
             "delete_eligible": bool(frozen) and (
                 trait_dir / "direction.safetensors").is_file(),
+            "evidence": _evidence_summary(trait_dir, rep),
         })
     items.sort(key=lambda t: (t["created"] or 0, t["id"]))
     seen: dict = {}
@@ -911,11 +1005,93 @@ def traits(model_id: str | None = None):
 
 @api.get("/api/traits/{job_id}/report")
 def trait_report(job_id: str):
-    """One trait's report.json as is (E1)."""
-    path = _trait_job_dir(job_id) / "trait" / "report.json"
+    """One trait's report.json, plus pareto, repair and tuning.chosen (U4)."""
+    trait_dir = _trait_job_dir(job_id) / "trait"
+    path = trait_dir / "report.json"
     if not path.is_file():
         raise HTTPException(404, f"Unknown trait {job_id}.")
-    return json.loads(path.read_text())
+    rep = _enrich_report(trait_dir, json.loads(path.read_text()))
+    fu = _get_followups()
+    rep["followups"] = {k: fu.status(job_id, k, trait_dir)
+                        for k in followups_mod.KINDS}
+    return rep
+
+
+class FollowupRequest(BaseModel):
+    method: Literal["gradient", "project"] = "gradient"
+
+
+def _followup_start(job_id: str, kind: str, opts: dict) -> dict:
+    trait_dir = _trait_job_dir(job_id) / "trait"
+    if NO_MODEL or REPLAY:
+        raise HTTPException(503, f"{kind.capitalize()} needs model weights. "
+                                 "This server runs without them "
+                                 "(replay or no-model mode).")
+    runner = _get_runner()
+    if any(j.get("status") in ("queued", "running")
+           for j in runner.list_jobs()):
+        raise HTTPException(409, "A Create job is running. "
+                                 "Wait for it to finish.")
+    job = _read_json(_trait_job_dir(job_id) / "job.json") or {}
+    try:
+        return _get_followups().start(
+            job_id, kind, trait_dir, job.get("model_id"),
+            job.get("revision"), **opts)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from None
+
+
+def _followup_status(job_id: str, kind: str) -> dict:
+    trait_dir = _trait_job_dir(job_id) / "trait"
+    st = _get_followups().status(job_id, kind, trait_dir)
+    rep_path = trait_dir / "report.json"
+    rep = _read_json(rep_path) if rep_path.is_file() else {}
+    if kind == "pareto":
+        result = rep.get("pareto") or _read_json(trait_dir / "pareto.json")
+    else:
+        result = _repairs(trait_dir) or None
+    return {"status": st, "result": result}
+
+
+@api.post("/api/traits/{job_id}/pareto")
+def trait_pareto_start(job_id: str):
+    """Run the PP stage for a finished Create (background job)."""
+    return _followup_start(job_id, "pareto", {})
+
+
+@api.get("/api/traits/{job_id}/pareto")
+def trait_pareto(job_id: str):
+    return _followup_status(job_id, "pareto")
+
+
+@api.post("/api/traits/{job_id}/repair")
+def trait_repair_start(job_id: str, req: FollowupRequest | None = None):
+    """Run GR guard repair for a finished Create (background job)."""
+    return _followup_start(job_id, "repair",
+                           {"method": (req or FollowupRequest()).method})
+
+
+@api.get("/api/traits/{job_id}/repair")
+def trait_repair(job_id: str):
+    return _followup_status(job_id, "repair")
+
+
+@api.post("/api/traits/{job_id}/{kind}/stop")
+def trait_followup_stop(job_id: str, kind: Literal["pareto", "repair"]):
+    trait_dir = _trait_job_dir(job_id) / "trait"
+    return {"status": _get_followups().stop(job_id, kind, trait_dir)}
+
+
+@api.get("/api/traits/{job_id}/repaired/{method}")
+def trait_repaired_patch(job_id: str, method: Literal["gradient", "project"]):
+    """The repaired patch, when a repair chose a candidate."""
+    path = _trait_job_dir(job_id) / "trait" / f"knob.repaired-{method}.lobot"
+    if not path.is_file():
+        raise HTTPException(404, f"No repaired patch for {job_id}.")
+    return FileResponse(path, media_type="application/zip",
+                        filename=f"{job_id}-repaired-{method}.lobot")
 
 
 @api.get("/api/traits/{job_id}/report.md")

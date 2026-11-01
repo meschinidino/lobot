@@ -86,7 +86,7 @@ class SchedulePlumbingTest(unittest.TestCase):
 
         def fn(eng, spec, trait, bank, seed, workdir, model_id,
                revision, cancel=None, progress=None, guard=False,
-               research_mode=False, schedule="full"):
+               research_mode=False, schedule="full", pareto=False):
             seen["schedule"] = schedule
             return {"verdict": "knob", "frozen": {}, "eligibility": {},
                     "guard": {}}
@@ -104,7 +104,7 @@ class SchedulePlumbingTest(unittest.TestCase):
 
         def fn(eng, spec, trait, bank, seed, workdir, model_id,
                revision, cancel=None, progress=None, guard=False,
-               research_mode=False, schedule="full"):
+               research_mode=False, schedule="full", pareto=False):
             seen["schedule"] = schedule
             return {"verdict": "knob", "frozen": {}, "eligibility": {},
                     "guard": {}}
@@ -127,7 +127,7 @@ class SchedulePlumbingTest(unittest.TestCase):
     def test_api_defaults_full_rejects_bogus(self):
         def fn(eng, spec, trait, bank, seed, workdir, model_id,
                revision, cancel=None, progress=None, guard=False,
-               research_mode=False, schedule="full"):
+               research_mode=False, schedule="full", pareto=False):
             return {"verdict": "knob", "frozen": {}, "eligibility": {},
                     "guard": {}}
 

@@ -1,7 +1,8 @@
 """Create job: staged trait runs with Stop, status and reattach.
 
 One job runs trait_eval.run_trait in a thread through the stages
-extract -> tune -> read_gate -> final -> baseline -> verdict. Jobs
+extract -> tune -> read_gate -> final -> baseline -> pareto -> guard
+-> verdict (pareto only when the job asks for it). Jobs
 serialize on the engine lock (one model in memory); a second job
 stays queued until the first releases it. Stop sets the cancel event;
 run_trait raises Stopped at generation granularity.
@@ -29,7 +30,8 @@ from model_lobotomy import prompt_bank  # noqa: E402
 from model_lobotomy import trait_eval  # noqa: E402
 from model_lobotomy.trait_store import TraitStore, UnsupportedTrait  # noqa: E402
 
-STAGES = ("extract", "tune", "read_gate", "final", "baseline", "verdict")
+STAGES = ("extract", "tune", "read_gate", "final", "baseline", "pareto",
+          "guard", "verdict")
 
 DEFAULT_JOBS_DIR = ROOT / "jobs"
 
@@ -44,6 +46,7 @@ class _Job:
     research_mode: bool
     guard_opt_in: bool = False
     schedule: str = "full"
+    pareto: bool = False
     status: str = "queued"
     stage: str = STAGES[0]
     done: int = 0
@@ -65,6 +68,7 @@ class _Job:
             "model_id": self.model_id, "revision": self.revision,
             "research_mode": self.research_mode,
             "guard_opt_in": self.guard_opt_in, "schedule": self.schedule,
+            "pareto": self.pareto,
             "status": self.status,
             "stage": self.stage,
             "progress": {"stage": self.stage, "done": self.done,
@@ -127,7 +131,8 @@ class CreateRunner:
     def start(self, trait: str, *, seed: int = 0, model_id: str,
               revision: str | None = None, guard: bool = False,
               research_mode: bool = False,
-              schedule: str = "full") -> str:
+              schedule: str = "full", pareto: bool | None = None) -> str:
+        """Start a Create job. pareto None: on for full, off for fast."""
         if schedule not in trait_eval.SCHEDULES:
             raise ValueError(
                 f"unknown schedule {schedule!r}; have "
@@ -144,7 +149,9 @@ class CreateRunner:
         job = _Job(id=job_id, trait=fam.name, seed=seed,
                    model_id=model_id, revision=revision,
                    research_mode=research_mode, guard_opt_in=guard,
-                   schedule=schedule)
+                   schedule=schedule,
+                   pareto=(schedule == "full") if pareto is None
+                   else bool(pareto))
         with self._mu:
             if job_id in self._jobs:
                 raise ValueError(f"job {job_id} already exists")
@@ -230,6 +237,8 @@ class CreateRunner:
                 lane = self._lane(eng, job.model_id, job.revision)
                 if lane is not None:
                     extra["lane"] = lane
+                if job.pareto:
+                    extra["pareto"] = True
                 out = self._run_trait(
                     eng, eng.spec, job.trait, prompt_bank.PROMPT_BANK,
                     job.seed, self.jobs_dir / job_id / "trait",
