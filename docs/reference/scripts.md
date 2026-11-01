@@ -8,7 +8,9 @@ a model: take the model lane first (see [AGENTS.md](../../AGENTS.md)).
 
 | Script | Weights | What it does |
 |---|---|---|
-| `run_trait.py` | yes | One trait end to end (`--schedule`, `--lane torch|llama`) |
+| `run_trait.py` | yes | One trait end to end (`--schedule`, `--lane torch|llama`, `--pareto`) |
+| `pareto.py` | yes | Effect vs side effects per dose, next to the prompt baseline, for a finished run (writes `pareto.json`) |
+| `repair_patch.py` | yes | Repair a patch the confirmed guard flags (`--method gradient` or `project`; writes `repair_<method>.json`, `knob.repaired-<method>.lobot`) |
 | `agent_create.py` | yes | The Create agent: words in, tested patch out (needs `META_API_KEY`) |
 | `transfer_trait.py` | yes | Carry a finished trait to another model |
 | `install_patch.py` | no | Install a `.lobot` patch into llama.cpp or Ollama |

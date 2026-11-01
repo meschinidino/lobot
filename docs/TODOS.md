@@ -34,6 +34,12 @@ Deferred work, each with its reason. The ordered plan is in
   of 3 controls" is noisy. A rule on the control mean and spread needs more
   controls (each costs about 40 generations).
 
+### Dose rule without the NLL check (FD finding, 2026-11-01)
+- Planned as JS ([specs/JS-judged-scores.md](roadmap/specs/JS-judged-scores.md)).
+
+### GR v3 on a fresh guard set (2026-11-01)
+- Planned as GH ([specs/GH-guard-holdout-repair-v3.md](roadmap/specs/GH-guard-holdout-repair-v3.md)).
+
 ### Make the model choice persistent and default to Llama (2026-10-30)
 - The hero model is Llama 3.2 3B, but `steer.MODEL_ID` (Qwen) is still the
   startup default. Remember the last model picked, and start on Llama when

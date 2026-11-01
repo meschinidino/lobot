@@ -24,7 +24,9 @@ coding agents. Human docs start at [README.md](README.md).
 | `native/lobot-llamad/` | C++ daemon: stdio JSON lines, cvec steering, prefix cache, batch ops |
 | `src/model_lobotomy/server.py` | FastAPI app (`127.0.0.1:7860`); every route is in [docs/reference/api.md](docs/reference/api.md) |
 | `src/model_lobotomy/trait_eval.py` | Create pipeline: tune, read gate, verbs, baseline, report cards, lanes |
+| `src/model_lobotomy/pareto.py` | PP: effect vs side effects per dose, next to the prompt baseline |
 | `src/model_lobotomy/guard.py`, `guard_screens.py` | Guard: refusal, honesty, privacy, harmful screens |
+| `src/model_lobotomy/repair.py` | GR: safety directions and the repair search for flagged patches |
 | `src/model_lobotomy/drafts.py`, `muse.py`, `agent.py` | Open descriptions, Muse Spark helpers, the Create agent |
 | `src/model_lobotomy/patch.py`, `registry.py`, `audit.py`, `reverify.py`, `transfer.py` | Patches, signed registry, audit log, re-verify, cross-model transfer |
 | `src/model_lobotomy/gpu_lock.py` | GPU slots across processes |
