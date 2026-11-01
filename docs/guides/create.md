@@ -31,7 +31,10 @@ From the app (Create page), the API (`POST /api/create`), or the CLI:
 uv run python scripts/run_trait.py --trait talks-like-an-old-west-cowboy --lane llama
 ```
 
-Create picks a layer and dose on tuning prompts, then measures every verb
+Create picks a layer and dose on tuning prompts. A dose qualifies only
+when the reply NLL rises by at most 1.0 and the judge scores the replies
+as fluent (mean at least 0.5). Of those, the dose with the highest trait
+score wins. Then Create measures every verb
 on held-out prompts: read (can the model's activations spot the behavior?),
 turn up, turn down, remove. It also compares against a plain prompt
 baseline and runs the guard.

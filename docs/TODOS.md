@@ -34,13 +34,12 @@ Deferred work, each with its reason. The ordered plan is in
   of 3 controls" is noisy. A rule on the control mean and spread needs more
   controls (each costs about 40 generations).
 
-### Fluency-aware dose choice in Create (PP finding, 2026-11-01)
-- Create froze pirate at dose 1.5, where fluency is 0.017 and the text
-  is "ol' ol' ol' ...". The trait judge still scores it high, and the
-  tuning NLL check did not stop it.
-- Fix: score fluency (and relevance) during tuning, and pick the dose
-  with the best trait gain among doses that keep fluency near the base.
-  The PP labels are already validated.
+### Dose rule without the NLL check (FD finding, 2026-11-01)
+- FD added a fluency floor to Create's dose choice (reports/FD.md).
+  Pirate now passes with fluent text. But the NLL check rejects every
+  dose 1.0 cell for cowboy, though those replies are fluent (0.75-0.85).
+- Fix: a rule on fluency (and maybe relevance) without the NLL rise.
+  Write the rule in a spec before it runs; the FD tables are seen.
 
 ### GR v3 on a fresh guard set (2026-11-01)
 - Gradient repair cut pirate refusal flips 7 -> 1 with the trait kept,

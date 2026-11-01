@@ -106,4 +106,5 @@ minus the prompt: trait −0.151 [−0.250, −0.064], cost +0.115
   Some of that is the style itself, not lost content.
 - Create still picks its dose from trait gain and NLL on tuning. The
   pirate result shows that this lets a degenerate dose through. Adding
-  the fluency score to the dose choice is open (see TODOS).
+  the fluency score to the dose choice is done in FD
+  ([FD.md](FD.md)): pirate now freezes at a fluent dose.
