@@ -249,6 +249,35 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .ev.pt tr.front td:first-child { font-weight: 700; }
 .ruled.screens { max-width: 1000px; margin-top: 12px; }
 .ruled.screens > li b { font: 700 16px var(--body); }
+/* 100x: dose explorer, tuning grid, library, explanation */
+.ex { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; margin-top: 16px; max-width: 1100px; align-items: start; }
+.exdial svg { width: 200px; height: 200px; display: block; touch-action: none; cursor: grab; }
+.exdial svg:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+.exdial .dl { font: 11px var(--mono); fill: var(--ink-muted); }
+.exread { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.exbig { font: 800 clamp(56px, 7vw, 88px)/.85 var(--display); font-stretch: 75%; letter-spacing: -0.02em; font-feature-settings: "tnum"; }
+.exnums { margin: 8px 0 0; font-size: 14px; }
+.exq { font: 400 18px/1.4 var(--body); margin: 16px 0 0; }
+.fork { margin-top: 8px; border-left: 2px solid var(--ink); }
+.fork .br { padding: 12px 0 12px 16px; border-bottom: 1px solid var(--grid); }
+.fork .bl { font-size: 13px; color: var(--ink-muted); }
+.fork .bt { font: 400 18px/1.45 var(--body); margin: 4px 0 0; max-width: 70ch; overflow-wrap: anywhere; }
+mark.cut { background: var(--cut); color: var(--on-cut); font-weight: 700; padding: 0 2px; }
+mark.ink { background: transparent; color: inherit; font-weight: 700; text-decoration: underline 3px var(--ink); text-underline-offset: 4px; }
+.tgrid td { min-width: 120px; font-size: 13px; line-height: 1.6; }
+.tgrid th[scope="row"] { font: 700 13px var(--mono); white-space: nowrap; padding-right: 16px; border-bottom: 1px solid var(--grid); vertical-align: top; padding-top: 12px; }
+.tgrid td.chosen { outline: 3px solid var(--ink); outline-offset: -3px; padding-left: 8px; }
+.tgrid td.rej { color: var(--ink-muted); }
+.explain { max-width: 70ch; font: 400 18px/1.5 var(--body); }
+.library > li { align-items: start; }
+.library .lib { display: grid; gap: 12px; }
+.library b.name { font: 800 28px/1 var(--display); font-stretch: 75%; }
+.vbs { display: flex; gap: 16px; flex-wrap: wrap; }
+.vb { display: inline-flex; gap: 8px; align-items: center; font: 700 14px var(--body); }
+.vb .stroke { display: inline-block; }
+.kv2.tight { margin-top: 0; }
+.shelf h2 > span { display: inline-flex; gap: 8px; }
+@media (max-width: 720px) { .ex { grid-template-columns: minmax(0, 1fr); } .exdial { justify-self: center; text-align: center; } }
 .kv2 { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 24px; margin-top: 16px; max-width: 900px; font-size: 14px; }
 .kv2 > :nth-child(odd) { color: var(--ink-muted); }
 .kv2 > :nth-child(even) { overflow-wrap: anywhere; }
@@ -269,7 +298,7 @@ dialog h2 { font: 800 28px/1 var(--display); font-stretch: 75%; margin: 0 0 12px
       <div class="head"><span class="wordmark">lobot</span><button class="btn btn-sm" id="collapse" type="button" aria-label="Collapse the shelf">◂</button></div>
       <h2>Models</h2>
       <div id="models"></div>
-      <h2>Behaviors <button class="btn btn-sm" id="newBeh" type="button">+ New</button></h2>
+      <h2>Behaviors <span><button class="btn btn-sm" id="libBtn" type="button">Library</button> <button class="btn btn-sm" id="newBeh" type="button">+ New</button></span></h2>
       <div id="behaviors"></div>
       <h2>Neurons</h2>
       <form id="findForm" role="search" style="display:flex;gap:8px;align-items:end"><label style="flex:1;min-width:0"><span class="meta">Find neurons that push…</span><input class="num" id="findIn" type="text" spellcheck="false" placeholder="a word, e.g. pirate" style="font-family:var(--body)"></label><button class="btn btn-sm" type="submit">Find</button></form>
@@ -478,6 +507,7 @@ $("behaviors").addEventListener("click", (e) => {
   else if (t.closest("[data-new]")) openPage({ kind: "new" });
 });
 $("newBeh").addEventListener("click", () => openPage({ kind: "new" }));
+$("libBtn").addEventListener("click", () => openPage({ kind: "library" }));
 $("models").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-model]"); if (!b || b.getAttribute("aria-disabled") === "true" || b.dataset.model === S.model) return;
   b.querySelector(".meta").textContent = "switching";
@@ -1079,15 +1109,15 @@ function placeLabels(items, w) {
     return { ...it, lx: best.x, ly: best.y };
   });
 }
-function paretoChart(P, chosen) {
+function paretoChart(P, chosen, sel = chosen) {
   const W = 640, H = 300, cp = chartPoints(P, W, H), vec = cp.filter((q) => q.kind === "vector").sort((a, b) => a.dose - b.dose);
   const mark = (q) => { const f = q.front ? "currentColor" : "var(--sheet)";
     if (q.kind === "vector") return `<circle cx="${q.x}" cy="${q.y}" r="6" fill="${f}" stroke="currentColor" stroke-width="2"/>`;
     if (q.kind === "prompt") return `<rect x="${q.x - 6}" y="${q.y - 6}" width="12" height="12" fill="${f}" stroke="currentColor" stroke-width="2"/>`;
     return `<path d="M${q.x} ${q.y - 8}L${q.x + 8} ${q.y}L${q.x} ${q.y + 8}L${q.x - 8} ${q.y}Z" fill="${f}" stroke="currentColor" stroke-width="2"/>`; };
   const col = (q) => (q.kind === "vector" ? "var(--pen)" : q.kind === "prompt" ? "var(--pen-4)" : "var(--pen-3)");
-  const lab = (q) => (q.kind === "vector" ? fd(q.dose) : q.name === "prompt:label" ? "label prompt" : q.name === "prompt" ? "drafted prompt" : "prompt + patch");
-  const ch = cp.find((q) => q.kind === "vector" && chosen != null && Math.abs(q.dose - chosen) < 1e-9), sc = chartScale(P, W, H);
+  const lab = (q) => (q.kind === "vector" ? fd(q.dose) + (chosen != null && Math.abs(q.dose - chosen) < 1e-9 ? " chosen" : "") : q.name === "prompt:label" ? "label prompt" : q.name === "prompt" ? "drafted prompt" : "prompt + patch");
+  const ch = cp.find((q) => q.kind === "vector" && sel != null && Math.abs(q.dose - sel) < 1e-9), sc = chartScale(P, W, H);
   const labs = placeLabels([...cp].sort((a, b) => a.y - b.y || a.x - b.x).map((q) => ({ x: q.x, y: q.y, text: lab(q), color: col(q) })), W);
   const yt = [0, 0.5, 1].filter((t) => t >= sc.lo && t <= sc.hi);
   return `<svg class="pchart" viewBox="0 0 ${W} ${H}" aria-hidden="true">
@@ -1100,7 +1130,7 @@ function paretoChart(P, chosen) {
     ${cp.map((q) => `<g style="color:${col(q)}">${mark(q)}</g>`).join("")}
     ${labs.map((l) => { const moved = Math.abs(l.ly - (l.y - 4)) > 1, left = l.lx < l.x, ax = left ? l.lx + l.text.length * 7.3 + 2 : l.lx - 2;
       return `${moved ? `<line x1="${l.x}" y1="${l.y}" x2="${ax}" y2="${l.ly - 4}" stroke="${l.color}" stroke-width="1"/>` : ""}<text x="${l.lx}" y="${l.ly}" class="ax" style="fill:${l.color}">${esc(l.text)}</text>`; }).join("")}
-    ${ch ? `<circle cx="${ch.x}" cy="${ch.y}" r="12" fill="none" stroke="var(--cut)" stroke-width="3"/>` : ""}
+    ${ch ? `<circle cx="${ch.x}" cy="${ch.y}" r="12" fill="none" stroke="var(--ink)" stroke-width="3"/>` : ""}
   </svg>`;
 }
 const followupKey = (st) => (!st ? null : st.status === "running" || st.status === "queued" ? ["info", st.status === "queued" ? "QUEUED" : `RUNNING ${st.done || 0}/${st.total || "?"}`] : st.status === "failed" ? ["err", "FAILED"] : st.status === "stopped" ? ["warn", "STOPPED"] : null);
@@ -1121,7 +1151,7 @@ function compareSection(R, id, fam) {
   const lp = (P.points || []).find((q) => q.name === "prompt:label");
   const rows = (P.points || []).map((q) => `<tr${(P.front || []).includes(q.name) ? ' class="front"' : ""}><td>${esc(pointName(q))}${(P.front || []).includes(q.name) ? ' <span class="meta">front</span>' : ""}</td><td class="mono">${num(q.trait)}</td><td class="mono">${q.cost.toFixed(2)}</td><td class="mono">${q.relevance.toFixed(2)}</td><td class="mono">${q.fluency.toFixed(2)}</td></tr>`).join("");
   return `${head}<p class="verdict"><span class="state ${kind}">${key}</span> ${esc(paretoSentence(P))}</p>
-    <figure class="pfig">${paretoChart(P, R.frozen?.dose)}<figcaption class="meta">Circles: the patch at each dose, joined in dose order. Squares: plain prompts. Diamond: prompt and patch together. Filled marks are on the front (nothing beats them on both). The ring is the dose Create chose. ${P.n} held-out questions, judge “${esc(P.labels?.trait || fam?.judge || "")}”.</figcaption></figure>
+    <figure class="pfig"><div id="pchartBox">${paretoChart(P, R.frozen?.dose, EXS[id]?.d ?? R.frozen?.dose)}</div><figcaption class="meta">Circles: the patch at each dose, joined in dose order. Squares: plain prompts. Diamond: prompt and patch together. Filled marks are on the front (nothing beats them on both). The ring follows the dial; "chosen" marks the dose Create picked. ${P.n} held-out questions, judge “${esc(P.labels?.trait || fam?.judge || "")}”.</figcaption></figure>
     <div class="evwrap"><table class="ev pt"><caption class="meta">Effect is the trait gain over the unedited reply (base trait ${P.base.trait.toFixed(2)}). Cost is the mean drop in relevance and fluency (base ${P.base.relevance.toFixed(2)} and ${P.base.fluency.toFixed(2)}).</caption><thead><tr><th scope="col">Point</th><th scope="col">Effect</th><th scope="col">Cost</th><th scope="col">Relevance</th><th scope="col">Fluency</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="kv2">${drafted}${lp ? `<span>Label prompt</span><span>“${esc(lp.instruction || "")}”</span>` : ""}</div>`;
 }
@@ -1147,6 +1177,142 @@ function guardSection(R) {
   const rows = Object.entries(screens).map(([n, v]) => `<li><div><b>${SCREEN[n] || esc(n)}</b><br><span class="meta">${screenMeasure(n, v)}${v.display_prompt && (v.blocked || v.would_block) ? ` · worst: ${esc(v.display_prompt)}` : ""}</span></div>
     <span class="state ${v.blocked ? "err" : v.would_block ? "warn" : "ok"}">${v.blocked ? "BLOCKED" : v.would_block ? "WOULD BLOCK" : "PASSED"}</span></li>`).join("");
   return `<h2 class="sec">Guard</h2><p class="meta">${g.verified ? "Confirmed by full generation." : "First-token check only; publishing needs a full-generation check."}${g.enforced ? " Enforced in this Create." : " Recorded, not enforced, in this Create."}${g.research_mode ? " Research mode." : ""}</p><ol class="ruled screens">${rows}</ol>`;
+}
+/* ---------- 100x: evidence you can turn ---------- */
+// Turn the dose: a printed dial with one detent per recorded dose. It shows recorded replies only; it never generates.
+const EXS = {}; // per job: { d: selected dose, qi: question index }
+const exDoses = (P) => [0, ...(P.points || []).filter((q) => q.kind === "vector").map((q) => q.dose).sort((a, b) => a - b)];
+const exQuestions = (P) => (Object.values(P.samples || {})[0] || []).map((x) => x.q);
+const sampleFor = (P, name, q) => (P.samples?.[name] || []).find((x) => x.q === q)?.reply ?? null;
+function baseFor(R, q) {
+  for (const v of ["update_up", "update_down", "delete"]) { const p = (R.final?.[v]?.pairs || []).find((x) => x.q === q); if (p && p.base) return p.base; }
+  return null;
+}
+// Index of the first word where text leaves base (null when they match to the end).
+function splitWord(base, text) {
+  const A = String(base).trim().split(/\s+/), B = String(text).trim().split(/\s+/);
+  let i = 0; while (i < A.length && i < B.length && A[i] === B[i]) i++;
+  return i < B.length ? i : null;
+}
+function markSplit(text, base, cls) {
+  const i = base == null ? null : splitWord(base, text); let w = -1;
+  return String(text).trim().split(/(\s+)/).map((t) => { if (!t || /^\s+$/.test(t)) return esc(t); w++; return w === i ? `<mark class="${cls}">${esc(t)}</mark>` : esc(t); }).join("");
+}
+function exState(R, id) {
+  const P = R.pareto, ds = exDoses(P);
+  if (!EXS[id]) EXS[id] = { d: ds.find((d) => Math.abs(d - (R.frozen?.dose ?? -1)) < 1e-9) ?? ds[1] ?? 0, qi: 0 };
+  return EXS[id];
+}
+const DIAL = { C: 100, R: 80, A0: -135, A1: 135 };
+const dialAngle = (i, n) => DIAL.A0 + (DIAL.A1 - DIAL.A0) * (n > 1 ? i / (n - 1) : 0.5);
+function exDial(ds, d) {
+  const { C, R } = DIAL, pt = (a, r) => [C + r * Math.sin(a * Math.PI / 180), C - r * Math.cos(a * Math.PI / 180)];
+  const ticks = ds.map((x, i) => { const a = dialAngle(i, ds.length), [x1, y1] = pt(a, R - 2), [x2, y2] = pt(a, R - (x === 0 ? 20 : 13)), [tx, ty] = pt(a, R + 16);
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--ink)" stroke-width="${x === 0 ? 4 : 2.5}"/><text x="${tx}" y="${ty + 4}" text-anchor="middle" class="dl">${x === 0 ? "0" : fd(x)}</text>`; }).join("");
+  const i = Math.max(0, ds.findIndex((x) => Math.abs(x - d) < 1e-9));
+  return `<svg id="exDial" viewBox="-14 -14 228 228" role="slider" tabindex="0" aria-label="Dose to show" aria-valuemin="${ds[0]}" aria-valuemax="${ds[ds.length - 1]}" aria-valuenow="${d}" aria-valuetext="${d === 0 ? "no edit" : `dose ${fd(d)}`}">
+    <circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="var(--ink)" stroke-width="2"/>${ticks}
+    <circle cx="${C}" cy="${C}" r="50" fill="var(--sheet)" stroke="var(--ink)" stroke-width="2"/>
+    <rect class="ptr" x="${C - 4}" y="${C - 48}" width="8" height="30" fill="var(--ink)" transform="rotate(${dialAngle(i, ds.length)} ${C} ${C})"/></svg>`;
+}
+function exOut(R, id) {
+  const P = R.pareto, st = exState(R, id), qs = exQuestions(P), q = qs[st.qi] ?? qs[0], d = st.d, pt = d === 0 ? null : vecPoint(P, d), chosen = R.frozen?.dose;
+  const [k, key] = d === 0 ? ["info", "NO EDIT"] : !pt ? ["info", "NOT RECORDED"] : pt.fluency < 0.5 ? ["warn", "NOT FLUENT"] : chosen != null && Math.abs(d - chosen) < 1e-9 ? ["ok", "CREATE'S DOSE"] : ["info", "TESTED DOSE"];
+  const nums = d === 0 ? `effect ${num(0)} · cost 0.00 · relevance ${P.base.relevance.toFixed(2)} · fluency ${P.base.fluency.toFixed(2)}`
+    : pt ? `effect ${num(pt.trait)} · cost ${pt.cost.toFixed(2)} · relevance ${pt.relevance.toFixed(2)} · fluency ${pt.fluency.toFixed(2)}` : "not recorded";
+  const base = q != null ? baseFor(R, q) : null, patch = d === 0 || !pt ? null : sampleFor(P, pt.name, q);
+  const pn = P.verdict_prompt || "prompt:label", pr = q != null ? sampleFor(P, pn, q) : null, prPoint = (P.points || []).find((x) => x.name === pn);
+  const branch = (label, text, html, note) => `<div class="br"><div class="bl mono">${label}${note ? ` <span class="meta">${note}</span>` : ""}</div><p class="bt">${text == null ? `<span class="meta">not recorded for this question</span>` : html}</p></div>`;
+  return `<div class="exread"><span class="exbig">${d === 0 ? "±0.00" : fd(d)}</span><div><span class="state ${k}">${key}</span><p class="mono exnums">${nums}</p>
+      ${d !== 0 && pt && pt.fluency < 0.5 ? `<p class="meta">The judge scores this text as not fluent. A trait score here can come from broken words.</p>` : ""}</div></div>
+    ${qs.length > 1 ? `<div class="row2" role="group" aria-label="Question">${qs.map((x, i) => `<button class="btn btn-sm" type="button" data-exq="${i}" aria-pressed="${i === st.qi}">Question ${i + 1}</button>`).join("")}</div>` : ""}
+    <p class="exq">“${esc(q ?? "")}”</p>
+    <div class="fork">
+      ${branch("no edit", base, esc(base ?? ""), "")}
+      ${d === 0 ? "" : branch(`patch ${fd(d)}`, patch, patch == null ? "" : markSplit(patch, base, "cut"), "first changed word in pink")}
+      ${branch(prPoint ? pointName(prPoint) : "plain prompt", pr, pr == null ? "" : markSplit(pr, base, "ink"), prPoint ? `effect ${num(prPoint.trait)} · cost ${prPoint.cost.toFixed(2)}` : "")}
+    </div>
+    <p class="meta">Recorded replies from the prompt comparison: ${P.n} held-out questions were scored; ${qs.length} are kept as samples. Greedy decoding, same seed.</p>`;
+}
+function setExDose(id, d) {
+  const R = reports[id]; if (!R?.pareto) return;
+  const ds = exDoses(R.pareto), st = exState(R, id); st.d = d;
+  const svg = $("exDial"), i = Math.max(0, ds.findIndex((x) => Math.abs(x - d) < 1e-9));
+  if (svg) { const ptr = svg.querySelector(".ptr"); ptr.style.transition = reduce ? "none" : "transform 160ms cubic-bezier(.65,0,.35,1)"; ptr.setAttribute("transform", `rotate(${dialAngle(i, ds.length)} ${DIAL.C} ${DIAL.C})`);
+    svg.setAttribute("aria-valuenow", d); svg.setAttribute("aria-valuetext", d === 0 ? "no edit" : `dose ${fd(d)}`); }
+  if ($("exOut")) $("exOut").innerHTML = exOut(R, id);
+  if ($("pchartBox")) $("pchartBox").innerHTML = paretoChart(R.pareto, R.frozen?.dose, d);
+}
+function wireExplorer(id) {
+  const svg = $("exDial"), R = reports[id]; if (!svg || !R?.pareto) return;
+  const ds = exDoses(R.pareto), idx = () => Math.max(0, ds.findIndex((x) => Math.abs(x - exState(R, id).d) < 1e-9));
+  const fromPtr = (ev) => { const b = svg.getBoundingClientRect(); let a = Math.atan2(ev.clientX - (b.left + b.width / 2), -(ev.clientY - (b.top + b.height / 2))) * 180 / Math.PI;
+    a = Math.max(DIAL.A0, Math.min(DIAL.A1, a)); const i = Math.round((a - DIAL.A0) / (DIAL.A1 - DIAL.A0) * (ds.length - 1)); if (ds[i] !== exState(R, id).d) setExDose(id, ds[i]); };
+  let drag = false;
+  svg.addEventListener("pointerdown", (e) => { drag = true; svg.setPointerCapture(e.pointerId); fromPtr(e); });
+  svg.addEventListener("pointermove", (e) => { if (drag) fromPtr(e); });
+  svg.addEventListener("pointerup", () => (drag = false));
+  svg.addEventListener("keydown", (e) => {
+    const i = idx(), j = { ArrowRight: i + 1, ArrowUp: i + 1, ArrowLeft: i - 1, ArrowDown: i - 1, Home: 0, End: ds.length - 1 }[e.key];
+    if (j == null) return; e.preventDefault(); setExDose(id, ds[Math.max(0, Math.min(ds.length - 1, j))]);
+  });
+}
+function explorerSection(R, id) {
+  const P = R.pareto; if (!P || !P.samples) return "";
+  const st = exState(R, id), ds = exDoses(P);
+  return `<h2 class="sec">Turn the dose</h2><p class="lead">Each detent is a dose that was measured. Turn the dial to read the recorded replies at that dose, next to the reply with no edit and the reply to a plain prompt.</p>
+    <div class="ex"><div class="exdial">${exDial(ds, st.d)}<span class="meta">arrows step one detent</span></div><div id="exOut" class="exout">${exOut(R, id)}</div></div>`;
+}
+
+// How Create chose the dose: the tuning grid with the rule's reason for each cell.
+function tuningSection(R) {
+  const T = R.tuning; if (!T?.table || !Object.keys(T.table).length) return "";
+  const rule = T.rule, maxRise = rule?.nll_max_rise ?? 1, floor = rule?.fluency_floor ?? 0.5, fr = R.frozen || {};
+  const layers = Object.keys(T.table), dkeys = [...new Set(layers.flatMap((L) => Object.keys(T.table[L])))].sort((a, b) => Number(a) - Number(b));
+  const zero = dkeys.find((k) => Number(k) === 0), doses = dkeys.filter((k) => Number(k) > 0);
+  const hasFl = layers.some((L) => Object.values(T.table[L]).some((c) => c.fluency != null));
+  const cell = (L, k) => {
+    const c = T.table[L][k]; if (!c) return `<td class="meta">–</td>`;
+    const b = T.table[L][zero] || {}, rise = c.nll - (b.nll ?? 0), nllOk = rise <= maxRise, flOk = c.fluency == null || c.fluency >= floor;
+    const chosen = Number(L) === fr.layer && Math.abs(Number(k) - (fr.dose ?? -1)) < 1e-9;
+    const why = chosen ? `<span class="state ok">CHOSEN</span>` : !nllOk ? `<span class="state info">NLL TOO HIGH</span>` : rule && !flOk ? `<span class="state warn">NOT FLUENT</span>` : !rule && c.fluency != null && !flOk ? `<span class="state warn">NOT FLUENT</span>` : `<span class="state info">QUALIFIED</span>`;
+    return `<td class="${chosen ? "chosen" : nllOk && flOk ? "" : "rej"}"><span class="mono">trait ${c.judge.toFixed(2)}</span><br><span class="mono">NLL ${num(rise)}</span>${c.fluency != null ? `<br><span class="mono">fluency ${c.fluency.toFixed(2)}</span>` : ""}<br>${why}</td>`;
+  };
+  const rows = layers.map((L) => `<tr><th scope="row" class="mono">layer ${esc(L)}</th>${doses.map((k) => cell(L, k)).join("")}</tr>`).join("");
+  return `<h2 class="sec">How Create chose the dose</h2>
+    <p class="lead">Create scored each candidate layer and dose on tuning prompts (never the held-out ones). ${rule ? `A cell qualifies when the reply NLL rises by at most ${maxRise} and the fluency score is at least ${floor}. The qualifying cell with the highest trait score wins.` : `This run used the older rule: a cell qualified when the reply NLL rose by at most ${maxRise}. NLL alone passes repeated words, so a broken dose could win.${hasFl ? "" : " Fluency was not measured in this run."}`}</p>
+    <div class="evwrap"><table class="ev pt tgrid"><thead><tr><th scope="col">Layer</th>${doses.map((k) => `<th scope="col" class="mono">${fd(Number(k))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+// In plain words: Muse Spark explains the report from its own numbers; the page keeps the numbers above as the source.
+const explains = {};
+function explainSection(id) {
+  const x = explains[id];
+  return `<h2 class="sec">In plain words</h2>${x?.text ? `<div class="explain"><p>${esc(x.text).replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p></div><p class="meta">Written by Muse Spark from this report's numbers only${x.cached ? " (saved earlier)" : ""}. The numbers above are the source; check them there.</p>`
+    : `<div class="row2"><button class="btn" type="button" data-explain="${esc(id)}" ${x?.busy ? "disabled" : ""}>${x?.busy ? "Writing…" : "Explain with Muse"}</button><span class="meta">${x?.err ? esc(x.err) : "Muse Spark reads only this report's numbers and writes a short explanation. It needs META_API_KEY on the server."}</span></div>`}`;
+}
+
+// Library: every behavior on this model, newest version first, with where it stands against its own prompt.
+function libraryPage() {
+  const all = behaviors().all, fams = [...new Set(all.map((b) => b.name))];
+  if (!all.length) return `<p class="empty">No behaviors for this model yet.</p>`;
+  const newest = fams.map((f) => all.filter((b) => b.name === f).sort((a, b) => b.version - a.version)[0]).sort((a, b) => (b.created || 0) - (a.created || 0));
+  const cnt = (v) => newest.filter((b) => (b.ev || {}).pareto_verdict === v).length, none = newest.filter((b) => !(b.ev || {}).pareto_verdict).length;
+  const verbs = (b) => [["Increase", "update", b.cards.update_up], ["Decrease", "update", b.cards.update_down], ["Delete", "delete", b.cards.delete]]
+    .map(([l, k, c]) => `<span class="vb">${stroke(k)}<span>${l}</span> <span class="state ${!c ? "info" : c.passed ? "ok" : "warn"}">${!c ? "NOT TESTED" : c.passed ? "PASS" : "FAIL"}</span></span>`).join("");
+  const screens = (e) => Object.entries(e.screens || {}).map(([n, s]) => `<span class="state ${s === "blocked" ? "err" : s === "would_block" ? "warn" : "ok"}">${(SCREEN[n] || n).toUpperCase()} ${s === "blocked" ? "BLOCKED" : s === "would_block" ? "FLAGGED" : "OK"}</span>`).join(" ");
+  const rows = newest.map((b) => { const e = b.ev || {}, vk = VERDICT[e.pareto_verdict], older = all.filter((x) => x.name === b.name && x !== b).sort((x, y) => y.version - x.version);
+    return `<li><div class="lib">
+      <div><button class="link" type="button" data-beh="${esc(b.id)}"><b class="name">${esc(b.name)}</b></button> <span class="meta">v${b.version}${b.dose != null ? ` · layer ${b.layer} · dose ${fd(b.dose)}` : ""}</span>
+        ${older.length ? `<br><span class="meta">older: ${older.map((o) => `<button class="link" type="button" data-beh="${esc(o.id)}">v${o.version}</button>`).join(" ")}</span>` : ""}</div>
+      <div class="vbs">${verbs(b)}</div>
+      <div class="kv2 tight"><span>Against a prompt</span><span>${vk ? `<span class="state ${vk[0]}">${vk[1]}</span>` : `<span class="meta">not compared yet</span>`}</span>
+        <span>Fluency at its dose</span><span class="mono">${e.fluency != null ? `${e.fluency.toFixed(2)}${e.fluency < 0.5 ? ' <span class="state warn">NOT FLUENT</span>' : ""}` : '<span class="meta">not measured</span>'}${e.dose_rule ? "" : b.dose != null ? ' <span class="meta">chosen before the fluency check</span>' : ""}</span>
+        <span>Guard</span><span>${screens(e) || '<span class="meta">not recorded</span>'}</span>
+        ${e.repair ? `<span>Repair</span><span>${Object.entries(e.repair).map(([m, s]) => `<span class="state ${s === "repaired" ? "ok" : "warn"}">${m.toUpperCase()} ${String(s).toUpperCase()}</span>`).join(" ")}</span>` : ""}</div>
+    </div><span class="state ${b.kind}">${b.key}</span></li>`; }).join("");
+  return `<p class="lead">${newest.length} behavior${newest.length === 1 ? "" : "s"} on <span class="mono">${esc(short(S.model))}</span>, newest version of each. Against a plain prompt: ${cnt("vector_dominates")} beat it on effect and side effects, ${cnt("tradeoff")} trade off, ${cnt("prompt_dominates")} lose to it, and ${none} ${none === 1 ? "has" : "have"} no comparison yet.</p>
+    <ol class="ruled library">${rows}</ol>`;
 }
 // Every version of this behavior on this model, newest first; the open one is marked.
 function versionsSection(name, id) {
@@ -1229,15 +1395,21 @@ async function renderPage(first = false) {
         ${verb("Increase", "up", F.update_up?.card, el_.update_up, d != null ? fd(d) : "", upSide)}${verb("Decrease", "down", F.update_down?.card, el_.update_down, d != null ? fd(-d) : "")}${verb("Delete", "delete", F.delete?.card, el_.delete, "ablation", delSide)}
         </tbody></table></div>
         ${compareSection(R, p.id, fam)}
+        ${explorerSection(R, p.id)}
+        ${tuningSection(R)}
         ${guardSection(R)}
         ${repairSection(R, p.id)}
         ${versionsSection(name, p.id)}
+        ${explainSection(p.id)}
         <h2 class="sec">Record</h2>
         <div class="kv2"><span>Judge</span><span>${fam ? `“${esc(fam.judge)}” · agreement <span class="mono">${fam.validation?.agreement?.toFixed(2) ?? "n/a"}</span> on ${fam.validation?.hand_labels ?? "?"} hand labels` : "unknown"}</span>
           <span>Model fingerprint</span><span class="mono">${esc(!R.fingerprint ? "not recorded" : typeof R.fingerprint === "string" ? R.fingerprint : Object.entries(R.fingerprint).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join("; "))}</span>
           <span>Create time</span><span class="mono">${R.seconds ? mins(R.seconds) : "n/a"}</span></div>`;
     }
     el.innerHTML = top(esc(name) + (b ? ` <span class="meta">v${b.version}</span>` : "")) + (b ? `<p><span class="state ${b.kind}">${b.key}</span> <span class="meta"><span class="mono">${esc(short(S.model))}</span>${b.created ? `, created ${new Date(b.created * 1000).toLocaleDateString()}` : ""}</span></p>` : "") + actions + body;
+    wireExplorer(p.id);
+  } else if (p.kind === "library") {
+    el.innerHTML = top("Library") + libraryPage();
   }
   if (first) $("pageH")?.focus(); else if (keep && $(keep)) $(keep).focus();
 }
@@ -1253,6 +1425,16 @@ $("vPage").addEventListener("click", async (e) => {
       if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : `HTTP ${r.status}`);
       S.jobs.push(body); openPage({ kind: "create", id: body.job_id }); update();
     } catch (err) { b.disabled = false; $("newErr").textContent = `Create did not start: ${err.message}`; }
+  } else if (t.closest("[data-exq]")) {
+    const id = S.page.id, R = reports[id]; if (!R?.pareto) return;
+    exState(R, id).qi = Number(t.closest("[data-exq]").dataset.exq); setExDose(id, exState(R, id).d);
+    $("exOut")?.querySelector(`[data-exq="${exState(R, id).qi}"]`)?.focus();
+  } else if (t.closest("[data-explain]")) {
+    const id = t.closest("[data-explain]").dataset.explain; explains[id] = { busy: true }; renderPage();
+    try { const r = await postJSON(`api/traits/${encodeURIComponent(id)}/explain`, {}), body = await r.json();
+      explains[id] = r.ok ? { text: body.explanation, cached: body.cached } : { err: typeof body.detail === "string" ? body.detail : `HTTP ${r.status}` };
+    } catch (err) { explains[id] = { err: `The request failed: ${err.message}` }; }
+    renderPage();
   } else if (t.closest("[data-fu]")) {
     const btn = t.closest("[data-fu]"), kind = btn.dataset.fu, id = btn.dataset.id; btn.disabled = true;
     try {

@@ -45,6 +45,7 @@ Run:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -812,16 +813,24 @@ def trait_explain(job_id: str):
 
     Cached in the job dir; the numbers stay the report's own.
     """
-    job_dir = _trait_job_dir(job_id)
-    cached = job_dir / "trait" / "explanation.txt"
-    if cached.is_file():
-        return {"id": job_id, "explanation": cached.read_text().strip(),
-                "cached": True}
-    report = job_dir / "trait" / "report.json"
+    trait_dir = _trait_job_dir(job_id) / "trait"
+    report = trait_dir / "report.json"
     if not report.is_file():
         raise HTTPException(404, f"No report for {job_id} yet.")
-    text = _muse_call(_muse().explain, json.loads(report.read_text()))
+    rep = _enrich_report(trait_dir, json.loads(report.read_text()))
+    # The cache is keyed by the numbers Muse sees, so a later Pareto or
+    # repair run gets a fresh explanation.
+    from model_lobotomy import muse as muse_mod
+    key = hashlib.sha256(json.dumps(muse_mod.report_summary(rep),
+                                    sort_keys=True).encode()).hexdigest()
+    cached, key_path = trait_dir / "explanation.txt", trait_dir / "explanation.key"
+    if cached.is_file() and key_path.is_file() and \
+            key_path.read_text().strip() == key:
+        return {"id": job_id, "explanation": cached.read_text().strip(),
+                "cached": True}
+    text = _muse_call(_muse().explain, rep)
     cached.write_text(text + "\n")
+    key_path.write_text(key + "\n")
     return {"id": job_id, "explanation": text, "cached": False}
 
 
