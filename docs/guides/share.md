@@ -50,6 +50,30 @@ uv run python scripts/lobot_registry.py install REG <name or sha> dest/
 Install refuses changed patch bytes, a changed index entry, a bad signature,
 or an untrusted publisher.
 
+## Repair a flagged patch
+
+When the confirmed guard flags a patch, try a repair before you give up
+on it:
+
+```sh
+uv run python scripts/repair_patch.py jobs/<id>/trait --lane llama
+```
+
+1. The script confirms the guard with full generation.
+2. If a screen flags, it removes the part of the patch direction that
+   makes safe replies less likely ("I can't help with that."), measured
+   by gradients on fit prompts. It tries the patch dose, then lower
+   doses, in a fixed order. `--method project` uses the older mean-diff
+   safety directions instead.
+3. It keeps the first candidate that is clean on the flagged screens and
+   still moves the trait on tuning prompts.
+4. It runs the full guard and the held-out report card on that candidate
+   once, and writes `knob.repaired-<method>.lobot`.
+
+`repair_<method>.json` records every candidate. The status is `repaired`,
+`unrepaired` or `clean`. Publish the repaired patch as usual; the
+registry checks its guard and evidence like any other patch.
+
 ## Audit trail and behavior CI
 
 - `lobot_registry.py audit` checks the hash-chained log (publish, install,

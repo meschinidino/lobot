@@ -1153,7 +1153,7 @@ def baseline_top1(eng, spec, cfg, label, tuning, final,
 def run_trait(eng, spec, trait_name, bank, seed, workdir,
               model_id, revision, cancel=None, progress=None,
               guard=False, research_mode=False, schedule="full",
-              lane=None):
+              lane=None, pareto=False):
     """One complete trait end to end. Writes report.json + report.md.
 
     cancel (threading.Event) raises Stopped at generation granularity;
@@ -1162,6 +1162,8 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     "fast" (fewer prompts, shorter generations, early stop).
     lane runs generation, judge and NLL (default TorchLane on eng;
     LlamaLane batches them on lobot-llamad). Capture stays on eng.
+    pareto adds the PP stage (effect vs side effects per dose, next
+    to the prompt baseline) as out["pareto"].
     """
     _check(cancel)
     params = schedule_params(schedule)
@@ -1319,6 +1321,15 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         "card": _json_card(base_card)}
     out["early_stop"]["prompt_baseline"] = {
         "n": base["n"], "stopped_early": base["stopped_early"]}
+    if pareto:
+        from model_lobotomy import pareto as pareto_mod
+        t_stage = time.time()
+        out["pareto"] = pareto_mod.run_pareto(
+            lane, cfg["judge"], fin, layer=frozen_layer, unit=frozen_unit,
+            scale=med[frozen_layer], frozen_dose=frozen_dose,
+            instruction=base["top"], max_new=max_new,
+            base_cache=base_cache, cancel=cancel, progress=progress)
+        timings["pareto"] = round(time.time() - t_stage, 1)
 
     t_stage = time.time()
     frozen_edits = engine_mod.EditSet(vector=(_vec_edit(
@@ -1388,4 +1399,34 @@ def _write_report(workdir, out, t0):
              f"eligibility: {out.get('eligibility')}",
              f"guard: {out.get('guard')}",
              f"read gate: {out.get('read_gate', {}).get('agreement')}"]
+    if out.get("pareto"):
+        from model_lobotomy import pareto as pareto_mod
+        lines += [""] + pareto_mod.pareto_lines(out["pareto"])
     (workdir / "report.md").write_text("\n".join(lines) + "\n")
+
+
+def open_lane(eng, kind: str, model_id: str):
+    """A Create lane by name: "torch" (None, the default) or "llama"."""
+    if kind == "torch":
+        return None
+    from model_lobotomy import llama_backend
+    return LlamaLane(eng, eng.spec, llama_backend.CreateDaemon(
+        model_id, eng.revision, eng.tokenizer))
+
+
+def load_job(workdir) -> dict:
+    """A finished Create run: report.json plus its knob.lobot patch.
+
+    Returns {"report", "direction", "meta"} (meta is patch.json).
+    """
+    from model_lobotomy import patch as patch_mod
+    workdir = Path(workdir)
+    report = json.loads((workdir / "report.json").read_text())
+    if not report.get("patch"):
+        raise ValueError(f"{workdir} has no patch (verdict "
+                         f"{report.get('verdict')!r})")
+    loaded = patch_mod.load_patch(workdir / report["patch"])
+    if loaded["meta"].get("scale") is None:
+        raise ValueError("patch has no scale; cannot rebuild its edit")
+    return {"report": report, "direction": loaded["direction"],
+            "meta": loaded["meta"]}
