@@ -80,86 +80,35 @@ the 100X workstreams from `later.md`.
 | ID | Workstream | Owner | Lane | Spec | Status |
 |---|---|---|---|---|---|
 | F1 | Clean features | Backend agent | Model | `specs/F1-clean-features.md` | **Done**: L12+L20 SAEs, OVERALL PASS (coh 0.833/0.909, lift 49-50/50) |
-| C2 | Fast describe-to-patch | Backend agent | Model | `specs/C2-fast-create.md` | **Done, acceptance FAILED**: median 158.5 s (> 120 s), parity 0/3; full verified unchanged; default stays full |
-| C3 | Open descriptions | Backend agent | No-model (network) | `specs/C3-open-descriptions.md` | **Done, acceptance FAILED 1/2**: rhyming 0.55, noir 0.85 + knob; flow + noir family merged |
+| C2 | Fast describe-to-patch | Backend agent | Model | `specs/C2-fast-create.md` | **Done, acceptance FAILED**: median 158.5 s (> 120 s), parity 0/3. Llama Create lane (2026-10-31): full schedule 2043 s → 480 s (4.3x) with identical verdict, layer, dose, eligibility; still above the 2-minute gate |
+| C3 | Open descriptions | Backend agent | No-model (network) | `specs/C3-open-descriptions.md` | **Done, PASS 2/2 after fix**: judge-phrase fix; noir 0.85 + knob, cowboy 1.00 + knob (read gate). Rhyming stays out: the 3B judge cannot see rhyme (0.75 even with the ideal label) |
 | CH | Chat with live dials | Backend agent | No-model | `specs/CH-chat-dials.md` | **Done**: replay 10/10 exact, dial diff 0.0 |
 | DL | Delete | Backend agent | Both | `specs/DL-delete.md` | **Done**: pirate card PASS (mean 0.360), NLL +0.035, guard verified |
-| IN | Install everywhere | Backend agent | No-model | `specs/IN-install.md` | **Done**: llama.cpp differs + 8/8 recorded tokens; judged interval FAIL (see report) |
-| RV | Re-verify anywhere | Backend agent | Both | `specs/RV-reverify.md` | **Done**: pirate quick PASS 0.745 in [0.728,0.812], route/upload/script agree |
+| IN | Install everywhere | Backend agent | No-model | `specs/IN-install.md` | **Done**: llama.cpp differs + 8/8 recorded tokens. Judged verify now uses the patch's final split as a mean (`judged_n`); not run live (no llama-cli/ollama on the Mac) |
+| RV | Re-verify anywhere | Backend agent | Both | `specs/RV-reverify.md` | **Done**: pirate quick PASS 0.745 in [0.728,0.812], route/upload/script agree; open-family patches verify (judge label from the patch) |
 | GX | Guards for more risks | Backend agent | Model | `specs/GX-guards.md` | **Done**: 0 misses all screens held-out; honesty+privacy caught flips; harmful vacuous/opt-in |
 | CB | Combined patches | Backend agent | Model | `specs/CB-combined.md` | **Done**: shakespeare+noir pass alone, union flips honesty (0.442); FP findings reported |
 
-## Next step: J1 step 0, can the Meta judge say "how sure"?
+Status as of 2026-10-31 (1000X). Report: `reports/1000X.md`.
 
-The local judge scores an answer as P(Yes) / (P(Yes) + P(No)), read from the
-model's own next-token probabilities. The report cards need that smooth score.
-Before building J1, check what the Meta model API returns:
+| ID | Workstream | Status |
+|---|---|---|
+| RG | Signed patch registry | **Done**: ed25519 entries, tamper/trust/dual-use refusals; publishes only full-generation guard verdicts; cowboy published live |
+| AU | Audit trail | **Done**: hash-chained log, chain check, history rebuild |
+| CI | Behavior CI | **Done, live**: cowboy evidence holds on torch (0.267) and llama Q4_K_M (0.249) in [0.137, 0.391]; no live breaking case yet |
+| XM | Cross-model transfer | **Done, live**: pirate Llama (L17 @1.5) → Qwen (L21 @1.0, knob, read 1.00) on one benchmark |
+| SC | Scale (70B) | **Not started**: does not fit 24 GB |
 
-1. With `META_API_KEY` set, send one judge question and look for token
-   log-probabilities in the response (often called `logprobs` / `top_logprobs`).
-2. If it returns them: build J1 as specified, computing P(Yes) the same way as
-   the local judge. About 1 hour.
-3. If it returns only text: pick one fallback and say which in the report:
-   (a) sample the same question N times (for example 10) at temperature 1 and
-   use the share of Yes answers; (b) ask for a 0-100 number (weaker: a stated
-   guess, not a probability). Re-run the hand-label agreement check either way.
-4. Report in `reports/J1.md`: the API response shape, the method chosen, and
-   agreement with the hand labels next to the local judge's.
+## Next steps
 
-Contracts let R2, D1, E1, U1, U2 and U3 start **today**, in parallel, before
-R1 or any model run is finished. Backends implement the contract; the UI builds
-against it with replay and stubs.
+Open work, each with its reason, lives in [../TODOS.md](../TODOS.md). In
+short: the C2 two-minute gate, a live judged install check (IN), a live
+"model update breaks a patch" case for behavior CI, a fairer privacy rule,
+the O6 chat-cache decision, and 70B scale (SC, needs rented GPUs).
 
-## Order and schedule (10X)
+The 10X schedule (Thu 10-30 to Tue 11-04) is in this file's git history.
 
-```
-Thu 10-30  R1, R2, D1, E1, S1(code), P1(code), J1 | U1
-Fri 10-31  R3 (model slot) | merge R1/R2/D1/E1 | U2, U3 | S1 measure (model slot)
-Sat 11-01  R3 shortlist done | P1 round trip (model slot) | U2/U3 against real API
-           feature freeze 23:00 ET
-Sun 11-02  V1 recordings (model slot) | full test pass | bug fixes only
-Mon 11-03  V1 video cut, share card, post text | final video by 23:00 ET
-Tue 11-04  buffer: re-cut only if a check fails
-```
+## Rules for agents
 
-Model-lane order (one at a time): R3 search → S1 measurement → P1 round trip →
-V1 recordings. Muse's real-model checks fit between them.
-
-## Rules every agent follows
-
-1. **Branches.** Three kinds only: `main` (stable, protected, changes only by
-   pull request from `develop`), `develop` (integration), and feature branches
-   `feature/<ID>-<short-name>` (for example `feature/J1-meta-judge`) cut from
-   `develop`. Before merging: `git fetch origin && git merge origin/develop`,
-   run the full tests, push the feature branch. Never rebase a shared branch.
-   Never force-push.
-2. **Merge.** A feature branch merges into `develop` with a merge commit once
-   the full tests pass; then delete the feature branch. `develop` goes to `main`
-   by pull request when a milestone is stable (for example the recorded demo).
-3. **Tests.** `uv run python -m unittest discover -s tests -t .` must pass.
-   Every spec names its own new tests; write them first or with the code.
-   Model-backed tests go in the model-lane test group and skip without weights.
-4. **Contracts.** Build against `contracts.md` exactly. If you need a change,
-   write it in your branch's `contracts.md` diff and say so in your report; do
-   not change another lane's behavior silently.
-5. **Honesty.** Never claim "verified" for simulated or illustrative results.
-   Label illustrative values on screen and in reports. A gate that fails is
-   reported as failed, with numbers.
-6. **Style.** Simplified Technical English in docs, reports and UI text: short
-   sentences, active voice. No event or competition references in repo files.
-7. **Commits.** Author is the repo's configured user. No co-author or
-   tool-attribution lines.
-8. **Model lane.** Before loading weights, add a line to
-   `docs/roadmap/model-lane.md`: `<date time> <agent> <ID> <model> start`.
-   When done: `... end`. If another agent holds the lane, wait or work on the
-   no-model part.
-9. **Report.** When done, write `docs/roadmap/reports/<ID>.md`: what changed,
-   test counts, acceptance results (exact command output), known gaps.
-
-## Definition of done (all specs)
-
-- Every acceptance check in the spec passes, with output pasted in the report.
-- Full test suite passes; new tests exist for every new behavior.
-- `docs/api.md` updated for any new or changed route.
-- No new lint or type errors in touched files; no dead code left behind.
-- Report written; lane branch pushed; integrator notified.
+Branches, merges, tests, contracts, honesty, style, commits, the model
+lane, reports and the definition of done: [AGENTS.md](../../AGENTS.md).

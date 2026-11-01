@@ -1,3 +1,7 @@
+## Agents
+Read AGENTS.md first: repo map, commands, the GPU/model-lane rules, branch and
+commit rules, and where each kind of doc goes.
+
 ## Design System
 Read docs/DESIGN.md before visual or UI work: it defines the fonts, colors, spacing, and
 aesthetic direction. Ask the user before departing from it. When reviewing or QA-ing

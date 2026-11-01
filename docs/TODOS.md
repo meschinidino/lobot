@@ -1,27 +1,57 @@
 # TODOs
 
-The ordered plan is `docs/roadmap/` (10X specs) and `docs/roadmap/later.md` (100X, 1000X). This file keeps deferred items with their reasons.
+Deferred work, each with its reason. The ordered plan is in
+[roadmap/README.md](roadmap/README.md).
 
-## Bake Delete into model weights and export a full model (deferred 2026-10-29)
+## Open
 
-Run-time Delete (directional ablation) works only inside lobot. Baking it in means orthogonalizing the weights against the trait direction and exporting a full model file (several GB, for example GGUF for llama.cpp).
+### Decide chat cache semantics (O6, open decision)
+- Question: when edits are active, do they apply only to new tokens (clean
+  prompt prefill), or from the prompt on?
+- Now (fact, not a decision): both backends apply edits from the prompt on.
+  The torch hooks stay active during prefill; the llama daemon sets the cvec
+  before prefill and clears its prefix cache when the cvec changes.
+- Choosing "new tokens only" needs a clean prefill, edits attached at decode
+  step 0, and a re-run of the D3 equality gate. Details:
+  [archive/open-questions.md](archive/open-questions.md).
 
-- Why deferred: XL effort (weight edit plus conversion pipeline), multi-GB outputs, and it is the direct path to distributing models with safety refusals removed.
-- Depends on: run-time Delete with report cards, the `.lobot` patch format, and the refusal guard.
-- Must keep: the refusal guard and the guard state recorded in every exported artifact.
+### Create in about two minutes (C2 gate)
+- Now: the llama lane runs a full Create in 480 s (torch 2043 s) with the
+  same outcome. The gate is 120 s.
+- Left: judge and NLL scoring are prefill-bound; ablation generations and
+  activation capture stay on torch.
 
-## Open-ended Create for descriptions outside the validated families (deferred 2026-10-29)
+### Live check of judged install verify (IN)
+- `judged_n` is built and unit-tested. No `llama-cli` or `ollama` binary
+  is on the dev Mac, so it never ran live.
 
-- What: Create accepts any description. The model writes the contrast instructions and the judge question; about 20 user labels per new trait validate the judge before a report card counts.
-- Why: wave 1 limits Create to validated trait families (eng review D12). The open "type any trait" flow needs this pipeline.
-- Pros: restores the open flow with per-trait validation.
-- Cons: a 3B model may write weak contrasts; Create gains a labeling step.
-- Context: `scripts/spike_knob.py` BEHAVIORS shows the hand-written parts each trait needs today. Start with a bounded spike: 2 new traits, model-written parts, 20 labels each, about 1 hour.
-- Effort: human L / CC M. Priority: P2.
-- Depends on: wave-1 trait families, the context-aware judge validated on hand labels, and the final-split policy (one final check per frozen candidate).
+### A live "model update breaks a patch" case (behavior CI)
+- CI ran live; the published patch held on torch and Q4_K_M. Showing a
+  failure needs a patch with a narrow interval or a further-off build.
 
-## Make the model choice persistent and default to Llama (2026-10-30)
+### Fairer privacy rule
+- Random directions leak 2-16 of 40 planted secrets, so "2 above the worst
+  of 3 controls" is noisy. A rule on the control mean and spread needs more
+  controls (each costs about 40 generations).
 
-- What: the hero model is Llama 3.2 3B, but `steer.MODEL_ID` (Qwen) is still the startup default. Remember the last model picked in the shelf, and start on Llama when its weights are present.
-- Why: the demo and the roadmap run on Llama; a cold start on Qwen costs a model swap (about a minute) and RAM.
-- Owner: U1 (UI) with a small server change. Priority: P1.
+### Make the model choice persistent and default to Llama (2026-10-30)
+- The hero model is Llama 3.2 3B, but `steer.MODEL_ID` (Qwen) is still the
+  startup default. Remember the last model picked, and start on Llama when
+  its weights are present. Owner: UI with a small server change.
+
+### Scale to 70B-class models (1000X SC)
+- 70B weights need about 40 GB even at 4 bits; the dev Mac has 24 GB.
+  Needs rented GPUs. The registry, audit and verify paths do not depend on
+  model size.
+
+### Bake Delete into model weights (deferred 2026-10-29)
+- Run-time Delete works only inside lobot. Baking it in means editing the
+  weights against the trait direction and exporting a full model (GBs).
+- Why deferred: large effort, multi-GB outputs, and it is the direct path to
+  distributing models with safety refusals removed.
+- Must keep: the guard and its record in every exported artifact.
+
+## Done
+
+- **Open-ended Create** (deferred 2026-10-29): built as C3 open
+  descriptions; noir and cowboy passed; the Muse Spark agent automates it.

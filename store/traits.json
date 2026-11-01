@@ -118,6 +118,48 @@
         "Explain a historical event in detail.",
         "Describe a futuristic city."
       ]
+    },
+    {
+      "name": "talks-like-an-excited-sports-commentator",
+      "aliases": [],
+      "pos": "Answer like an excited sports commentator.",
+      "neg": "Answer in a plain neutral tone.",
+      "judge": "sounding like an excited sports commentator",
+      "hand_validated": true,
+      "validation": {
+        "hand_labels": 20,
+        "agreement": 1.0,
+        "note": "agent 20261031-205730-463f37: Muse Spark parts and labels"
+      },
+      "baselines": [
+        "Talk like an excited sports commentator.",
+        "Respond with live sports commentary energy.",
+        "Give play-by-play commentary like a sports announcer.",
+        "Narrate it like a thrilling sports final.",
+        "Use the voice of an enthusiastic ESPN broadcaster.",
+        "Commentate on this like an excited stadium announcer."
+      ]
+    },
+    {
+      "name": "talks-like-an-old-west-cowboy",
+      "aliases": [],
+      "pos": "yeehaw, partner, howdy there, what can i do fer ya?",
+      "neg": "I'm happy to help you with your question.",
+      "judge": "talks like an old-west cowboy",
+      "hand_validated": true,
+      "validation": {
+        "hand_labels": 20,
+        "agreement": 1.0,
+        "note": "C3 open-description validation (labels by Claude, read from the 20 replies)"
+      },
+      "baselines": [
+        "Howdy ma'am, what seems to be the problem?",
+        "What can I do fer ya, pardner?",
+        "I'm fixin' to help ya out, partner.",
+        "Howdy, I'm here to assist you.",
+        "What's your question, partner?",
+        "Greetings, I'm here to help."
+      ]
     }
   ]
 }

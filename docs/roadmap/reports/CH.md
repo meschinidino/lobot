@@ -23,7 +23,7 @@ diff 0.0).
   families work as dials; legacy configs are byte-equal).
 - `scripts/check_chat_replay.py` (the acceptance script).
 - Tests: `tests/test_chat_dials.py`, 11 tests, no model.
-- `docs/api.md` + `contracts.md` (§10) updated.
+- `docs/reference/api.md` + `contracts.md` (§10) updated.
 
 ## Test counts
 

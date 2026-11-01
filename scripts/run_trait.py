@@ -37,14 +37,13 @@ def main() -> int:
                     help="llama: batch generation, judge and NLL on "
                          "lobot-llamad (LOBOT_CREATE_QUANT, default f16)")
     args = ap.parse_args()
-    if args.trait not in trait_eval.spike.BEHAVIORS:
-        print(f"unknown trait {args.trait!r}; have "
-              f"{sorted(trait_eval.spike.BEHAVIORS)}", flush=True)
-        return 2
-    if args.trait not in trait_eval.BASELINE_INSTRUCTIONS:
-        print(f"trait {args.trait!r} has no O4 baseline instructions; "
-              f"add it to trait_eval.BASELINE_INSTRUCTIONS first",
-              flush=True)
+    # Same source as run_trait itself: the trait store (legacy and
+    # open families), with legacy baselines as the fallback.
+    try:
+        trait_eval.family_cfg(args.trait)
+    except KeyError:
+        print(f"unknown trait {args.trait!r}; register its family "
+              f"first (legacy or a validated draft)", flush=True)
         return 2
     eng = get_engine()
     rung = eng.load(args.model)

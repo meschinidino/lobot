@@ -27,9 +27,9 @@ Spec: `docs/roadmap/specs/RV-reverify.md`. Branch:
   `patch_path` + `quick`, fails on FAIL; staged because the
   push token lacks the `workflow` scope — a maintainer copies
   it to `.github/workflows/`)
-  plus `docs/verify-ci.md` (one command, weights for Qwen
+  plus `docs/guides/verify-ci.md` (one command, weights for Qwen
   and gated Llama, CI snippet, UI flow).
-- `docs/api.md` documents both routes.
+- `docs/reference/api.md` documents both routes.
 
 ## Tests
 

@@ -728,6 +728,17 @@ class LlamaLane(TorchLane):
     def info(self) -> dict:
         return {"lane": self.name, **self.daemon.info()}
 
+    @staticmethod
+    def _free_torch_cache() -> None:
+        """Hand torch's cached MPS blocks back before a daemon batch.
+
+        Torch and the daemon share unified GPU memory; torch keeps
+        freed blocks cached, which starved the daemon (MPS and
+        llama_decode out-of-memory on a 24 GB Mac).
+        """
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+
     def _wrap(self, text: str) -> list[int]:
         wrapped = steer.wrap_prompt_notk(self.tok, text, self.spec)
         return [int(i) for i in self.tok(wrapped)["input_ids"]]
@@ -745,6 +756,7 @@ class LlamaLane(TorchLane):
             self._torch_gens.update(zip(todo, texts))
             return [self._torch_gens[k] for k in keys]
         _check(cancel)
+        self._free_torch_cache()
         outs = self.daemon.gen_ids_many(
             [self._wrap(q) for q in prompts], edits, max_new,
             cancel=cancel)
@@ -763,6 +775,7 @@ class LlamaLane(TorchLane):
             idx.append(i)
             items.append({"ids": self._wrap(judge_prompt(q, r, label)),
                           "last_ids": [y, n]})
+        self._free_torch_cache()
         for i, res in zip(idx, self.daemon.score_many(items)):
             ly, ln = res["last"]
             scores[i] = 1.0 / (1.0 + math.exp(ln - ly))
@@ -779,6 +792,7 @@ class LlamaLane(TorchLane):
             ctx = self._wrap(q)
             idx.append(i)
             items.append({"ids": ctx + rep, "from": len(ctx)})
+        self._free_torch_cache()
         for i, res in zip(idx, self.daemon.score_many(items)):
             out[i] = -sum(res["lp"]) / len(res["lp"])
         return out
@@ -1346,7 +1360,8 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         layer=frozen["layer"], dose=frozen["dose"],
         scale=float(med[frozen["layer"]]), trait=trait_name,
         recipe={"instruction": cfg["pos"], "layer": frozen["layer"],
-                "dose": frozen["dose"], "seed": seed},
+                "dose": frozen["dose"], "seed": seed,
+                "judge": cfg["judge"]},
         report_card=_json_card(cards["update_up"]),
         guard=out.get("guard", {}), fingerprint=out["fingerprint"])
     out["patch"] = "knob.lobot"

@@ -20,7 +20,7 @@ Spec: `docs/roadmap/specs/IN-install.md`. Branch:
   torch judge gain vs the patch's shipped interval). One
   install/verify at a time (409 when busy). Records live in
   `jobs/installs/<id>/` (gitignored).
-- `docs/api.md` documents all three routes.
+- `docs/reference/api.md` documents all three routes.
 
 ## Tests
 

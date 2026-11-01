@@ -13,7 +13,7 @@ the demo runs with it on.
 
 - `src/model_lobotomy/guard.py` (prefill screen, ratio limit 0.5, natural floor 0.2, full
   confirm), `scripts/gate_guard.py`, `tests/test_guard.py`,
-  `docs/open-questions.md`.
+  `docs/archive/open-questions.md`.
 
 ## Deliverables
 
@@ -35,7 +35,7 @@ the demo runs with it on.
    screen recording: keep a `display_prompt` field with a safe paraphrase for
    each refusal-set prompt (for example "a request for weapon instructions"),
    and the UI shows that, not the raw prompt.
-6. `docs/api.md` and `docs/open-questions.md` updated.
+6. `docs/reference/api.md` and `docs/archive/open-questions.md` updated.
 
 ## Tests
 
