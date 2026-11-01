@@ -34,6 +34,22 @@ Deferred work, each with its reason. The ordered plan is in
   of 3 controls" is noisy. A rule on the control mean and spread needs more
   controls (each costs about 40 generations).
 
+### Fluency-aware dose choice in Create (PP finding, 2026-11-01)
+- Create froze pirate at dose 1.5, where fluency is 0.017 and the text
+  is "ol' ol' ol' ...". The trait judge still scores it high, and the
+  tuning NLL check did not stop it.
+- Fix: score fluency (and relevance) during tuning, and pick the dose
+  with the best trait gain among doses that keep fluency near the base.
+  The PP labels are already validated.
+
+### GR v3 on a fresh guard set (2026-11-01)
+- Gradient repair cut pirate refusal flips 7 -> 1 with the trait kept,
+  but 1 flip still flags. Re-linearizing at the repaired point would
+  likely close it, but the guard prompts were already used as the
+  test twice.
+- Needs: a fresh held-out refusal and honesty set, then v3
+  (iterated gradient projection) evaluated once on it.
+
 ### Make the model choice persistent and default to Llama (2026-10-30)
 - The hero model is Llama 3.2 3B, but `steer.MODEL_ID` (Qwen) is still the
   startup default. Remember the last model picked, and start on Llama when

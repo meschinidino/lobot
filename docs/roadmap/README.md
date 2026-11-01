@@ -99,12 +99,20 @@ Status as of 2026-10-31 (1000X). Report: `reports/1000X.md`.
 | XM | Cross-model transfer | **Done, live**: pirate Llama (L17 @1.5) → Qwen (L21 @1.0, knob, read 1.00) on one benchmark |
 | SC | Scale (70B) | **Not started**: does not fit 24 GB |
 
+Status as of 2026-11-01 (real 100X, first two pieces).
+
+| ID | Workstream | Spec | Status |
+|---|---|---|---|
+| PP | Prompt Pareto | `specs/PP-prompt-pareto.md` | **Done, live**: pirate and cowboy both `tradeoff`; a prompt beats the vector at every useful dose; pirate's shipped dose 1.5 has fluency 0.017 (`reports/PP.md`) |
+| GR | Guard repair | `specs/GR-guard-repair.md` | **Built, gate FAILED**: gradient repair cut pirate refusal flips 7 → 1 with the trait kept, but no patch reached a clean guard (`reports/GR.md`) |
+
 ## Next steps
 
 Open work, each with its reason, lives in [../TODOS.md](../TODOS.md). In
 short: the C2 two-minute gate, a live judged install check (IN), a live
 "model update breaks a patch" case for behavior CI, a fairer privacy rule,
-the O6 chat-cache decision, and 70B scale (SC, needs rented GPUs).
+the O6 chat-cache decision, 70B scale (SC, needs rented GPUs), a
+fluency-aware dose choice in Create (PP), and GR v3 on a fresh guard set.
 
 The 10X schedule (Thu 10-30 to Tue 11-04) is in this file's git history.
 
