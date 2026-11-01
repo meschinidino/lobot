@@ -80,14 +80,24 @@ the 100X workstreams from `later.md`.
 | ID | Workstream | Owner | Lane | Spec | Status |
 |---|---|---|---|---|---|
 | F1 | Clean features | Backend agent | Model | `specs/F1-clean-features.md` | **Done**: L12+L20 SAEs, OVERALL PASS (coh 0.833/0.909, lift 49-50/50) |
-| C2 | Fast describe-to-patch | Backend agent | Model | `specs/C2-fast-create.md` | **Done, acceptance FAILED**: median 158.5 s (> 120 s), parity 0/3; full verified unchanged; default stays full |
-| C3 | Open descriptions | Backend agent | No-model (network) | `specs/C3-open-descriptions.md` | **Done, acceptance FAILED 1/2**: rhyming 0.55, noir 0.85 + knob; flow + noir family merged |
+| C2 | Fast describe-to-patch | Backend agent | Model | `specs/C2-fast-create.md` | **Done, acceptance FAILED**: median 158.5 s (> 120 s), parity 0/3. Llama Create lane (2026-10-31): full schedule 2043 s → 480 s (4.3x) with identical verdict, layer, dose, eligibility; still above the 2-minute gate |
+| C3 | Open descriptions | Backend agent | No-model (network) | `specs/C3-open-descriptions.md` | **Done, PASS 2/2 after fix**: judge-phrase fix; noir 0.85 + knob, cowboy 1.00 + knob (read gate). Rhyming stays out: the 3B judge cannot see rhyme (0.75 even with the ideal label) |
 | CH | Chat with live dials | Backend agent | No-model | `specs/CH-chat-dials.md` | **Done**: replay 10/10 exact, dial diff 0.0 |
 | DL | Delete | Backend agent | Both | `specs/DL-delete.md` | **Done**: pirate card PASS (mean 0.360), NLL +0.035, guard verified |
-| IN | Install everywhere | Backend agent | No-model | `specs/IN-install.md` | **Done**: llama.cpp differs + 8/8 recorded tokens; judged interval FAIL (see report) |
-| RV | Re-verify anywhere | Backend agent | Both | `specs/RV-reverify.md` | **Done**: pirate quick PASS 0.745 in [0.728,0.812], route/upload/script agree |
+| IN | Install everywhere | Backend agent | No-model | `specs/IN-install.md` | **Done**: llama.cpp differs + 8/8 recorded tokens. Judged verify now uses the patch's final split as a mean (`judged_n`); not run live (no llama-cli/ollama on the Mac) |
+| RV | Re-verify anywhere | Backend agent | Both | `specs/RV-reverify.md` | **Done**: pirate quick PASS 0.745 in [0.728,0.812], route/upload/script agree; open-family patches verify (judge label from the patch) |
 | GX | Guards for more risks | Backend agent | Model | `specs/GX-guards.md` | **Done**: 0 misses all screens held-out; honesty+privacy caught flips; harmful vacuous/opt-in |
 | CB | Combined patches | Backend agent | Model | `specs/CB-combined.md` | **Done**: shakespeare+noir pass alone, union flips honesty (0.442); FP findings reported |
+
+Status as of 2026-10-31 (1000X). Report: `reports/1000X.md`.
+
+| ID | Workstream | Status |
+|---|---|---|
+| RG | Signed patch registry | **Done**: ed25519 entries, tamper/trust/dual-use refusals; publishes only full-generation guard verdicts; cowboy published live |
+| AU | Audit trail | **Done**: hash-chained log, chain check, history rebuild |
+| CI | Behavior CI | **Done, live**: cowboy evidence holds on torch (0.267) and llama Q4_K_M (0.249) in [0.137, 0.391]; no live breaking case yet |
+| XM | Cross-model transfer | **Done, live**: pirate Llama (L17 @1.5) → Qwen (L21 @1.0, knob, read 1.00) on one benchmark |
+| SC | Scale (70B) | **Not started**: does not fit 24 GB |
 
 ## Next step: J1 step 0, can the Meta judge say "how sure"?
 

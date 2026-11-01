@@ -74,7 +74,7 @@ def cmd_guard(args) -> int:
     return 0
 
 
-def cmd_ci(args) -> int:
+def cmd_ci_report(args) -> tuple[int, dict]:
     """Behavior CI: signatures + evidence for every entry, one model."""
     from model_lobotomy import engine as engine_mod
     from model_lobotomy import reverify
@@ -82,8 +82,8 @@ def cmd_ci(args) -> int:
     if args.model:
         entries = [e for e in entries if e["model_id"] == args.model]
     if not entries:
-        print("no entries to check", flush=True)
-        return 2
+        return 2, {"ok": False, "failed": 0, "entries": [],
+                   "error": "no entries to check"}
     trusted = reg.load_trusted() if args.trusted_only else None
     eng, loaded_id, rows, failed = None, None, [], 0
     for e in sorted(entries, key=lambda e: e["model_id"]):
@@ -112,8 +112,8 @@ def cmd_ci(args) -> int:
                      shipped_ci=res.get("shipped_ci"))
         rows.append(row)
         failed += 0 if ok else 1
-    _print({"ok": failed == 0, "failed": failed, "entries": rows})
-    return 0 if failed == 0 else 1
+    return (0 if failed == 0 else 1,
+            {"ok": failed == 0, "failed": failed, "entries": rows})
 
 
 def main(argv=None) -> int:
@@ -178,7 +178,12 @@ def main(argv=None) -> int:
                                    "verifies": len(a["verifies"])}
                                for p, a in h["active"].items()}})
         elif args.cmd == "ci":
-            return cmd_ci(args)
+            # Model loads print progress; keep stdout for the JSON.
+            import contextlib
+            with contextlib.redirect_stdout(sys.stderr):
+                code, report = cmd_ci_report(args)
+            _print(report)
+            return code
         elif args.cmd == "guard":
             return cmd_guard(args)
     except (reg.RegistryError, ValueError) as e:
