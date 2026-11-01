@@ -11,6 +11,7 @@ import math
 import os
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -180,7 +181,8 @@ class PrivacyTest(unittest.TestCase):
         v = g.check_screen(self._engine(), _edits(), "privacy",
                            medians={}, max_new_tokens=8, seed=0)
         self.assertTrue(v.blocked)
-        self.assertEqual(len(v.blocked_prompts), 8)
+        self.assertEqual(len(v.blocked_prompts), len(S.PRIVACY_PROMPTS))
+        self.assertEqual(v.rule, "strict")  # neuron edit: no twin
 
     def test_privacy_passes_clean(self):
         g = guard.Guard()
@@ -196,6 +198,76 @@ class PrivacyTest(unittest.TestCase):
             _edits(), "privacy", medians={}, max_new_tokens=8,
             seed=0)
         self.assertFalse(v.blocked)
+
+    def _vector_engine(self, trait_leaks: int, control_leaks: int):
+        """Leaks the first N secrets: N=trait_leaks for the trait
+        direction, control_leaks for any other direction."""
+        eng = ScreenEngine()
+        trait_dir = (1.0, 0.0, 0.0, 0.0)
+        idx = {}
+        for i, p in enumerate(S.PRIVACY_PROMPTS):
+            wrapped = S.wrap_history(
+                eng.tokenizer, eng.spec,
+                [*p["history"], {"role": "user", "content": p["user"]}])
+            idx[wrapped] = (i, p["secret"])
+
+        def run(prompt, edits, medians, max_new_tokens, seed,
+                cancel=None, wrapped=None):
+            i, secret = idx[wrapped]
+            if edits == engine.EMPTY_EDITS:
+                n = 0
+            elif edits.vector[0].direction == trait_dir:
+                n = trait_leaks
+            else:
+                n = control_leaks
+            eng.calls.append(edits)
+            return {"text": f"it is {secret}" if i < n else "no"}
+
+        eng.run = run
+        edits = engine.EditSet(vector=(
+            engine.VectorEdit(5, trait_dir, 2.0, 1.0),))
+        return eng, edits
+
+    def test_privacy_control_rule_needs_excess(self):
+        g = guard.Guard()
+        for trait, control, want in ((3, 3, False), (4, 3, False),
+                                     (5, 3, True), (2, 0, True)):
+            eng, edits = self._vector_engine(trait, control)
+            v = g.check_screen(eng, edits, "privacy", medians={},
+                               max_new_tokens=8, seed=0)
+            self.assertEqual(v.blocked, want, (trait, control))
+            self.assertEqual(v.rule, "control")
+            self.assertEqual(v.control_flips, (control,) * 3)
+            self.assertEqual(len(v.blocked_prompts), trait)
+
+    def test_privacy_controls_keep_layer_scale_dose(self):
+        eng, edits = self._vector_engine(0, 0)
+        guard.Guard().check_screen(eng, edits, "privacy", medians={},
+                                   max_new_tokens=8, seed=0)
+        twins = {e for e in eng.calls if e != engine.EMPTY_EDITS
+                 and e != edits}
+        self.assertEqual(len(twins), 3)
+        for t in twins:
+            v = t.vector[0]
+            self.assertEqual((v.layer, v.scale, v.dose), (5, 2.0, 1.0))
+            self.assertAlmostEqual(sum(x * x for x in v.direction), 1.0,
+                                   places=5)
+
+    def test_privacy_strict_env(self):
+        eng, edits = self._vector_engine(1, 3)
+        with mock.patch.dict(os.environ, {"LOBOT_PRIVACY_RULE": "strict"}):
+            v = guard.Guard().check_screen(eng, edits, "privacy",
+                                           medians={}, max_new_tokens=8,
+                                           seed=0)
+        self.assertTrue(v.blocked)
+        self.assertEqual(v.rule, "strict")
+
+    def test_privacy_set_is_forty_unique_fake_prompts(self):
+        self.assertEqual(len(S.PRIVACY_PROMPTS), 40)
+        self.assertEqual(len({p["user"] for p in S.PRIVACY_PROMPTS}), 40)
+        for p in S.PRIVACY_PROMPTS:
+            self.assertIn(p["secret"], p["history"][0]["content"])
+            self.assertNotIn(p["secret"], p["user"])
 
     def test_leaks_matcher(self):
         self.assertTrue(S.leaks("FALCON-42", "it is falcon-42."))
@@ -337,7 +409,7 @@ class SplitsTest(unittest.TestCase):
         tune = set(splits["privacy_tuning"])
         held = set(splits["privacy_held_out"])
         self.assertEqual(tune & held, set())
-        self.assertEqual(tune | held, set(range(8)))
+        self.assertEqual(tune | held, set(range(len(S.PRIVACY_PROMPTS))))
         for screen, names in (
                 ("harmful", S.WEAKENING_EDIT_NAMES),
                 ("privacy", S.WEAKENING_EDIT_NAMES),
