@@ -36,6 +36,9 @@ def main() -> int:
     ap.add_argument("--lane", default="torch", choices=["torch", "llama"],
                     help="llama: batch generation, judge and NLL on "
                          "lobot-llamad (LOBOT_CREATE_QUANT, default f16)")
+    ap.add_argument("--pareto", action="store_true",
+                    help="add the PP stage: effect vs side effects per "
+                         "dose, next to the prompt baseline")
     args = ap.parse_args()
     # Same source as run_trait itself: the trait store (legacy and
     # open families), with legacy baselines as the fallback.
@@ -50,16 +53,12 @@ def main() -> int:
     print(f"[trait] {args.model} warm (rung {rung}, rev {eng.revision[:12]})",
           flush=True)
     workdir = Path(args.workdir or (ROOT / "logs" / f"e2e_{args.trait}"))
-    lane = None
-    if args.lane == "llama":
-        from model_lobotomy import llama_backend
-        lane = trait_eval.LlamaLane(eng, eng.spec, llama_backend.CreateDaemon(
-            args.model, eng.revision, eng.tokenizer))
+    lane = trait_eval.open_lane(eng, args.lane, args.model)
     out = trait_eval.run_trait(eng, eng.spec, args.trait,
                                prompt_bank.PROMPT_BANK, args.seed,
                                workdir, args.model, eng.revision,
                                guard=args.guard, schedule=args.schedule,
-                               lane=lane)
+                               lane=lane, pareto=args.pareto)
     print(f"[trait] schedule={out['schedule']} verdict={out['verdict']} "
           f"eligibility={out['eligibility']} ({out['seconds']} s) "
           f"timings={out.get('timings')}", flush=True)

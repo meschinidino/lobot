@@ -99,12 +99,91 @@ Status as of 2026-10-31 (1000X). Report: `reports/1000X.md`.
 | XM | Cross-model transfer | **Done, live**: pirate Llama (L17 @1.5) → Qwen (L21 @1.0, knob, read 1.00) on one benchmark |
 | SC | Scale (70B) | **Not started**: does not fit 24 GB |
 
+Status as of 2026-11-01 (real 100X, first three pieces).
+
+| ID | Workstream | Spec | Status |
+|---|---|---|---|
+| PP | Prompt Pareto | `specs/PP-prompt-pareto.md` | **Done, live**: pirate and cowboy both `tradeoff`; a prompt beats the vector at every useful dose; pirate's shipped dose 1.5 has fluency 0.017 (`reports/PP.md`) |
+| FD | Fluency-aware dose | `specs/FD-fluency-dose.md` | **Done, live, gate PASS**: pirate moved from a broken dose (fluency 0.017, card FAIL) to a fluent one (0.948, card PASS, gain +0.333); cowboy unchanged (`reports/FD.md`) |
+| GR | Guard repair | `specs/GR-guard-repair.md` | **Built, gate FAILED**: gradient repair cut pirate refusal flips 7 → 1 with the trait kept, but no patch reached a clean guard (`reports/GR.md`) |
+
+## Next version: patches that beat their prompt (v-next)
+
+Owner of every workstream below: Muse (coding agent). Each spec is
+written so one agent can build it alone, check it, and know when it is
+done. Read [AGENTS.md](../../AGENTS.md) first.
+
+### Thesis
+
+Published work agrees on one hard fact: activation steering usually
+loses to a plain prompt. AxBench (Stanford) found that a prompt beat
+every steering method. SteerScope (2026) tested 23 methods; none got a
+stronger effect without more side effects than a prompt. PP measured
+the same on our patches (both `tradeoff`).
+
+The goal of v-next: **every patch proves where it stands against its
+own prompt, predicts its side effects, and repairs them.**
+
+### Rules for all v-next work
+
+1. **Prompt bar.** Every new patch method reports its PP row next to
+   `prompt:label`. A method that loses says so, with numbers.
+2. **Gates first.** Each spec fixes its acceptance gate before any
+   live run. Do not change a gate after you see results. If a gate
+   was wrong, write a new version of the spec and say why.
+3. **Held-out data stays held out.** Tuning and fit data never
+   confirm a claim. The guard test set (GH) gets one look per method
+   and patch, logged.
+4. **One model job at a time** (AGENTS.md). Log every run in
+   `model-lane.md`.
+5. **Honest reports.** Separate "tested with fakes" from "tested on
+   real weights". Report failed gates with numbers.
+
+### Workstreams, in order
+
+| # | ID | Workstream | Spec | Depends on | Lane | Days | Basis |
+|---|---|---|---|---|---|---|---|
+| 1 | U4 | UI: evidence page v2 (prompt chart, fluency, all screens, repair button) | `specs/U4-ui-evidence-v2.md` | PP, FD, GR | UI + no-model | 2 | (product) |
+| 2 | JS | Judged scores: dose rule without NLL; unrequested-change search | `specs/JS-judged-scores.md` | FD, PP | Both | 3 | AxBench (Stanford), VibeCheck (Berkeley) |
+| 3 | GH | Fresh guard test set; repair v3 (iterated gradient projection) | `specs/GH-guard-holdout-repair-v3.md` | GR, FD | Both | 2 | "Safety cost of steering vectors is separable and reducible" (2026) |
+| 4 | UD | "What it thinks of you" dashboard in chat | `specs/UD-user-model-dashboard.md` | CH | Both + UI | 3 | TalkTuner (Harvard) |
+| 5 | HD | One-second draft: description to vector | `specs/HD-one-second-draft.md` | C3, JS, PP | Both | 4 | HyperSteer (Stanford), REMEDI (MIT) |
+| 6 | TD | Trained directions (two-way preference) | `specs/TD-trained-directions.md` | JS, PP | Both | 3 | RePS (Stanford), "Steer like the LLM" (2026) |
+| 7 | SG | Scientist agent: predictions first | `specs/SG-scientist-agent.md` | agent, audit | No-model + network | 2 | MAIA (MIT), Predictive Concept Decoders (Transluce) |
+| 8 | SA | Side-effect atlas and forecast | `specs/SA-side-effect-atlas.md` | PP, 6+ knobs | Both | 2 | "Forecasting side effects of activation steering" (2026) |
+| 9 | TM | Truth meter; head-level honesty steering | `specs/TM-truth-meter.md` | GX, CH, GH | Both + UI | 3 | Geometry of Truth (MIT), ITI (Harvard) |
+| 10 | LQ | Ask the activations (stretch, high risk) | `specs/LQ-latent-qa.md` | store | Model | 4 | LatentQA (Berkeley) |
+
+Why this order:
+- U4 first: the backend already measures more than the screen shows.
+- JS before HD and TD: both new vector sources need a fair dose rule.
+- GH before any new repair or honesty claim: the old guard prompts
+  are spent as a test set.
+- UD is the strongest demo and needs no new vector method.
+- SA needs at least 6 passing knobs; JS and TD should add some.
+
+No-model parts can run in parallel (code and tests with fakes). Model
+runs go one at a time in the order above.
+
+### Sources
+
+- Stanford: [AxBench and steering](https://cs.stanford.edu/~wuzhengx/steer/index.html), [HyperSteer](https://arxiv.org/html/2506.03292v1), [RePS](https://arxiv.org/abs/2505.20809), [ReFT](https://cs.stanford.edu/~wuzhengx/reft/index.html)
+- Berkeley: [LatentQA](https://iclr.cc/virtual/2026/poster/10007461), [VibeCheck](https://sky.cs.berkeley.edu/project/vibecheck/)
+- MIT: [MAIA](https://multimodal-interpretability.csail.mit.edu/maia), [REMEDI](https://arxiv.org/pdf/2304.00740), [Geometry of Truth](https://arxiv.org/pdf/2310.06824)
+- Harvard: [TalkTuner](https://arxiv.org/pdf/2406.07882), [ITI](https://arxiv.org/abs/2306.03341)
+- Transluce: [Predictive Concept Decoders](https://arxiv.org/abs/2512.15712)
+- 2026: [Forecasting side effects](https://arxiv.org/abs/2608.11227), [Safety cost separable](https://arxiv.org/pdf/2608.08383), [SteerScope](https://arxiv.org/abs/2610.07722), [Steer like the LLM](https://arxiv.org/pdf/2605.03907)
+
+No Caltech paper on steering or interpretability was found for this
+plan. Only abstracts were read; no paper was reproduced.
+
 ## Next steps
 
-Open work, each with its reason, lives in [../TODOS.md](../TODOS.md). In
-short: the C2 two-minute gate, a live judged install check (IN), a live
-"model update breaks a patch" case for behavior CI, a fairer privacy rule,
-the O6 chat-cache decision, and 70B scale (SC, needs rented GPUs).
+Open work outside v-next, each with its reason, lives in
+[../TODOS.md](../TODOS.md): the C2 two-minute gate (HD attacks it), a
+live judged install check (IN), a live "model update breaks a patch"
+case for behavior CI, a fairer privacy rule, the O6 chat-cache
+decision, and 70B scale (SC, needs rented GPUs).
 
 The 10X schedule (Thu 10-30 to Tue 11-04) is in this file's git history.
 
