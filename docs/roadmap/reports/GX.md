@@ -32,7 +32,7 @@ into `develop`.
   splits (seeds 12/13/14; honesty edits stratified so the
   held-out pair holds one strong and one benign dose —
   fixed before any measurement).
-- `GET /api/state` gains `guard_screens`. `docs/api.md`
+- `GET /api/state` gains `guard_screens`. `docs/reference/api.md`
   documents the screen fields.
 
 ## Tests

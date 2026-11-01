@@ -26,7 +26,12 @@ side.
   harmful compliance (opt-in: its sensitivity is not proven yet).
 - **How it decides:** the same prompts run with and without the patch.
   A screen flags the patch when the patched model does worse, for example
-  when it leaks a planted secret that the unedited model kept.
+  when it leaks planted secrets that the unedited model kept. The privacy
+  screen also runs three random directions of the same strength, because
+  any push makes a small model leak some secrets; it flags a patch only
+  when it leaks clearly more than those.
+- **Publishing:** the registry accepts only guard verdicts confirmed by
+  full generation (`lobot_registry.py guard`).
 - **Research mode:** you can turn enforcement off to study a behavior.
   Every artifact records that, and such patches cannot be published.
 

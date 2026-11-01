@@ -1,8 +1,8 @@
 # Agent boot runbook: run the app for the user
 
 Use this when the user asks to run, try, or open the app. For
-human-facing guides, see [replay mode](replay-mode.md) and [live
-mode](live-mode.md).
+human-facing guides, see [replay mode](guides/replay-mode.md) and [live
+mode](guides/live-mode.md).
 
 ## Before you start
 

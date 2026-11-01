@@ -53,7 +53,7 @@ Delete active.
   set empty since no shipped delete card passes). `GET
   /api/traits` items gain `"delete_eligible": bool`.
 - `tests/test_delete.py` (no model; scripted engine).
-- `docs/api.md` updated. Report `reports/DL.md`.
+- `docs/reference/api.md` updated. Report `reports/DL.md`.
 
 ## Method notes
 
@@ -101,7 +101,7 @@ one eligible trait. Reported numbers decide (pass or fail).
 ## Done means
 
 All of the above, plus a report with the exact check output for
-the eligible traits. `docs/api.md` documents both routes and the
+the eligible traits. `docs/reference/api.md` documents both routes and the
 eligibility flag.
 
 ## Out of scope

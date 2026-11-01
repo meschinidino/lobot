@@ -18,7 +18,7 @@ show "the steered answer is N× more <trait>".
 
 ## Read first
 
-- `docs/api.md`, section `/api/run`, "Read dial".
+- `docs/reference/api.md`, section `/api/run`, "Read dial".
 - `src/model_lobotomy/server.py` `_run_stream` (search `dial_trait`, `dial.json`).
 - `src/model_lobotomy/engine.py`: `Read`, `EditSet`, `run_stream`.
 - `tests/test_server.py`: the existing dial tests (search `dial`).
@@ -34,7 +34,7 @@ show "the steered answer is N× more <trait>".
 - Replay: when a recording has `dial`, replay returns it; else `dial` is null.
   `scripts/record_sweep.py --dial-trait <family>` records it (skip the flag
   when no Create job exists; print why).
-- `docs/api.md` update. Tests. Report.
+- `docs/reference/api.md` update. Tests. Report.
 
 ## Tests (fake engine with a planted direction)
 
