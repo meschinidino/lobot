@@ -17,6 +17,7 @@ plus a test run) ended in GPU out-of-memory mid-run.
 """
 from __future__ import annotations
 
+import atexit
 import fcntl
 import json
 import os
@@ -80,6 +81,7 @@ def acquire(what: str) -> bool:
                                 "since": round(time.time())}))
             f.flush()
             _held = f
+            atexit.register(release)
             return True
         if not wait:
             busy = ", ".join(_holder(d / f"slot-{i}.lock")
