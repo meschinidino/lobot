@@ -43,7 +43,7 @@ dials per token match /api/run reads.
   then runs the same first turn through `/api/run` and compares
   dial values token for token. Exit 0 on full match.
 - `tests/test_chat_dials.py` (no model; scripted engine).
-- `docs/api.md` updated. Report `reports/CH.md`.
+- `docs/reference/api.md` updated. Report `reports/CH.md`.
 
 ## Method notes
 
@@ -90,7 +90,7 @@ match table and the max abs dial difference vs `/api/run`
 ## Done means
 
 All of the above, plus a report with the exact script output.
-`docs/api.md` documents `dial_traits`, the dial events, and the
+`docs/reference/api.md` documents `dial_traits`, the dial events, and the
 two replay routes.
 
 ## Out of scope

@@ -1,7 +1,7 @@
 # U1 UI: wave-1 wiring (Create, Update, guard, evidence)
 
 Owner: Claude (UI lead). Lane: UI. Depends on: contracts; existing wave-1 API
-(`docs/api.md`). Time: one and a half days.
+(`docs/reference/api.md`). Time: one and a half days.
 
 ## Goal
 

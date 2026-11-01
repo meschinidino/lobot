@@ -21,7 +21,7 @@ disk under `jobs/<id>/trait/`.
   (contracts section 4).
 - Path safety: `id` must match the job-id pattern; resolve inside `jobs/` only;
   404 otherwise. No directory traversal.
-- `docs/api.md` update; tests.
+- `docs/reference/api.md` update; tests.
 
 ## Steps
 

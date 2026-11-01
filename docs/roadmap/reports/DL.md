@@ -18,7 +18,7 @@ Spec: `docs/roadmap/specs/DL-delete.md`. Branch:
 - `GET /api/traits` items carry `delete_eligible` (finished
   Create job with a saved direction). Both delete routes
   return 422 for ineligible traits.
-- `docs/api.md` documents both routes.
+- `docs/reference/api.md` documents both routes.
 
 ## Tests
 

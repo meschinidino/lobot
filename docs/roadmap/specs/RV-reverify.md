@@ -35,15 +35,15 @@ shipped effect within its 95% interval.
   then one `{"result": ...}`. Model pin: the patch's model must
   equal the active model, else 409 with the sentence.
 - CI action: `docs/ci/verify-patch.yml` (staged; a maintainer
-  copies it to `.github/workflows/`, see `docs/verify-ci.md`)
+  copies it to `.github/workflows/`, see `docs/guides/verify-ci.md`)
   (reusable workflow: inputs `patch_path`, `quick`; runs
   `verify_patch.py` on a runner with weights access and fails
-  the job on FAIL) plus `docs/verify-ci.md` (how a third party
+  the job on FAIL) plus `docs/guides/verify-ci.md` (how a third party
   runs it: checkout, weights, one command). The workflow file
   is backend-owned (not `web/`).
 - `tests/test_reverify.py` (no model; scripted engine +
   fixture patch).
-- `docs/api.md` updated. Report `reports/RV.md`.
+- `docs/reference/api.md` updated. Report `reports/RV.md`.
 
 ## Method notes
 
@@ -84,7 +84,7 @@ A FAIL is reported with numbers, not re-run into a pass.
 ## Done means
 
 All of the above, plus a report with the exact live verify
-output and the third-party run record. `docs/api.md` documents
+output and the third-party run record. `docs/reference/api.md` documents
 both routes.
 
 ## Out of scope

@@ -70,7 +70,7 @@ def steer_lift(eng, layer: int, neuron: int, dose: float, words: list[str],
 ## 2. Reader API [R2]
 
 **Already built (wave 2, Muse):** `POST /api/neurons` (click-a-word). See
-`docs/api.md`. Do not rebuild it. It ranks every layer's MLP-input activations
+`docs/reference/api.md`. Do not rebuild it. It ranks every layer's MLP-input activations
 at one token of the wrapped prompt, with the run's edits on. R2 extends it and
 adds three routes.
 
@@ -117,7 +117,7 @@ the route may call.)
 "<family>"`; each steered `token` event carries `dial: {trait: value}`, and
 `complete.result.dial` is `{trait, layer, neutral, trait_mean}`. Scale:
 0 = neutral-template mean projection, 1 = trait-template mean. Cached in
-`jobs/{id}/trait/dial.json`. See `docs/api.md`. Do not rebuild it.
+`jobs/{id}/trait/dial.json`. See `docs/reference/api.md`. Do not rebuild it.
 
 D1 extension (what the tree needs to compare the two answers):
 - `complete.result.dial` adds `"baseline": [{"text": str, "value": float|null}, ...]`

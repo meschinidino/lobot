@@ -56,4 +56,4 @@ progress then the result for a saved trait patch.
 `POST /api/verify/upload` (multipart `.lobot`, at most
 64 MB) runs the same check on an uploaded file. Both need
 the patch model to be the active model (else 409). Full
-shapes are in `docs/api.md`.
+shapes are in `docs/reference/api.md`.

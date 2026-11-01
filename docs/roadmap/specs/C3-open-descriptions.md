@@ -59,7 +59,7 @@ a full-schedule Create reaches verdict knob.
   is shuffled with a fixed seed; the user never sees which side
   prompted a reply.
 - `tests/test_open_descriptions.py` (no model; scripted engine).
-- `docs/api.md` updated. Report `reports/C3.md`.
+- `docs/reference/api.md` updated. Report `reports/C3.md`.
 
 ## Method notes
 
@@ -113,7 +113,7 @@ and the two trait descriptions are not changed to pass.
 
 All of the above, plus a report with the two drafts (full
 parts), the two agreements, the two Create verdicts, who
-labeled, and the labeling counts. `docs/api.md` documents the
+labeled, and the labeling counts. `docs/reference/api.md` documents the
 draft routes.
 
 ## Out of scope

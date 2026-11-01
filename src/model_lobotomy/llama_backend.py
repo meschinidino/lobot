@@ -311,6 +311,8 @@ class DaemonProc:
             raise RuntimeError(
                 f"lobot-llamad missing: {binary}; run "
                 f"scripts/build_llamacpp.sh")
+        from model_lobotomy import gpu_lock
+        gpu_lock.acquire(f"lobot-llamad {Path(gguf).name}")
         args = [binary, "-m", str(gguf), *(extra_args or [])]
         # KV prefix reuse across requests with the same cvec (daemon
         # default). LOBOT_LLAMA_PREFIX_CACHE=0 makes every request cold.
@@ -1006,7 +1008,9 @@ class CreateDaemon:
     """
 
     PARALLEL = 32
-    CTX = 16384
+    # 32 prompts x (prompt + 60 new) fit in ~4k tokens; score groups
+    # cap at n_batch (2048). Torch shares the GPU, so stay small.
+    CTX = 8192
 
     def __init__(self, model_id: str, revision: str, tokenizer,
                  quant: str | None = None, proc_factory=None):

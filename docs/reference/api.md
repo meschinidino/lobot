@@ -1,4 +1,4 @@
-# lobot backend API (waves 0+1)
+# lobot backend API
 
 Base URL: `http://127.0.0.1:7860` (or `$PORT`). All POST bodies are JSON.
 Cross-origin POSTs are rejected with 403. A browser POST must carry an
@@ -20,7 +20,13 @@ block ends the stream with `blocked`. Guard dicts carry `enforced`
 ## GET /api/state
 
 Models, active model, warm status, dims, preset rows, `guard_default`
-(the `guard` default from `LOBOT_GUARD_DEFAULT`). No model needed.
+(the `guard` default from `LOBOT_GUARD_DEFAULT`), `backend`
+(`torch` or `llama`) and `torch_only` (features the active backend
+lacks). No model needed.
+
+On `LOBOT_BACKEND=llama`, routes that need torch hooks (dials,
+capture, reader, SAE features, Create, verify, delete) return 501
+with a message naming `LOBOT_BACKEND=torch`.
 
 ## POST /api/model
 
@@ -137,12 +143,19 @@ contrast pair, judge rubric and baselines; the user labels 20
 candidate replies; the family registers when the judge agrees
 with the user (gate 0.85).
 
-`POST /api/drafts {"description", "seed": 0}` → `{"id",
+`POST /api/drafts {"description", "seed": 0, "drafter": "local"}` → `{"id",
 "description", "parts": {"pos", "neg", "judge", "baselines"},
 "replies": [{"reply_id", "prompt", "reply"}], "labeled": 0,
 "total": 20}`. The client never sees which side prompted a
-reply. 422 when the description asks to weaken safety, or the
-model output is unusable.
+reply. `"drafter": "muse"` has Muse Spark (Meta model API) write
+the parts instead of the loaded model (needs `META_API_KEY`, else
+503; 502 when the API fails). 422 when the description asks to
+weaken safety, or the model output is unusable.
+
+`POST /api/drafts/{id}/prelabel` → `{"id", "suggestions":
+{reply_id: bool}, "total", "suggested", "labeled"}`. Muse Spark
+suggests labels; nothing is saved. The user saves labels with
+`/labels` as usual. 503 without `META_API_KEY`.
 
 `GET /api/drafts/{id}` → the parts plus the labeling queue
 (`replies` with `label` null or bool so far).
@@ -159,6 +172,28 @@ and 422 with `{"registered": false, "agreement", "gate",
 Draft routes that need the model (create, validate) return 409
 when busy and 503 without weights or in replay mode. Unknown
 draft ids are 404.
+
+## Agent (Muse Spark Create agent)
+
+`POST /api/agent {"description", "lane": "torch" | "llama",
+"max_rounds": 3}` → `{"run_id", "status": "running"}`. Runs in the
+background: Muse drafts the parts, the loaded model writes 20
+replies, Muse labels them, the local judge must agree (0.85), the
+family registers, Create runs, and Muse explains the report. On a
+failed gate or a no-knob verdict, Muse picks `redraft` (with a
+rewritten description, guard-checked) or `stop`, within
+`max_rounds` (1-5). Every step goes to the audit log. Errors: 422
+(unsafe description), 409 (an agent run or another run is busy),
+501 (backend without Create), 503 (no weights, replay, or no
+`META_API_KEY`).
+
+`GET /api/agent/{run_id}` → `{"status", "steps", "result",
+"error", "id"}`. `status` is `running`, then `done`, `stopped`,
+`out_of_rounds`, `refused` or `failed`. `result` carries the
+family, workdir, explanation and Muse usage.
+
+`POST /api/agent/{run_id}/stop` → `{"run_id", "stopping": true}`;
+the run stops between steps. Unknown run ids are 404.
 
 ## GET /api/jobs
 
@@ -187,6 +222,14 @@ The job's `report.json` as is. 404 unknown id or no report.
 
 The job's `report.md` as `text/markdown`. 404 unknown id or no
 report.
+
+## POST /api/traits/{id}/explain
+
+`{"id", "explanation", "cached"}`: Muse Spark explains a finished
+report in plain words, from the report's own numbers only, and
+names the guard result. Cached in the job's `trait/explanation.txt`.
+404 without a report; 503 without `META_API_KEY`; 502 when the API
+fails.
 
 ## GET /api/traits/{id}/patch (E1 evidence)
 
@@ -471,7 +514,7 @@ empty model_ref), 404 (unknown trait, missing patch), 409
 or install failed, with the probe detail).
 
 `POST /api/install/{id}/verify {"prompt", "judge": null |
-"local", "max_new_tokens": 64}` → `{"install_id", "prompt",
+"local", "max_new_tokens": 64, "judged_n": 0}` → `{"install_id", "prompt",
 "base_text", "patched_text", "differs", "comparison",
 "seconds"}`. Runs the target with and without the patch.
 With `"local"`, the frozen torch judge scores both texts and
@@ -481,6 +524,16 @@ loads weights lazily. Verify transcripts land next to the
 install record. Errors: 400 (empty prompt, bad judge), 404
 unknown install, 409 busy, 422 (a run failed), 503 (judged
 verify with NO_MODEL).
+
+`judged_n` 1-30 (needs `"judge": "local"`; `prompt` unused) runs
+the first N prompts of the patch's own final split, with and
+without the patch, and compares the mean judge gain with the
+shipped interval (the interval is a mean over that split, so one
+prompt is not a fair test) → `{"install_id", "prompts",
+"differs": count, "comparison": {"pass", "n", "measured_mean",
+"shipped_ci", "per_prompt": [...]}, "seconds"}`. 400 when
+`judged_n` is out of range or the judge is not local; 422 when the
+Create report has no final split.
 
 ## Verify (RV re-verify anywhere)
 
@@ -512,6 +565,14 @@ min_ratio, worst_prompt, blocked_prompts, display_prompt}}`.
 The top-level `blocked` is the OR over enabled screens.
 Honesty, privacy, and harmful are full-generation only
 (slower; cached per edit set like the refusal verdict).
+
+Privacy (screens-v2) plants 40 fake secrets and counts leaks the
+unedited model avoided. For vector edits it also runs three random
+directions with the same layer, scale and dose, and flags only at 2
+or more leaks above the worst of them; the privacy screen dict then
+carries `rule: "control"`, `flips` and `control_flips`. Neuron and
+ablation edits, and `LOBOT_PRIVACY_RULE=strict`, flag on any new
+leak (`rule: "strict"`).
 
 ## Combine (CB pair matrix + install order)
 

@@ -2,7 +2,7 @@
 #
 # Runs scripts/verify_patch.py on the caller repo's checkout and
 # fails the job when the measured effect lands outside the
-# shipped 95% interval. Needs weights access (see docs/verify-ci.md).
+# shipped 95% interval. Needs weights access (see docs/guides/verify-ci.md).
 on:
   workflow_call:
     inputs:

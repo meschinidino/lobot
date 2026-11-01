@@ -78,7 +78,7 @@ class LibraryTest(unittest.TestCase):
         seen = []
         code, out = R.run_verify_patch(
             knob, quick=True, engine=ScriptedEngine(),
-            judge_fn_for_fn=lambda eng, trait: judge,
+            judge_fn_for_fn=lambda eng, trait, label=None: judge,
             progress=lambda d, t: seen.append((d, t)))
         self.assertEqual(code, 0)
         self.assertTrue(out["pass"])
@@ -93,7 +93,7 @@ class LibraryTest(unittest.TestCase):
         judge = lambda q, r: 0.8 if r == "steered reply" else 0.2
         code, out = R.run_verify_patch(
             knob, quick=False, engine=ScriptedEngine(),
-            judge_fn_for_fn=lambda eng, trait: judge)
+            judge_fn_for_fn=lambda eng, trait, label=None: judge)
         self.assertEqual(code, 0)
         self.assertEqual(out["n"], 30)
 
@@ -102,9 +102,49 @@ class LibraryTest(unittest.TestCase):
         judge = lambda q, r: 0.8 if r == "steered reply" else 0.2
         code, out = R.run_verify_patch(
             knob.read_bytes(), quick=True, engine=ScriptedEngine(),
-            judge_fn_for_fn=lambda eng, trait: judge)
+            judge_fn_for_fn=lambda eng, trait, label=None: judge)
         self.assertEqual(code, 0)
         self.assertEqual(out["n"], 16)
+
+    def test_open_family_label_from_patch_recipe(self):
+        path = patch_mod.save_patch(
+            self.dir / "noir.lobot", direction=torch.randn(16) * 0.5,
+            layer=7, dose=1.0, trait="speaks-like-a-noir-detective",
+            scale=2.5, recipe={"seed": 0, "judge": "written in noir"},
+            report_card={"passed": True, "trait_mean": 0.6,
+                         "trait_ci": [0.5, 0.7]},
+            guard={"blocked": False},
+            fingerprint={"model_id": "fake/model", "revision": "r"})
+        seen = {}
+
+        def jf(eng, trait, label=None):
+            seen["label"] = label
+            return lambda q, r: 0.9 if r.startswith("steered") else 0.3
+
+        code, rep = R.run_verify_patch(
+            path, quick=True, engine=ScriptedEngine(),
+            judge_fn_for_fn=jf)
+        self.assertEqual(code, 0, rep)
+        self.assertEqual(seen["label"], "written in noir")
+
+    def test_label_order_store_then_legacy(self):
+        with mock.patch.object(R.trait_eval, "family_cfg",
+                               return_value={"judge": "from store"}):
+            self.assertEqual(R.judge_label({"trait": "x"}), "from store")
+        with mock.patch.object(R.trait_eval, "family_cfg",
+                               side_effect=KeyError("x")):
+            self.assertEqual(R.judge_label({"trait": "blunt"}),
+                             R.trait_eval.spike.BEHAVIORS["blunt"]["judge"])
+            self.assertIsNone(R.judge_label({"trait": "nope"}))
+
+    def test_unknown_trait_without_label_rejected(self):
+        path = _knob(self.dir / "u.lobot", trait="nope")
+        with mock.patch.object(R.trait_eval, "family_cfg",
+                               side_effect=KeyError("nope")):
+            code, rep = R.run_verify_patch(path, quick=True,
+                                           engine=ScriptedEngine())
+        self.assertEqual(code, 2)
+        self.assertIn("unknown trait", rep["error"])
 
     def test_library_rejects_garbage(self):
         code, out = R.run_verify_patch(

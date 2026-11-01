@@ -378,6 +378,56 @@ class InstallCompareTest(unittest.TestCase):
         self.assertAlmostEqual(got["measured_mean"], 0.35)
         self.assertEqual(got["n"], 1)
 
+    def _judged_setup(self, final):
+        report = self.jobs_dir / self.job / "trait" / "report.json"
+        data = json.loads(report.read_text())
+        data["splits"] = {"final": final}
+        report.write_text(json.dumps(data))
+        rec = {"install_id": "abc-llamacpp-1", "trait_id": self.job,
+               "target": "llamacpp", "model_ref": "m.gguf",
+               "run": {"base_cmd": ["cli"]}, "detail": "x"}
+        I.save_install(dict(rec))
+
+    def test_judged_mean_over_final_split(self):
+        self._judged_setup(["q1", "q2", "q3"])
+        client = TestClient(server.api)
+
+        def fake_gen(target, run, prompt, patched=True, max_new=64):
+            return {"ok": True, "detail": "",
+                    "text": f"{'P' if patched else 'B'}:{prompt}"}
+
+        scores = {"B": 0.1, "P": 0.4}
+        with mock.patch.object(server, "NO_MODEL", False), \
+                mock.patch.object(server, "get_engine",
+                                  return_value=self.eng), \
+                mock.patch.object(T, "family_cfg",
+                                  return_value={"judge": "J"}), \
+                mock.patch.object(I, "generate", side_effect=fake_gen), \
+                mock.patch.object(
+                    T, "judge_score",
+                    side_effect=lambda m, t, s, q, r, l: scores[r[0]]):
+            r = client.post("/api/install/abc-llamacpp-1/verify",
+                            json={"judge": "local", "judged_n": 2})
+        self.assertEqual(r.status_code, 200, r.text)
+        d = r.json()
+        self.assertEqual(d["prompts"], ["q1", "q2"])
+        self.assertEqual(d["differs"], 2)
+        cmp = d["comparison"]
+        self.assertEqual(cmp["n"], 2)
+        self.assertAlmostEqual(cmp["measured_mean"], 0.3)
+        self.assertTrue(cmp["pass"])
+        self.assertEqual(len(cmp["per_prompt"]), 2)
+
+    def test_judged_needs_local_judge_and_bounds(self):
+        self._judged_setup(["q1"])
+        client = TestClient(server.api)
+        r = client.post("/api/install/abc-llamacpp-1/verify",
+                        json={"judged_n": 2})
+        self.assertEqual(r.status_code, 400)
+        r = client.post("/api/install/abc-llamacpp-1/verify",
+                        json={"judge": "local", "judged_n": 31})
+        self.assertEqual(r.status_code, 400)
+
     def test_compare_no_shipped_numbers(self):
         job_dir = self.jobs_dir / self.job
         patch_mod.save_patch(

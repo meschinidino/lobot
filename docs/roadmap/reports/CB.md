@@ -23,7 +23,7 @@ Spec: `docs/roadmap/specs/CB-combined.md`. Branch:
   path dropped the screens; both fixed, regression test
   added), and the screen list is now exact (refusal runs
   only when listed; default still includes it).
-- `docs/api.md` documents both routes.
+- `docs/reference/api.md` documents both routes.
 
 ## Tests
 
