@@ -17,7 +17,7 @@ find, lift. Exact shapes: `contracts.md` section 2.
 
 - `src/model_lobotomy/server.py`: how `/api/run` takes the Engine lock, checks `NO_MODEL` and
   `REPLAY`, and returns errors.
-- `docs/api.md`: style for documenting routes.
+- `docs/reference/api.md`: style for documenting routes.
 - `tests/test_server.py`: `ServerStreamTest` (fake engine) and
   `ReplayModeTest`.
 
@@ -31,7 +31,7 @@ find, lift. Exact shapes: `contracts.md` section 2.
 - Replay support for `GET /api/neuron/...`: serve from
   `store/reader/<model-slug>/cards.json` when present; otherwise 503 with
   "Neuron cards need the model, or a recorded cards.json for replay mode."
-- `docs/api.md`: a section per route.
+- `docs/reference/api.md`: a section per route.
 - Tests in `tests/test_server.py` (class `ReaderApiTest`).
 
 ## Steps

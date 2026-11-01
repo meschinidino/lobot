@@ -55,7 +55,7 @@ changes llama.cpp output as recorded.
   GGUF/Modelfile, run command, verify outputs). Gitignored
   (under jobs/).
 - `tests/test_installers.py` (no model; stubbed subprocess).
-- `docs/api.md` updated. Report `reports/IN.md`.
+- `docs/reference/api.md` updated. Report `reports/IN.md`.
 
 ## Method notes
 
@@ -107,7 +107,7 @@ probe outputs, not as passed.
 
 All of the above, plus a report with the probe outputs, the
 install + verify transcript, and the UI handoff (buttons call
-these routes). `docs/api.md` documents all three routes.
+these routes). `docs/reference/api.md` documents all three routes.
 
 ## Out of scope
 

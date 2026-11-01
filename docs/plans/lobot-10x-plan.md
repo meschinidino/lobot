@@ -625,7 +625,7 @@ Files this plan touches: `steer.py` docstring (load recipe block: still accurate
 
 # Eng review (/plan-eng-review, 2026-10-29)
 
-Target: this plan, waves 0-1 in focus. Report file: this file. Design doc: `docs/designs/behavior-crud.md` (promoted CEO plan).
+Target: this plan, waves 0-1 in focus. Report file: this file. Design doc: `docs/plans/behavior-crud.md` (promoted CEO plan).
 Prior learnings applied: steering-gates-self-validate (8/10, 2026-10-29); bpe-split-offset-leading-space (9/10, 2026-10-29).
 
 ## Scope challenge
@@ -963,7 +963,7 @@ Approval readiness (eng): PASS. Checked: E-S1/D1 ("B) Smaller arrangement"), E-S
 REALITY: premise-table finding unverified=3 (batched==single on MPS, prefill guard agreement, Create time 10-20 min) scripts/spike_knob.py:385
 REALITY: already-done pass no commits for engine.py, traits.py, evaluation.py; local log only (no remote) server.py:1
 REALITY: surface-check finding streaming claimed but server emits stage events only; llama-cli not installed server.py:172
-REALITY: binding-decisions pass decision log has the CEO record only; eng answers do not overrule it except D12 narrowing Create, recorded as user choice docs/designs/behavior-crud.md:1
+REALITY: binding-decisions pass decision log has the CEO record only; eng answers do not overrule it except D12 narrowing Create, recorded as user choice docs/plans/behavior-crud.md:1
 REALITY: numbers pass Llama 34.1 tok/s measured; Create 10-20 min estimated, re-measure before gate artifacts/v1-20261029-161530/run.json:1
 REALITY: deferred-asks pass no linked issue TODOS.md:1
 REALITY: pr-count pass default one PR per wave; waves 0 and 1 are two PRs pyproject.toml:1

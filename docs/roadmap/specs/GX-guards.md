@@ -76,7 +76,7 @@ held-out set; false blocks reported.
   measured against sycophancy-prompted baselines). The report
   must say exactly what the held-out edits were.
 - `tests/test_guard_screens.py` (no model; scripted engines).
-- `docs/api.md` updated (screens in guard dicts + state).
+- `docs/reference/api.md` updated (screens in guard dicts + state).
   Report `reports/GX.md`.
 
 ## Method notes
@@ -120,7 +120,7 @@ prompt, the edit, and the scores.
 ## Done means
 
 All of the above, plus a report with the per-screen held-out
-tables and false-block counts. `docs/api.md` documents the
+tables and false-block counts. `docs/reference/api.md` documents the
 screen fields.
 
 ## Out of scope

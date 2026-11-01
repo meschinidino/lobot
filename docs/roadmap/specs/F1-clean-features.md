@@ -41,7 +41,7 @@ words on at least half the features.
 - Routes: `GET /api/features`, `GET /api/feature/{layer}/{index}`,
   `POST /api/feature-lift` (see Contracts addition below).
 - `tests/test_sae.py` (no model).
-- `docs/api.md` updated. Report `reports/F1.md`.
+- `docs/reference/api.md` updated. Report `reports/F1.md`.
 
 ## Method notes
 
@@ -138,7 +138,7 @@ pass.
 
 All of the above, plus a report with the exact eval output, train
 time and peak memory, and three example feature cards pasted as
-text. `docs/api.md` documents the three routes.
+text. `docs/reference/api.md` documents the three routes.
 
 ## Out of scope
 

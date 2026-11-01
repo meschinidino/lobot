@@ -41,7 +41,7 @@ together is caught; matrix report for installed patches.
   needed when empty, else 409-aware). Pair checks cache by the
   union fingerprint (same D8 key scheme, order-free).
 - `tests/test_combine.py` (no model; scripted engines).
-- `docs/api.md` updated. Report `reports/CB.md`.
+- `docs/reference/api.md` updated. Report `reports/CB.md`.
 
 ## Method notes
 
@@ -90,7 +90,7 @@ failed, with the nearest miss (min ratios per pair).
 ## Done means
 
 All of the above, plus a report with the exact live matrix
-and the proof pair's three verdicts. `docs/api.md` documents
+and the proof pair's three verdicts. `docs/reference/api.md` documents
 both routes.
 
 ## Out of scope

@@ -36,7 +36,7 @@ Endpoints:
     POST /api/chat         one chat turn, streamed tokens
     GET  /api/chat/{id}    chat history (reattach)
 
-Full request/response shapes: docs/api.md.
+Full request/response shapes: docs/reference/api.md.
 
 Run:
     uv run python server.py                            # loads weights, serves localhost:7860

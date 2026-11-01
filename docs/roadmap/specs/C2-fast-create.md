@@ -63,7 +63,7 @@ re-tuned around.
   round-trip and invalidation, early-stop rule cases, base-cache
   sharing counts on a fake engine, full-schedule prompt order
   unchanged. No model.
-- `docs/api.md` updated. Report `reports/C2.md`.
+- `docs/reference/api.md` updated. Report `reports/C2.md`.
 
 ## Method notes
 
@@ -128,7 +128,7 @@ above are not re-tuned to pass.
 All of the above, plus a report with the per-family table
 (family, fast seconds, fast verdict, full verdict, match), the
 median, the capture-cache repeat-run speedup, and the blunt
-validation numbers. `docs/api.md` documents `schedule`.
+validation numbers. `docs/reference/api.md` documents `schedule`.
 
 ## Out of scope
 
