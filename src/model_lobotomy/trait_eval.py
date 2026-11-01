@@ -39,6 +39,7 @@ sys.path.insert(0, str(ROOT))
 from model_lobotomy import engine as engine_mod  # noqa: E402
 from model_lobotomy import evaluation as E  # noqa: E402
 from model_lobotomy import guard as guard_mod  # noqa: E402
+from model_lobotomy import pareto as pareto_mod  # noqa: E402
 from model_lobotomy import steer  # noqa: E402
 
 _SPIKE = importlib.util.spec_from_file_location(
@@ -89,6 +90,14 @@ EARLY_STOP_MIN_N = 6
 EARLY_STOP_CI_MARGIN = 0.05
 
 CAPTURE_CACHE_VERSION = 1
+
+# FD dose rule: a coherent dose keeps the NLL rise at or under
+# NLL_MAX_RISE and the mean fluency judge score at or above
+# FLUENCY_FLOOR (the judge's own yes/no boundary). NLL alone passes
+# repeated tokens ("ol' ol' ol'"), which are easy to predict.
+DOSE_RULE = "nll+fluency-v1"
+NLL_MAX_RISE = 1.0
+FLUENCY_FLOOR = 0.5
 
 
 def schedule_params(schedule: str) -> dict:
@@ -807,6 +816,20 @@ def derive_direction(eng, spec, cfg, prompts):
     return A, B
 
 
+def coherent_doses(gen: dict) -> list[float]:
+    """Doses > 0 that pass the FD rule. gen: dose -> {judge, nll, fluency}."""
+    base = gen[0.0]["nll"]
+    return [d for d in gen if d > 0
+            and gen[d]["nll"] - base <= NLL_MAX_RISE
+            and gen[d]["fluency"] >= FLUENCY_FLOOR]
+
+
+def best_dose(gen: dict) -> float | None:
+    """Coherent dose with the highest trait judge score, or None."""
+    return max(coherent_doses(gen), key=lambda d: gen[d]["judge"],
+               default=None)
+
+
 def _seps(A, B, layers):
     """Separability, fit on 40, measured on held-out 20 (no tuning leak)."""
     return {L: spike.separability(A[L][:40], B[L][:40], A[L][40:], B[L][40:])
@@ -846,13 +869,16 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
             if progress is not None:
                 progress("tune", done, total)
             js = lane.judge_many(list(zip(tuning, rs)), cfg["judge"])
+            fl = lane.judge_many(list(zip(tuning, rs)),
+                                 pareto_mod.FLUENCY_LABEL)
             nl = lane.nll_many(
                 list(zip(tuning, rs))
                 + [(f"{cfg['pos']}\n\n{q}", r) for q, r in zip(tuning, rs)])
             ns = [min(a, b) for a, b in zip(nl[:len(rs)], nl[len(rs):])]
-            gen[d] = {"judge": sum(js) / len(js), "nll": sum(ns) / len(ns)}
+            gen[d] = {"judge": sum(js) / len(js), "nll": sum(ns) / len(ns),
+                      "fluency": sum(fl) / len(fl)}
         table[L] = gen
-        bd = spike.best_dose(gen)
+        bd = best_dose(gen)
         if bd is not None:
             gain = gen[bd]["judge"] - gen[0.0]["judge"]
             if frozen is None or gain > frozen["gain"]:
@@ -1153,7 +1179,7 @@ def baseline_top1(eng, spec, cfg, label, tuning, final,
 def run_trait(eng, spec, trait_name, bank, seed, workdir,
               model_id, revision, cancel=None, progress=None,
               guard=False, research_mode=False, schedule="full",
-              lane=None):
+              lane=None, pareto=False):
     """One complete trait end to end. Writes report.json + report.md.
 
     cancel (threading.Event) raises Stopped at generation granularity;
@@ -1162,6 +1188,8 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     "fast" (fewer prompts, shorter generations, early stop).
     lane runs generation, judge and NLL (default TorchLane on eng;
     LlamaLane batches them on lobot-llamad). Capture stays on eng.
+    pareto adds the PP stage (effect vs side effects per dose, next
+    to the prompt baseline) as out["pareto"].
     """
     _check(cancel)
     params = schedule_params(schedule)
@@ -1217,7 +1245,10 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         cancel=cancel, progress=progress, params=params,
         base_cache=base_cache, lane=lane)
     timings["tune"] = round(time.time() - t_stage, 1)
-    out["tuning"] = {"candidates": cand_stats,
+    out["tuning"] = {"rule": {"name": DOSE_RULE,
+                              "nll_max_rise": NLL_MAX_RISE,
+                              "fluency_floor": FLUENCY_FLOOR},
+                     "candidates": cand_stats,
                      "table": {str(L): {str(d): v for d, v in g.items()}
                                for L, g in table.items()}}
     if frozen is None:
@@ -1319,6 +1350,14 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         "card": _json_card(base_card)}
     out["early_stop"]["prompt_baseline"] = {
         "n": base["n"], "stopped_early": base["stopped_early"]}
+    if pareto:
+        t_stage = time.time()
+        out["pareto"] = pareto_mod.run_pareto(
+            lane, cfg["judge"], fin, layer=frozen_layer, unit=frozen_unit,
+            scale=med[frozen_layer], frozen_dose=frozen_dose,
+            instruction=base["top"], max_new=max_new,
+            base_cache=base_cache, cancel=cancel, progress=progress)
+        timings["pareto"] = round(time.time() - t_stage, 1)
 
     t_stage = time.time()
     frozen_edits = engine_mod.EditSet(vector=(_vec_edit(
@@ -1388,4 +1427,33 @@ def _write_report(workdir, out, t0):
              f"eligibility: {out.get('eligibility')}",
              f"guard: {out.get('guard')}",
              f"read gate: {out.get('read_gate', {}).get('agreement')}"]
+    if out.get("pareto"):
+        lines += [""] + pareto_mod.pareto_lines(out["pareto"])
     (workdir / "report.md").write_text("\n".join(lines) + "\n")
+
+
+def open_lane(eng, kind: str, model_id: str):
+    """A Create lane by name: "torch" (None, the default) or "llama"."""
+    if kind == "torch":
+        return None
+    from model_lobotomy import llama_backend
+    return LlamaLane(eng, eng.spec, llama_backend.CreateDaemon(
+        model_id, eng.revision, eng.tokenizer))
+
+
+def load_job(workdir) -> dict:
+    """A finished Create run: report.json plus its knob.lobot patch.
+
+    Returns {"report", "direction", "meta"} (meta is patch.json).
+    """
+    from model_lobotomy import patch as patch_mod
+    workdir = Path(workdir)
+    report = json.loads((workdir / "report.json").read_text())
+    if not report.get("patch"):
+        raise ValueError(f"{workdir} has no patch (verdict "
+                         f"{report.get('verdict')!r})")
+    loaded = patch_mod.load_patch(workdir / report["patch"])
+    if loaded["meta"].get("scale") is None:
+        raise ValueError("patch has no scale; cannot rebuild its edit")
+    return {"report": report, "direction": loaded["direction"],
+            "meta": loaded["meta"]}
