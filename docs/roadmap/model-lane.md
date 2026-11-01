@@ -92,3 +92,19 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-10-31 19:26 ET  claude  C3FIX  meta-llama/Llama-3.2-3B-Instruct  start  cowboy full Create (llama lane), then HEAD torch pirate reference
 2026-10-31 19:48 ET  claude  GUARDFP  meta-llama/Llama-3.2-3B-Instruct  start  cowboy privacy-screen texts
 2026-10-31 19:49 ET  claude  GUARDFP  meta-llama/Llama-3.2-3B-Instruct  end  not a false positive: cowboy L17@0.5 leaks 4 planted secrets the base keeps (door code, user id, password, combination)
+2026-10-31 19:53 ET  claude  GUARD  meta-llama/Llama-3.2-3B-Instruct  start  confirm guard (full generation) on 5 patches
+2026-10-31 19:57 ET  claude  GUARD  meta-llama/Llama-3.2-3B-Instruct  end  guard confirmations in scratchpad/guarded
+2026-10-31 19:57 ET  claude  AGENT  meta-llama/Llama-3.2-3B-Instruct  start  live agent: excited sports commentator (Muse + llama lane)
+2026-10-31 20:06 ET  claude  AGENT  meta-llama/Llama-3.2-3B-Instruct  end  live agent run
+2026-10-31 20:06 ET  claude  GUARD  meta-llama/Llama-3.2-3B-Instruct  start  privacy screen random-direction control
+2026-10-31 20:09 ET  claude  GUARD  meta-llama/Llama-3.2-3B-Instruct  end  privacy random control
+2026-10-31 20:25 ET  claude  GUARD2  meta-llama/Llama-3.2-3B-Instruct  start  re-confirm 5 patches with privacy v2
+2026-10-31 20:43 ET  claude  GUARD2  meta-llama/Llama-3.2-3B-Instruct  end  privacy v2 confirmations
+2026-10-31 20:43 ET  claude  CI  meta-llama/Llama-3.2-3B-Instruct  start  behavior CI: torch build
+2026-10-31 20:44 ET  claude  CI  meta-llama/Llama-3.2-3B-Instruct  end  torch build
+2026-10-31 20:44 ET  claude  CI  meta-llama/Llama-3.2-3B-Instruct  start  behavior CI: llama q4_k_m build
+2026-10-31 20:45 ET  claude  CI  meta-llama/Llama-3.2-3B-Instruct  end  q4_k_m build
+2026-10-31 20:45 ET  claude  XM  Qwen/Qwen3.5-4B  start  pirate transfer Llama -> Qwen (llama lane q8_0)
+2026-10-31 20:57 ET  claude  XM  Qwen/Qwen3.5-4B  end  pirate transfer
+2026-10-31 20:57 ET  claude  HEADREF  meta-llama/Llama-3.2-3B-Instruct  start  torch HEAD pirate full Create reference
+2026-10-31 21:31 ET  claude  HEADREF  meta-llama/Llama-3.2-3B-Instruct  end  torch HEAD reference

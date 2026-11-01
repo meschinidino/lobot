@@ -160,6 +160,11 @@ Decisions: two Claude consults (binding). Session id in
   judge = softmax over Yes/No, NLL = mean −log P).
 - `verb_final` batches only without early stop (full
   schedule). The fast schedule keeps its one-by-one path.
+- Full pirate Create, both runs alone on the GPU: torch (exact HEAD
+  copy) 2043 s, llama lane 480 s (4.3x; tune 5x, read 4x, final 2.4x,
+  baseline 7.3x). Same verdict, layer/dose, eligibility, read gate and
+  baseline; card means within 0.015. An earlier 7512 s torch record
+  ran with other load and overstated the gain.
 - Check (Llama F16, 16 pirate tuning prompts, lane vs torch):
   generations 15/16 identical (base and steered), batch vs
   single daemon requests 8/8 identical, judge |Δ| ≤ 0.004
