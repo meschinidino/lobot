@@ -31,7 +31,10 @@ From the app (Create page), the API (`POST /api/create`), or the CLI:
 uv run python scripts/run_trait.py --trait talks-like-an-old-west-cowboy --lane llama
 ```
 
-Create picks a layer and dose on tuning prompts, then measures every verb
+Create picks a layer and dose on tuning prompts. A dose qualifies only
+when the reply NLL rises by at most 1.0 and the judge scores the replies
+as fluent (mean at least 0.5). Of those, the dose with the highest trait
+score wins. Then Create measures every verb
 on held-out prompts: read (can the model's activations spot the behavior?),
 turn up, turn down, remove. It also compares against a plain prompt
 baseline and runs the guard.
@@ -69,10 +72,27 @@ and the gates decide every number. API: `POST /api/agent`.
 
 `POST /api/traits/{id}/explain` returns a plain-words summary.
 
+## 5. Compare with a plain prompt
+
+A patch is only worth it when it does something a prompt cannot. Add
+`--pareto` to `run_trait.py`, or run it on a finished run:
+
+```sh
+uv run python scripts/pareto.py jobs/<id>/trait --lane llama
+```
+
+It scores the vector at several doses, two prompts (the top baseline and
+one built from the judge label) and the prompt plus the vector, on the
+held-out prompts. Each point gets a trait gain and a cost (lost relevance
+and fluency). The verdict is `vector_dominates`, `prompt_dominates` or
+`tradeoff`. The chosen dose does not change.
+
 ## Limits
 
 - The local judge is a 3B model. It cannot judge some traits (rhyme
   reached 0.75 agreement even with the best label).
 - A patch the guard flags still runs locally, but the registry refuses to
-  publish it. Run `lobot_registry.py guard` for a full-generation verdict.
+  publish it. Run `lobot_registry.py guard` for a full-generation verdict,
+  and `repair_patch.py` to try a repair (see
+  [share.md](share.md#repair-a-flagged-patch)).
 - One model job at a time on a 24 GB Mac (`LOBOT_GPU_SLOTS`).
