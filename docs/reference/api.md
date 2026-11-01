@@ -93,10 +93,12 @@ Create accepts validated families only.
 ## POST /api/create → job
 
 Start a staged trait run (extract → tune → read_gate → final →
-baseline → verdict). Returns `{"job_id", ...status}`.
+baseline → pareto → guard → verdict). Returns `{"job_id", ...status}`.
 
 Request: `{"description": str, "seed": 0, "guard": false,
-"research_mode": false, "schedule": "full"}`. `description` must
+"research_mode": false, "schedule": "full", "pareto": null}`.
+`pareto` runs the PP stage (effect vs side effects per dose, next to
+two prompts). `null` means on for `full` and off for `fast`. `description` must
 match a validated family name (case-free). `guard` defaults to
 the state's `guard_default` when omitted. `schedule` is `full`
 (the reference pipeline; default) or `fast` (fewer prompts,
@@ -206,17 +208,58 @@ job with a readable report, newest first. No model needed.
 `?model_id=...` keeps one model only.
 
 Item: `{"id", "family", "model_id", "version", "verdict", "layer",
-"dose", "created", "cards", "guard", "patch"}`. `version` counts
+"dose", "created", "cards", "guard", "patch", "delete_eligible",
+"evidence"}`. `version` counts
 finished runs per family and model, oldest first (v1, v2, ...).
 `layer`/`dose` are the frozen choice (null without one). `cards`
 holds `update_up`, `update_down`, `delete`, `prompt_baseline`,
 each `{"passed", "trait_mean", "trait_ci"}` or null. `guard` is
 `{"blocked", "would_block", "verified"}` or null. `patch` is the
-download URL, or null without a saved patch.
+download URL, or null without a saved patch. `evidence` (U4) is
+`{"pareto_verdict", "dose_rule", "fluency", "screens", "repair"}`:
+the PP verdict or null, the dose rule name or null (null means the
+dose was chosen before the fluency check), the fluency at the frozen
+dose (from PP, else from tuning) or null, each guard screen as
+`blocked`, `would_block` or `passed`, and each repair method's status
+or null.
 
-## GET /api/traits/{id}/report (E1 evidence)
+## GET /api/traits/{id}/report (E1 evidence, U4)
 
-The job's `report.json` as is. 404 unknown id or no report.
+The job's `report.json`, plus (U4):
+- `pareto`: the PP block from the report or from `pareto.json`, or null.
+- `repair`: `{method: record}` from `repair_<method>.json` files, or null.
+- `tuning.chosen`: the frozen tuning cell `{layer, dose, judge, nll,
+  fluency?}`, or null.
+- `followups`: `{"pareto": status|null, "repair": status|null}` (see below).
+
+404 unknown id or no report.
+
+## Follow-ups: prompt comparison and repair (U4)
+
+Background jobs for a finished Create with a patch. One follow-up at
+a time; it waits for the engine lock like Create. Status:
+`{"job_id", "kind", "status", "done", "total", "error", "options",
+"started", "updated"}`, with `status` in `queued`, `running`, `done`,
+`stopped`, `failed`. Status persists to `trait/<kind>.status.json`;
+after a server restart a running job reads as `stopped`.
+
+- `POST /api/traits/{id}/pareto` → status. Runs PP on the run's final
+  split and writes `pareto.json`.
+- `GET /api/traits/{id}/pareto` → `{"status", "result"}`; `result`
+  is the PP block or null.
+- `POST /api/traits/{id}/repair` with `{"method": "gradient" |
+  "project"}` (default `gradient`) → status. Runs GR and writes
+  `repair_<method>.json` (`repair.json` for project) and, when a
+  candidate is chosen, `knob.repaired-<method>.lobot`.
+- `GET /api/traits/{id}/repair` → `{"status", "result"}`; `result` is
+  `{method: record}` or null.
+- `POST /api/traits/{id}/{pareto|repair}/stop` → `{"status"}`. Stop
+  takes effect at the next generation or guard step.
+- `GET /api/traits/{id}/repaired/{method}` → the repaired patch as
+  `application/zip`. 404 when no candidate was chosen.
+
+Errors: 404 unknown id; 409 a Create or another follow-up runs; 422
+no patch or a bad method; 503 replay or no-model mode.
 
 ## GET /api/traits/{id}/report.md (E1 evidence)
 

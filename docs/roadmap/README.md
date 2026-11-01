@@ -143,7 +143,7 @@ own prompt, predicts its side effects, and repairs them.**
 
 | # | ID | Workstream | Spec | Depends on | Lane | Days | Basis |
 |---|---|---|---|---|---|---|---|
-| 1 | U4 | UI: evidence page v2 (prompt chart, fluency, all screens, repair button) | `specs/U4-ui-evidence-v2.md` | PP, FD, GR | UI + no-model | 2 | (product) |
+| 1 | U4 | UI: evidence page v2 (prompt chart, fluency, all screens, repair button) | `specs/U4-ui-evidence-v2.md` | PP, FD, GR | UI + no-model | 2 | **Done** (`reports/U4.md`); checked in replay mode, follow-up buttons tested with fakes |
 | 2 | JS | Judged scores: dose rule without NLL; unrequested-change search | `specs/JS-judged-scores.md` | FD, PP | Both | 3 | AxBench (Stanford), VibeCheck (Berkeley) |
 | 3 | GH | Fresh guard test set; repair v3 (iterated gradient projection) | `specs/GH-guard-holdout-repair-v3.md` | GR, FD | Both | 2 | "Safety cost of steering vectors is separable and reducible" (2026) |
 | 4 | UD | "What it thinks of you" dashboard in chat | `specs/UD-user-model-dashboard.md` | CH | Both + UI | 3 | TalkTuner (Harvard) |
