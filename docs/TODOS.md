@@ -35,19 +35,10 @@ Deferred work, each with its reason. The ordered plan is in
   controls (each costs about 40 generations).
 
 ### Dose rule without the NLL check (FD finding, 2026-11-01)
-- FD added a fluency floor to Create's dose choice (reports/FD.md).
-  Pirate now passes with fluent text. But the NLL check rejects every
-  dose 1.0 cell for cowboy, though those replies are fluent (0.75-0.85).
-- Fix: a rule on fluency (and maybe relevance) without the NLL rise.
-  Write the rule in a spec before it runs; the FD tables are seen.
+- Planned as JS ([specs/JS-judged-scores.md](roadmap/specs/JS-judged-scores.md)).
 
 ### GR v3 on a fresh guard set (2026-11-01)
-- Gradient repair cut pirate refusal flips 7 -> 1 with the trait kept,
-  but 1 flip still flags. Re-linearizing at the repaired point would
-  likely close it, but the guard prompts were already used as the
-  test twice.
-- Needs: a fresh held-out refusal and honesty set, then v3
-  (iterated gradient projection) evaluated once on it.
+- Planned as GH ([specs/GH-guard-holdout-repair-v3.md](roadmap/specs/GH-guard-holdout-repair-v3.md)).
 
 ### Make the model choice persistent and default to Llama (2026-10-30)
 - The hero model is Llama 3.2 3B, but `steer.MODEL_ID` (Qwen) is still the
