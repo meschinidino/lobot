@@ -26,6 +26,7 @@ os.environ["MODEL_LOBOTOMY_REPLAY_STAGE_S"] = "0"
 from fastapi.testclient import TestClient  # noqa: E402
 
 from model_lobotomy import app as engine  # noqa: E402
+from model_lobotomy import jobs_store  # noqa: E402
 from model_lobotomy import server  # noqa: E402
 from model_lobotomy import server_helpers as helpers  # noqa: E402
 
@@ -46,9 +47,16 @@ def main(site: Path) -> None:
     c = TestClient(server.api)
     index: dict[str, str] = {}
 
+    # Job records hold absolute paths (workdirs, tracebacks). Publish none.
+    local = [(str(jobs_store.default_jobs_dir().resolve().parent), "<repo>"),
+             (str(Path.home()), "~")]
+
     def save(key: str, status: int, body) -> None:
         name = fnv1a(key)
-        (out / f"{name}.json").write_text(json.dumps({"status": status, "body": body}))
+        text = json.dumps({"status": status, "body": body})
+        for path, alias in local:
+            text = text.replace(path, alias)
+        (out / f"{name}.json").write_text(text)
         index[key] = name
 
     def get(path: str):
@@ -109,7 +117,10 @@ def main(site: Path) -> None:
     find = c.get("/api/find?word=storm&k=8")
     meta = {"start_model": START_MODEL, "states": states, "recordings": recordings,
             "find": {"status": find.status_code, "body": find.json()}}
-    (out / "meta.json").write_text(json.dumps(meta))
+    text = json.dumps(meta)
+    for path, alias in local:
+        text = text.replace(path, alias)
+    (out / "meta.json").write_text(text)
     (out / "index.json").write_text(json.dumps(index, indent=0, sort_keys=True))
     print(f"exported {len(index)} answers, {len(recordings)} recordings, "
           f"{len(trait_ids)} behaviors to {out}")
