@@ -17,9 +17,8 @@ logs/judge_<trait>_meta_api.json and never logs the key.
 
 Run:
     uv run python scripts/validate_judge.py --trait blunt
-    META_API_KEY=... LOBOT_JUDGE_MODEL=... \
-        uv run python scripts/validate_judge.py --trait blunt \
-        --judge meta_api
+    uv run python scripts/validate_judge.py --trait blunt --judge meta_api
+    (META_API_KEY from the shell or .env; see docs/guides/env.md)
 """
 from __future__ import annotations
 
@@ -146,4 +145,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    from model_lobotomy.config import load_env_file
+    load_env_file()  # META_API_KEY from .env; a shell value wins
     raise SystemExit(main())

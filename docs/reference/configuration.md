@@ -42,7 +42,8 @@ lobot reads its settings from environment variables. All are optional.
 
 The server reads `.env` at the repo root when it starts
 (`python -m model_lobotomy.server`). A variable set in the shell wins.
-`.env` is git-ignored; `.env.example` lists the names. `/api/state`
+`.env` is git-ignored; `.env.example` lists the names. Setup:
+[guides/env.md](../guides/env.md). `/api/state`
 reports `meta_api.key` (true or false, never the key) and
 `meta_api.model`.
 

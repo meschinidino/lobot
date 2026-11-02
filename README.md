@@ -34,6 +34,7 @@ uv run python -m model_lobotomy.server
 
 The server reads `.env` at start and logs `Meta API: on` when the key
 loaded. Without a key, everything except the Muse Spark features works.
+Setup and troubleshooting: [docs/guides/env.md](docs/guides/env.md).
 
 Open `http://127.0.0.1:7860`. Type a prompt, set a dose, press Run, and read
 the experiment tree: the answer forks where your edit changed it.
