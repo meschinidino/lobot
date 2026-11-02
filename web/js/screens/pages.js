@@ -1,5 +1,5 @@
 import { update } from "./workbench.js";
-import { KEY_HELP, RULES, SCREEN, SHELF_KEYS, VERDICT, ci, compareSection, doseRuleLine, exOut, exState, explainSection, explains, explorerSection, followupCtl, guardSection, markSplit, mins, noWeights, num, opinions, reports, secondOpinionSection, setExDose, short, splitWord, stroke, tuningSection, vecPoint, wireExplorer } from "./evidence.js";
+import { KEY_HELP, RULES, SCREEN, SHELF_KEYS, VERDICT, ci, compareSection, doseRuleLine, exOut, exState, explainSection, explains, explorerSection, followupCtl, guardSection, markSplit, mins, noWeights, num, opinions, reports, secondOpinionSection, setExDose, short, splitWord, stroke, tuneSection, tunes, tuningSection, vecPoint, wireExplorer } from "./evidence.js";
 import { libraryPage } from "./library.js";
 import { legend } from "../components/legend.js";
 import { blockedMsg, confirmDlg, creating, renderGuard, run, stop, stream } from "./run.js";
@@ -113,13 +113,22 @@ async function explain(id) {
   } catch (err) { explains[id] = { err: `The request failed: ${err.message}` }; }
   renderPage();
 }
+async function tune(id) {
+  const goal = $(`tuneGoal-${id}`)?.value.trim() || "Raise the trait gain and keep the guard clean";
+  tunes[id] = { busy: true, steps: [] }; renderPage();
+  try { await stream("api/tune", { goal, patch_id: id }, (ev) => {
+      if (ev.stage === "done") { tunes[id] = { steps: tunes[id].steps, summary: ev.result?.summary, final: ev.result?.final }; return true; }
+      tunes[id].steps.push(ev); renderPage(); return false; });
+  } catch (err) { tunes[id] = { steps: tunes[id]?.steps || [], err: err.message }; }
+  if (tunes[id]?.busy) tunes[id] = { steps: tunes[id].steps || [], err: "The tune stopped before it finished." };
+  renderPage();
+}
 async function secondOpinion(id) {
   opinions[id] = { busy: true }; renderPage();
   try { const r = await postJSON(`api/traits/${encodeURIComponent(id)}/second-opinion`, {}), body = await r.json();
     opinions[id] = r.ok ? { res: body } : { err: typeof body.detail === "string" ? body.detail : `HTTP ${r.status}` };
     if (r.ok && reports[id]) reports[id].second_opinion = body;
-  } catch (err) { opinions[id] = { err: `The request failed: ${err.message}` }; }
-  renderPage();
+  } catch (err) { opinions[id] = { err: `The request failed: ${err.message}` }; }  renderPage();
 }
 async function renderPage(first = false) {
   const el = $("vPage"), p = S.page; if (!p || el.hidden) return;
@@ -185,6 +194,7 @@ async function renderPage(first = false) {
         ${repairSection(R, p.id)}
         ${versionsSection(name, p.id)}
         ${actionsSection(R, p.id, b)}
+        ${tuneSection(R, p.id)}
         ${explainSection(p.id)}
         <h2 class="sec">Record</h2>
         <div class="kv2"><span>Judge</span><span>${fam ? `“${esc(fam.judge)}” · agreement <span class="mono">${fam.validation?.agreement?.toFixed(2) ?? "n/a"}</span> on ${fam.validation?.hand_labels ?? "?"} hand labels` : "unknown"}</span>
@@ -280,8 +290,8 @@ $("vPage").addEventListener("click", async (e) => {
     const id = S.page.id, R = reports[id]; if (!R?.pareto) return;
     exState(R, id).qi = Number(t.closest("[data-exq]").dataset.exq); setExDose(id, exState(R, id).d);
     $("exOut")?.querySelector(`[data-exq="${exState(R, id).qi}"]`)?.focus();
-  } else if (t.closest("[data-second-opinion]")) { secondOpinion(t.closest("[data-second-opinion]").dataset.secondOpinion);
-  } else if (t.closest("[data-explain]")) { explain(t.closest("[data-explain]").dataset.explain);
+  } else if (t.closest("[data-tune]")) { tune(t.closest("[data-tune]").dataset.tune);
+  } else if (t.closest("[data-second-opinion]")) { secondOpinion(t.closest("[data-second-opinion]").dataset.secondOpinion);  } else if (t.closest("[data-explain]")) { explain(t.closest("[data-explain]").dataset.explain);
   } else if (t.closest("[data-fu]")) {
     const btn = t.closest("[data-fu]"), kind = btn.dataset.fu, id = btn.dataset.id; btn.disabled = true;
     try {

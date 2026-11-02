@@ -77,6 +77,30 @@ DECIDE_PROMPT = (
 )
 
 
+TUNE_DECIDE_PROMPT = (
+    "You tune one behavior patch. Goal: \"{goal}\". Patch: {patch}. "
+    "Tries so far (dose, expected gain, measured gain, guard pass, "
+    "confirmed): {tries}. You have {left} tries left.\n\n"
+    "Choose the next action. Reply with JSON only: "
+    "{{\"action\": \"try_dose\" or \"stop\", \"dose\": a number, "
+    "\"reason\": one short sentence, \"expected_gain\": a number "
+    "(only for try_dose), \"guard_pass\": true or false (only for "
+    "try_dose)}}. For try_dose, the dose is the dose to run and the "
+    "expected gain and guard call are your prediction for that run. "
+    "For stop, the dose is the dose to check at the end."
+)
+
+TUNE_SUMMARY_PROMPT = (
+    "Write the final summary of this patch tuning run in at most "
+    "5 short sentences. Use simple words, active voice, one idea "
+    "per sentence. Use only the numbers given. Write each number "
+    "exactly as given, or rounded to 2 decimal places. Do not "
+    "write any other number. Say the final verdict and the guard "
+    "result. The local judge and the guard decided the verdict. "
+    "Do not claim you decided it.\n\nResult JSON:\n{summary}"
+)
+
+
 class MuseError(RuntimeError):
     """Muse Spark gave no usable answer (or the API failed)."""
 
@@ -209,6 +233,64 @@ class Muse:
                 raise MuseError("redraft without a description")
             out["description"] = desc[:200]
         return out
+
+    # -- tune step --
+
+    def tune_decide(self, goal: str, patch: str, tries: list,
+                    left: int) -> dict:
+        """One tune action with its prediction, checked as JSON.
+
+        Returns {"action", "dose", "reason"} plus, for try_dose,
+        {"expected_gain", "guard_pass"}. Raises MuseError on any
+        answer that lacks the fields its action needs.
+        """
+        shown = [[t["dose"], t["expected_gain"], t["gain"],
+                  t["guard_pass"], t["confirmed"]] for t in tries]
+        got = _json_block(self.complete(TUNE_DECIDE_PROMPT.format(
+            goal=goal.strip(), patch=patch, tries=shown, left=left)))
+        action = got.get("action")
+        if action not in ("try_dose", "stop"):
+            raise MuseError(f"unknown tune action {action!r}")
+        dose = got.get("dose")
+        if isinstance(dose, bool) or not isinstance(dose, (int, float)):
+            raise MuseError("tune action without a numeric dose")
+        out = {"action": action, "dose": float(dose),
+               "reason": str(got.get("reason", ""))[:300]}
+        if action == "try_dose":
+            gain = got.get("expected_gain")
+            if isinstance(gain, bool) or not isinstance(gain, (int, float)):
+                raise MuseError("try_dose without a numeric "
+                                  "expected_gain")
+            if not isinstance(got.get("guard_pass"), bool):
+                raise MuseError("try_dose without a boolean guard_pass")
+            out["expected_gain"] = float(gain)
+            out["guard_pass"] = got["guard_pass"]
+        return out
+
+    def tune_summary(self, summary: dict) -> str:
+        """Final tune summary. It must pass check_explanation.
+
+        One retry names the rejected numbers. A second failure
+        raises MuseError. No unchecked summary reaches the caller.
+        """
+        base = TUNE_SUMMARY_PROMPT.format(
+            summary=json.dumps(summary, indent=1))
+        prompt, last = base, ""
+        for _ in range(2):
+            text = (self.complete(prompt) or "").strip()
+            if not text:
+                last = "empty summary"
+            else:
+                bad = check_explanation(text, summary)
+                if not bad:
+                    return text
+                last = ("numbers not in the summary: "
+                        + ", ".join(bad))
+            prompt = (f"{base}\n\nYour last answer was rejected: "
+                      f"{last}. Use only the numbers in the JSON "
+                      f"above, exactly as given or rounded to 2 "
+                      f"decimal places, and answer again.")
+        raise MuseError(f"tune summary failed the number check: {last}")
 
 
 _NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
