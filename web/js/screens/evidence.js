@@ -2,6 +2,7 @@ import { update } from "./workbench.js";
 import { creating, run, stop } from "./run.js";
 import { behaviors, pop } from "./workbench.js";
 import { $, S, at, esc, fd, reduce } from "../state.js";
+import { paretoChart } from "../components/chart.js";
 /* ---------- pages: New behavior, Create progress, behavior evidence ---------- */
 const short = (m) => (m || "").split("/").pop();
 const num = (x, d = 2) => (x == null ? "n/a" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(d));

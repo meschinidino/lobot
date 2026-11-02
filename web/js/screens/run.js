@@ -1,5 +1,5 @@
 import { refreshState, update } from "./workbench.js";
-import { NST, STAGES, active, closeInspector, closePop, drawN, inspect, pop, proveLift, renderInspector, renderTree, treeRuns } from "./workbench.js";
+import { NST, STAGES, active, closeInspector, closePop, inspect, pop, proveLift, renderInspector, renderTree, treeRuns } from "./workbench.js";
 import { $, S, addResult, at, baselineOnly, curExp, editsText, isB, rowsKey } from "../state.js";
 import { postJSON } from "../api.js";
 /* ---------- run ---------- */
@@ -57,7 +57,7 @@ async function run(fan = false) {
     if (ev.stage === "guard" || ev.stage === "columns" && !research) { S.checking = false; if (!research) S.guardSeen[key] = "passed"; renderGuard(); }
     if (ev.stage === "stopped") { end(); setStatus("info", "STOPPED", "Stopped. The tree keeps the runs it had."); return true; }
     if (ev.stage === "blocked") {
-      S.guardSeen[key] = "blocked"; end(); setStatus("err", "BLOCKED", blockedMsg(ev.guard || {}));
+      S.guardSeen[key] = "blocked"; S.blockMsg = { key, text: blockedMsg(ev.guard || {}) }; end(); setStatus("err", "BLOCKED", S.blockMsg.text);
       $("live").textContent = "Blocked by the refusal guard."; return true;
     }
     if (msgs[ev.stage]) setStatus("info", "RUNNING", msgs[ev.stage]);
@@ -89,7 +89,7 @@ async function run(fan = false) {
               steered: { text: c.text, tokens: c.tokens }, split: splitOf(cols[bi].pieces, cols[i].pieces, base.text, c.text, res.fallback_used),
               seconds: res.seconds, recipe: `update trait=${beh.trait} layer=${res.layer} dose=${c.dose} scale=${res.scale}`, post: "", research }, true);
           });
-          drawN = last; end();
+          S.drawN = last; end();
           if (differs) $("runMsg").textContent = "Note: the batched baseline differs from this experiment's run 1. Splits are measured against the batched baseline.";
           after(last, res.guard); return true;
         }
@@ -105,7 +105,7 @@ async function run(fan = false) {
         if (ev.stage === "complete") {
           const d = ev.result.dial, dial = d && { trait: d.trait, steered: d.steered || toks, baseline: d.baseline || null };
           if (none) { baselineOnly({ ...ev.result, dial }); end(); setStatus("info", "NO EDIT", "Run 1 is the model with no edit. Add an edit and run again to fork it."); return true; }
-          const n = addResult({ ...ev.result, research, dial }); drawN = n; end(); after(n, ev.result.guard); proveLift(n); return true;
+          const n = addResult({ ...ev.result, research, dial }); S.drawN = n; end(); after(n, ev.result.guard); proveLift(n); return true;
         }
         return false;
       });

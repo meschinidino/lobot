@@ -1,5 +1,3 @@
-import { run } from "./screens/run.js";
-import { drawN, inspect, layout } from "./screens/workbench.js";
 const $ = (id) => document.getElementById(id);
 const root = document.documentElement;
 const store = {
@@ -19,20 +17,6 @@ const editsText = (rows) => (rows.length ? rows.map((x) => `${eid(x)} ${fd(x.dos
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 if (!/Mac|iPhone|iPad/.test(navigator.platform)) document.querySelectorAll(".kbd").forEach((k) => (k.textContent = "Ctrl Enter"));
 
-/* ---------- theme, shelf ---------- */
-root.dataset.theme = store.get("theme2", "dark");
-const syncTheme = () => ($("themeBtn").textContent = root.dataset.theme === "dark" ? "Light" : "Dark");
-$("themeBtn").addEventListener("click", () => { root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark"; store.set("theme2", root.dataset.theme); syncTheme(); layout(); });
-syncTheme();
-function setShelf(open) {
-  $("shell").classList.toggle("collapsed", !open); store.set("shelf", open);
-  (open ? $("collapse") : $("expand")).focus({ preventScroll: true });
-  requestAnimationFrame(layout);
-}
-$("collapse").addEventListener("click", () => setShelf(false));
-$("expand").addEventListener("click", () => setShelf(true));
-if (store.get("shelf", true) === false) $("shell").classList.add("collapsed");
-
 /* ---------- state ---------- */
 const S = {
   api: false, state: null, running: false, view: "work", inspect: null, focusEdit: 0, sel: null,
@@ -41,6 +25,8 @@ const S = {
   // Guard: on unless research mode (session only, confirmed in a dialog). guardSeen: last guard result per setup.
   guard: true, research: false, guardSeen: {}, checking: false,
   jobs: [], traits: null, families: null, live: null, page: null, read: null,
+  drawN: null, // run whose curve draws in on the next layout
+  blockMsg: null, // {key, text}: the guard's reason for the last blocked setup
 };
 // Experiments: one per (model, prompt). Run 1 is the baseline; every steered result adds a run.
 const expKey = (model, prompt) => `${model}\n${prompt.trim()}`;
@@ -77,7 +63,7 @@ function baselineOnly(res) {
   // At dose 0 the steered pass is the baseline, so its streamed dial values read run 1.
   const bt = res.dial && (res.dial.baseline && res.dial.baseline.length ? res.dial.baseline : res.dial.steered);
   if (bt && bt.length) EXPS[k].baseDial = { trait: res.dial.trait, toks: bt };
-  EXPS[k].at = Date.now(); saveExps(); drawN = 1;
+  EXPS[k].at = Date.now(); saveExps(); S.drawN = 1;
 }
 
-export { $, root, store, esc, fd, parseDose, at, nid, isB, eid, editsText, reduce, syncTheme, setShelf, S, expKey, EXPS, saveExps, curExp, rowsKey, addResult, baselineOnly };
+export { $, root, store, esc, fd, parseDose, at, nid, isB, eid, editsText, reduce, S, expKey, EXPS, saveExps, curExp, rowsKey, addResult, baselineOnly };

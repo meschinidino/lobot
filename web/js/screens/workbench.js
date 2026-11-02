@@ -1,10 +1,12 @@
 import { KEY_HELP, num, short, stroke } from "./evidence.js";
-import { renderGuard, run, setStatus } from "./run.js";
+import { renderGuard, run, setStatus, setupKey } from "./run.js";
 import { loadBehaviors, openPage } from "./pages.js";
 import { chatSend, drawChatStrips } from "./chat.js";
 import { setView } from "./share.js";
-import { $, EXPS, S, at, curExp, editsText, eid, esc, fd, isB, nid, parseDose, reduce, root, rowsKey, saveExps, store } from "../state.js";
+import { $, EXPS, S, addResult, at, curExp, editsText, eid, esc, fd, isB, nid, parseDose, reduce, root, rowsKey, saveExps, store } from "../state.js";
 import { postJSON } from "../api.js";
+import { strip } from "../components/strip.js";
+import { K, renderKnob } from "../components/dial.js";
 /* ---------- shelf ---------- */
 function renderShelf() {
   const models = S.state ? S.state.models : [{ id: S.model || "Qwen/Qwen3.5-4B", short: (S.model || "Qwen3.5-4B").split("/").pop() }];
@@ -195,7 +197,6 @@ function runHtml(r, current, inspect) {
   const dl = r.dial && r.words ? `<span class="meta" style="color:var(--pen)">reading ${esc(r.dial.trait)}${r.words.some((x) => x.v >= 1) ? ", crosses 1.0" : ""}</span>` : "";
   return `<div class="run${!r.n && S.running ? " generating" : ""}${r.dial ? " dialed" : ""}" data-n="${r.n}" aria-current="${current}"><div class="k"><button class="pick" type="button" data-pick="${r.n}" ${!r.n || S.running ? "disabled" : ""}>${label}</button>${current ? '<span class="state info">SELECTED</span>' : ""}${tag}${dl}</div><div class="t">${body}</div></div>`;
 }
-let drawN = null;
 function renderTree() {
   const T = treeRuns(), m = matching(T);
   S.sel = m ? m.n : 0;
@@ -222,6 +223,8 @@ function renderTree() {
     if (sel) setStatus("ok", "SPLIT", `Run ${sel.n} leaves run 1 at ${at(sel.split)}. ${sel.seconds} s, greedy, seed 0.${sel.research ? " Research mode: the guard was off." : ""}${sel.proof ? " " + proofText(sel.proof) : ""}`);
     else if (m && m.n > 1) setStatus("warn", "NO SPLIT", `Run ${m.n} matches run 1 token for token. Try a larger dose.`);
     else if (m) setStatus("info", "NO EDIT", "Run 1 is the model with no edit.");
+    // Keep the guard's reason after a block: the state refresh at the end of a run calls update() again.
+    else if (S.blockMsg && S.blockMsg.key === setupKey()) setStatus("err", "BLOCKED", S.blockMsg.text);
     else setStatus("info", "READY", T ? "This setup has no run yet. Press Run." : "Press Run.");
   }
   layout();
@@ -238,9 +241,9 @@ function layout() {
     const r = T && T.runs.find((x) => x.n === n), hot = cur && !!(r && r.split);
     const c = hot ? cs.getPropertyValue("--cut") : cur || n === 1 ? cs.getPropertyValue("--ink") : cs.getPropertyValue("--ink-muted");
     const d = stacked ? `M${x0} ${y0} C ${x0} ${y1}, ${x0} ${y1}, ${x1} ${y1}` : `M${x0} ${y0} C ${x0 + (x1 - x0) * .55} ${y0}, ${x0 + (x1 - x0) * .45} ${y1}, ${x1} ${y1}`;
-    return `<path class="${n === drawN ? "draw" : ""}" d="${d}" fill="none" stroke="${c}" stroke-width="${hot ? 4 : cur ? 3 : 2}"${n ? "" : ' stroke-dasharray="5 6"'}/>`;
-  }).join("") + kids.map((el) => strip(el, box, +el.dataset.n === drawN)).join("");
-  drawN = null;
+    return `<path class="${n === S.drawN ? "draw" : ""}" d="${d}" fill="none" stroke="${c}" stroke-width="${hot ? 4 : cur ? 3 : 2}"${n ? "" : ' stroke-dasharray="5 6"'}/>`;
+  }).join("") + kids.map((el) => strip(el, box, +el.dataset.n === S.drawN)).join("");
+  S.drawN = null;
 }
 // Channel strip (read dial) under a run's words: band 0..1, one pen step per word, an ink tick where it first crosses 1.0.
 new ResizeObserver(() => requestAnimationFrame(layout)).observe($("tree"));
@@ -422,4 +425,18 @@ async function seedRecorded() {
   store.set("seededFiles", [...seen]);
 }
 
-export { renderShelf, STAGES, NST, active, behaviors, renderBehaviors, useBehavior, renderSentence, readable, readMenu, addMenu, pop, closePop, openPop, rowForm, treeRuns, matching, expanded, runHtml, drawN, renderTree, layout, NEUR, readerWords, plainTok, uniq, inspect, openInspector, pushBtn, renderInspector, nKey, loadNeurons, openCard, closeInspector, findNeurons, proveLift, proofText, refreshState, applyState, update, seedRecorded };
+/* ---------- theme, shelf ---------- */
+root.dataset.theme = store.get("theme2", "dark");
+const syncTheme = () => ($("themeBtn").textContent = root.dataset.theme === "dark" ? "Light" : "Dark");
+$("themeBtn").addEventListener("click", () => { root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark"; store.set("theme2", root.dataset.theme); syncTheme(); layout(); });
+syncTheme();
+function setShelf(open) {
+  $("shell").classList.toggle("collapsed", !open); store.set("shelf", open);
+  (open ? $("collapse") : $("expand")).focus({ preventScroll: true });
+  requestAnimationFrame(layout);
+}
+$("collapse").addEventListener("click", () => setShelf(false));
+$("expand").addEventListener("click", () => setShelf(true));
+if (store.get("shelf", true) === false) $("shell").classList.add("collapsed");
+
+export { renderShelf, STAGES, NST, active, behaviors, renderBehaviors, useBehavior, renderSentence, readable, readMenu, addMenu, pop, closePop, openPop, rowForm, treeRuns, matching, expanded, runHtml, renderTree, layout, NEUR, readerWords, plainTok, uniq, inspect, openInspector, pushBtn, renderInspector, nKey, loadNeurons, openCard, closeInspector, findNeurons, proveLift, proofText, refreshState, applyState, update, seedRecorded, syncTheme, setShelf };
