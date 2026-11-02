@@ -27,10 +27,12 @@ coding agents. Human docs start at [README.md](README.md).
 | `src/model_lobotomy/pareto.py` | PP: effect vs side effects per dose, next to the prompt baseline |
 | `src/model_lobotomy/guard.py`, `guard_screens.py` | Guard: refusal, honesty, privacy, harmful screens |
 | `src/model_lobotomy/repair.py` | GR: safety directions and the repair search for flagged patches |
+| `src/model_lobotomy/followups.py` | Pareto and repair jobs for a finished Create (shared by the scripts and the server routes) |
+| `src/model_lobotomy/job_import.py` | Register a `run_trait` work dir as an app job (CLI runs, agent runs) |
 | `src/model_lobotomy/drafts.py`, `muse.py`, `agent.py` | Open descriptions, Muse Spark helpers, the Create agent |
 | `src/model_lobotomy/patch.py`, `registry.py`, `audit.py`, `reverify.py`, `transfer.py` | Patches, signed registry, audit log, re-verify, cross-model transfer |
 | `src/model_lobotomy/gpu_lock.py` | GPU slots across processes |
-| `web/` | Workbench UI; follows [docs/DESIGN.md](docs/DESIGN.md) |
+| `web/index.html` | The whole UI in one file (workbench, shelf, Library, evidence, New behavior, agent, labeling, chat); follows [docs/DESIGN.md](docs/DESIGN.md); screens in [docs/guides/app.md](docs/guides/app.md) |
 | `src/model_lobotomy/app.py` | Older Gradio UI (`uv run python -m model_lobotomy.app`) and the model loader the server shares |
 | `scripts/` | CLIs, gates and recorders: [docs/reference/scripts.md](docs/reference/scripts.md) |
 | `tests/` | Unit suite (no weights) plus opt-in model tests |
@@ -47,6 +49,7 @@ uv run --with pytest pytest tests -q                   # same suite under pytest
 uv run python -m model_lobotomy.server                 # app on 127.0.0.1:7860 (loads weights)
 MODEL_LOBOTOMY_REPLAY=1 uv run python -m model_lobotomy.server   # no weights, recorded runs
 sh scripts/build_llamacpp.sh                           # llama.cpp toolchain + lobot-llamad
+uv run python scripts/import_run.py logs/<run> --id <name>   # show a CLI run in the app
 ```
 
 To run or show the app to the user, follow
@@ -64,7 +67,8 @@ To run or show the app to the user, follow
    `<date time> ET <agent> <ID> <model> start <note>`. Add `end` when done.
    If another agent holds the lane, wait or do no-model work.
 3. Run model jobs one after another in one chain script. Do not run the test
-   suite while a model job runs.
+   suite while a model job runs. A live server holds the slot too: stop it
+   before the suite (the suite then refuses to start, by design).
 4. Use real weights only for what needs them; everything else uses fakes.
 
 ## Rules
@@ -93,12 +97,40 @@ To run or show the app to the user, follow
    `docs/roadmap/reports/<ID>.md`: what changed, test counts, acceptance
    results (exact output), known gaps.
 
+## Backend rules learned the hard way
+
+- **Streams.** Every NDJSON route returns `_ndjson(generator)` in
+  `server.py`. It closes the generator when the client leaves; a bare
+  `StreamingResponse` over a sync generator kept the engine lock until a
+  restart.
+- **Subprocesses.** Run external tools with stdin closed
+  (`installers._run`). `llama-cli` runs as a chat and, with the server's
+  open stdin, waited for a next turn until its timeout.
+- **Jobs.** The app lists only `jobs/<id>/job.json`. A run written
+  elsewhere (CLI, agent) needs `job_import.import_run` to appear.
+- **Guard.** Agents never turn the guard off or switch on Research mode
+  to get a result. A guard block is a result; report it.
+
+## Checking UI work
+
+1. Layout and recorded data: replay mode (`MODEL_LOBOTOMY_REPLAY=1`), no
+   weights. Features that generate: live mode with the model lane taken.
+   The server boots on Qwen; switch with `POST /api/model
+   {"model_id": "meta-llama/Llama-3.2-3B-Instruct"}`.
+2. Check at desktop width and at 375 px, in dark and light. No
+   horizontal page scroll.
+3. Read results from the page text (DOM), not only from screenshots: the
+   browser pane can return a stale frame.
+4. In the report, say which screens ran on real weights, which ran in
+   replay, and which were not run, with the reason.
+
 ## Definition of done
 
 - Every acceptance check in the spec passes, with output in the report.
 - The full test suite passes; new behavior has new tests.
 - [docs/reference/api.md](docs/reference/api.md) covers any new or changed
-  route; [docs/reference/configuration.md](docs/reference/configuration.md)
+  route; [docs/guides/app.md](docs/guides/app.md) covers any new or changed
+  screen; [docs/reference/configuration.md](docs/reference/configuration.md)
   covers any new environment variable.
 - No dead code; no new lint or type errors in touched files.
 
@@ -109,7 +141,7 @@ To run or show the app to the user, follow
 | A plan for new work | `docs/roadmap/specs/<ID>-<name>.md` (template: any existing spec) |
 | Results of that work | `docs/roadmap/reports/<ID>.md` and the status table in `docs/roadmap/README.md` |
 | A design record (decisions, architecture) | `docs/plans/` |
-| A how-to for users | `docs/guides/` |
+| A how-to for users | `docs/guides/` (screens: `docs/guides/app.md`) |
 | Route or setting reference | `docs/reference/` |
 | Deferred work with its reason | `docs/TODOS.md` |
 | Something no longer current | `docs/archive/` (do not delete history) |
