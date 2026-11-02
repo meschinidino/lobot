@@ -39,7 +39,8 @@ edits", "Use it elsewhere"; decisions log 2026-11-02).
 Not run live:
 - **The two-column removal view.** Both live removals were guard-blocked.
   Research mode would skip the guard; the agent's permission check
-  refused to turn the guard off, so that view is untested.
+  refused to turn the guard off. Done later in UX3 with noir, whose
+  removal passes the guard (see [UX3.md](UX3.md)).
 - **Muse suggestions on the labeling page** and **Check the judge**
   (needs all 20 labels; labeling is the user's judgment).
 - **Ollama install** (Ollama is not installed on this Mac).
