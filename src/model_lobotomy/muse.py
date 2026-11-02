@@ -214,7 +214,32 @@ def report_summary(report: dict) -> dict:
                       "flagged_by": sorted(
                           n for n, sc in (guard.get("screens") or {}).items()
                           if sc.get("would_block") or sc.get("blocked"))},
+            "dose_rule": ((report.get("tuning") or {}).get("rule")
+                          or {}).get("name"),
+            "prompt_comparison": _pareto_summary(report),
             "seconds": report.get("seconds")}
+
+
+def _pareto_summary(report: dict) -> dict | None:
+    """PP numbers: the verdict, and the chosen dose and best prompt points."""
+    p = report.get("pareto")
+    if not p:
+        return None
+    dose = (report.get("frozen") or {}).get("dose")
+
+    def point(q):
+        return None if q is None else {
+            "name": q["name"], "effect": _r(q["trait"]), "cost": _r(q["cost"]),
+            "relevance": _r(q["relevance"]), "fluency": _r(q["fluency"])}
+
+    pts = p.get("points") or []
+    at_dose = next((q for q in pts if q.get("kind") == "vector" and dose
+                    is not None and abs(q["dose"] - dose) < 1e-9), None)
+    prompt = next((q for q in pts if q["name"] == p.get("verdict_prompt")),
+                  None)
+    return {"verdict": p.get("verdict"), "patch_at_dose": point(at_dose),
+            "strongest_prompt": point(prompt),
+            "base": {k: _r(v) for k, v in (p.get("base") or {}).items()}}
 
 
 def _r(x):
