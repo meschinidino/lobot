@@ -34,7 +34,7 @@ edits", "Use it elsewhere"; decisions log 2026-11-02).
 | Muse agent, past run from disk (sports commentator) | Listed, opened, ends with Open evidence; the patch is on the shelf (registered as a job). |
 | Label it yourself, "speaks like a TV weather reporter" | The local model drafted the parts and 20 replies; one label saved. The local drafter drifted ("is formal and professional"), which is why the Muse path exists. |
 | Install, pirate v4 into llama.cpp (Q4_K_M) | Installed; the run line is a copyable shell command. |
-| Check the installed patch | **FAILED**: "Unpatched run failed: llama-cli timed out". The install route works; the llama-cli run inside the check does not finish. Not investigated yet (IN backend). |
+| Check the installed patch, llama.cpp | First run FAILED ("llama-cli timed out"): `llama-cli` runs in conversation mode and inherited the server's open stdin, so it waited for the next turn. Fixed (`stdin=DEVNULL` in `installers._run`). Rerun: HOLDS, measured +0.40 on 16 prompts, shipped [+0.19, +0.48]. First live judged install check. |
 
 Not run live:
 - **The two-column removal view.** Both live removals were guard-blocked.
@@ -43,6 +43,14 @@ Not run live:
 - **Muse suggestions on the labeling page** and **Check the judge**
   (needs all 20 labels; labeling is the user's judgment).
 - **Ollama install** (Ollama is not installed on this Mac).
+
+## Install fix
+
+`installers._run` now closes stdin for every subprocess. With the
+server's stdin open, `llama-cli` (conversation mode) answered and then
+waited for the next turn until its timeout. From a shell with
+`</dev/null` it exits in about 3 s. Test:
+`tests/test_installers.py::SubprocessStdinTest`.
 
 ## What changed
 

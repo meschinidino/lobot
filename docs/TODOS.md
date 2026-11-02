@@ -21,9 +21,10 @@ Deferred work, each with its reason. The ordered plan is in
 - Left: judge and NLL scoring are prefill-bound; ablation generations and
   activation capture stay on torch.
 
-### Live check of judged install verify (IN)
-- `judged_n` is built and unit-tested. No `llama-cli` or `ollama` binary
-  is on the dev Mac, so it never ran live.
+### Live check of judged install verify on Ollama (IN)
+- llama.cpp ran live on 2026-11-02 (pirate v4, Q4_K_M: measured +0.40 on
+  16 prompts, shipped [+0.19, +0.48], HOLDS; reports/UX2.md). Ollama is
+  not installed on the dev Mac, so its path never ran live.
 
 ### A live "model update breaks a patch" case (behavior CI)
 - CI ran live; the published patch held on torch and Q4_K_M. Showing a
