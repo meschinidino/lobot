@@ -72,8 +72,11 @@ def _excludes_zero(ci: tuple[float, float]) -> bool:
     return hi < 0 or lo > 0
 
 
+MIN_GAIN = 0.30
+
+
 def report_card_pass(trait_gains, control_gains, *, n: int = 10000,
-                     seed: int = 0, min_gain: float = 0.30,
+                     seed: int = 0, min_gain: float = MIN_GAIN,
                      control_max: float = 0.10) -> dict:
     """Four-rule gate. Returns {"passed", "rules", "trait_ci", ...}.
 
