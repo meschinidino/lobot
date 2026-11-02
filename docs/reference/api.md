@@ -307,8 +307,11 @@ writes the prediction to the audit log before the try runs. A try
 runs the patch at that dose on 8 tuning prompts: the plain and
 edited answers, the local judge gain, and the guard first-token
 check. The server appends the measured result to the audit log,
-with `confirmed` true or false. At stop, the server runs the full
-guard check and scores 8 held-out prompts against `MIN_GAIN`.
+with `confirmed` true or false. `confirmed` needs the same guard
+call and a measured gain within 0.1 of the expected gain. At
+stop, the server runs the full guard check and scores 8 held-out
+prompts against `MIN_GAIN`. Events stream as they happen: the
+agent runs in a thread and each event goes out through a queue.
 The local judge and the guard decide pass or fail. Muse writes
 a final summary. The summary must pass the number check. Events:
 `prediction`, `measured`, `stop`, `final`, `summary`, `done`,

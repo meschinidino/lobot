@@ -64,7 +64,29 @@ STOP = json.dumps({"action": "stop", "dose": 0.5,
                    "reason": "the gain is high enough"})
 
 
-class TuneAgentTest(unittest.TestCase):
+class AuditIsolatedTest(unittest.TestCase):
+    """Every agent run in this file writes to a temp audit log."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.audit_dir = Path(tmp.name)
+        self.audit_log = self.audit_dir / "audit.jsonl"
+        env = mock.patch.dict(
+            "os.environ", {"LOBOT_AUDIT_LOG": str(self.audit_log)})
+        env.start()
+        self.addCleanup(env.stop)
+
+
+class TuneAgentTest(AuditIsolatedTest):
+    def test_real_audit_log_is_never_used(self):
+        # This test fails when log_path() leaves the temp dir.
+        self.assertTrue(str(audit_mod.log_path()).startswith(
+            str(self.audit_dir)))
+        self._agent(Scripted([STOP])).run("raise the gain", "patch-1")
+        events = [r["event"] for r in audit_mod.read(self.audit_log)]
+        self.assertEqual(events, ["tune.final"])
+
     def _agent(self, fake, audit_log=None, **kw):
         return tune_mod.TuneAgent(
             muse_mod.Muse(fake), kw.pop("try_fn", _try()),
@@ -125,9 +147,18 @@ class TuneAgentTest(unittest.TestCase):
 
     def test_confirmed_needs_both_halves(self):
         self.assertTrue(tune_mod.prediction_confirmed(0.3, True, 0.4, True))
+        self.assertFalse(tune_mod.prediction_confirmed(0.3, True, 0.41, True))
         self.assertFalse(tune_mod.prediction_confirmed(0.3, True, 0.4, False))
         self.assertFalse(tune_mod.prediction_confirmed(0.3, True, -0.4, True))
-        self.assertTrue(tune_mod.prediction_confirmed(-0.3, False, -0.4, False))
+        self.assertTrue(
+            tune_mod.prediction_confirmed(-0.3, False, -0.4, False))
+
+    def test_events_name_the_checks(self):
+        out = self._agent(Scripted([TRY, STOP])).run(
+            "raise the gain", "patch-1")
+        measured = [s for s in out["steps"] if s["step"] == "measured"][0]
+        self.assertEqual(measured["check"], "first-token check")
+        self.assertEqual(out["final"]["check"], "full guard check")
 
 
 class FakeEng:
@@ -144,7 +175,44 @@ class FakeEng:
         return {"text": "pirate answer" if edited else "plain answer"}
 
 
-class TuneRouteWiringTest(unittest.TestCase):
+class TuneRouteWiringTest(AuditIsolatedTest):
+    def _wiring(self, judge, fake):
+        from model_lobotomy.guards import NoopGuard
+        from model_lobotomy.routers import tune as tune_route
+        rep = {"trait": "pirate",
+               "splits": {"tuning": [f"t{i}" for i in range(8)],
+                          "final": [f"h{i}" for i in range(8)]}}
+        loaded = {"direction": [1.0, 0.0],
+                  "meta": {"layer": 16, "dose": 0.5, "scale": 2.0}}
+        patches = [
+            mock.patch.object(tune_route.trait_eval, "judge_score", judge),
+            mock.patch("model_lobotomy.guards.get_guard",
+                       return_value=NoopGuard())]
+        gen = tune_route._tune_events(
+            FakeEng(), muse_mod.Muse(fake),
+            mock.Mock(goal="raise the gain", patch_id="patch-1"),
+            rep, loaded, "pirate voice", {})
+        return gen, patches
+
+    def test_first_event_arrives_before_the_run_ends(self):
+        import time
+
+        def slow_judge(model, tok, spec, q, reply, label):
+            time.sleep(0.3)
+            return 0.9 if reply.startswith("pirate") else 0.1
+
+        fake = Scripted([TRY, STOP], summaries=[
+            "The final gain was 0.80. The guard did not block it."])
+        gen, patches = self._wiring(slow_judge, fake)
+        with patches[0], patches[1]:
+            start = time.time()
+            first = json.loads(next(gen))
+            elapsed = time.time() - start
+            rest = [json.loads(c) for c in gen]
+        self.assertEqual(first["stage"], "prediction")
+        self.assertLess(elapsed, 0.3)
+        self.assertEqual(rest[-1]["stage"], "done")
+
     def test_tune_events_with_fake_engine(self):
         from model_lobotomy.guards import NoopGuard
         from model_lobotomy.routers import tune as tune_route

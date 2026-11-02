@@ -6,6 +6,8 @@ request has no guard switch and no Research mode switch.
 from __future__ import annotations
 
 import json
+import queue
+import threading
 import time
 
 from fastapi import APIRouter, HTTPException
@@ -134,16 +136,37 @@ def _tune_events(eng, muse, req, rep, loaded, label, medians):
         return {"gain": gain, "guard": full.to_dict(),
                 "seconds": round(time.time() - t0, 1)}
 
-    events: list[dict] = []
+    events: queue.Queue = queue.Queue()
+    box: dict = {}
     agent = tune_mod.TuneAgent(
         muse, try_fn, final_fn,
         patch_label=(f"{rep.get('trait')} patch at layer "
                      f"{loaded['meta']['layer']}, shipped dose "
                      f"{loaded['meta']['dose']}"),
-        progress=lambda kind, row: events.append(
+        progress=lambda kind, row: events.put(
             helpers._event(stage=kind, **row)))
-    result = agent.run(req.goal, req.patch_id)
-    yield from events
+
+    def work():
+        try:
+            box["result"] = agent.run(req.goal, req.patch_id)
+        except Exception as e:  # noqa: BLE001 - reported to the client
+            box["error"] = e
+        finally:
+            events.put(None)
+
+    thread = threading.Thread(target=work, daemon=True)
+    thread.start()
+    while True:
+        item = events.get()
+        if item is None:
+            break
+        yield item
+    thread.join()
+    if "error" in box:
+        yield helpers._event(stage="error", message=(
+            f"{type(box['error']).__name__}: {box['error']}"))
+        return
+    result = box["result"]
     yield helpers._event(stage="done", result={
         "tune_id": result["tune_id"], "status": result["status"],
         "final": result["final"], "summary": result["summary"],

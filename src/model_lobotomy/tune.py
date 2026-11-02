@@ -29,18 +29,15 @@ TUNING_PROMPTS = 8
 HELDOUT_PROMPTS = 8
 
 
-def _sign(x: float) -> int:
-    return (x > 0) - (x < 0)
-
-
 def prediction_confirmed(expected_gain: float, guard_pass: bool,
                          gain: float, measured_guard_pass: bool) -> bool:
     """True when both halves of the prediction match the measure.
 
-    The gain half matches when both gains share one sign. The guard
-    half matches when both guard calls agree.
+    The gain half matches when the measured gain lands within 0.1
+    of the expected gain. The guard half matches when both guard
+    calls agree.
     """
-    return (_sign(expected_gain) == _sign(gain)
+    return (abs(round(gain - expected_gain, 6)) <= 0.1
             and guard_pass == measured_guard_pass)
 
 
@@ -109,6 +106,7 @@ class TuneAgent:
                 decision["expected_gain"], decision["guard_pass"],
                 got["gain"], got["guard_pass"])
             measured = {"try": n, "dose": decision["dose"],
+                        "check": "first-token check",
                         "gain": round(float(got["gain"]), 3),
                         "guard_pass": bool(got["guard_pass"]),
                         "guard": got.get("guard"),
@@ -129,7 +127,8 @@ class TuneAgent:
                              or guard.get("would_block"))
         gain = round(float(final["gain"]), 3)
         passed = gain >= evaluation.MIN_GAIN and not guard_blocked
-        verdict = {"dose": stop_dose, "gain": gain,
+        verdict = {"dose": stop_dose, "check": "full guard check",
+                   "gain": gain,
                    "min_gain": evaluation.MIN_GAIN,
                    "guard_blocked": guard_blocked, "guard": guard,
                    "passed": passed,

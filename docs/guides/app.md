@@ -85,8 +85,9 @@ Open a behavior from the shelf or the Library. Top to bottom:
     patch. Before each try, Muse writes a prediction: the expected
     gain and the guard call. The panel shows each prediction next
     to the measured result, the guard state, and the final verdict.
-    The local judge and the guard decide the verdict. The guard
-    stays on.
+    Each try calls its guard check the "first-token check". The
+    final check is the "full guard check". The local judge and
+    the guard decide the verdict. The guard stays on.
 11. **In plain words**: Muse Spark explains the report from its own
     numbers. With `META_API_KEY` in `.env`, it writes this as the page
     opens (one call per report; the server keeps it). Without the key,
