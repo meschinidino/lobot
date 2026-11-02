@@ -8,6 +8,7 @@ Start with the project [README](../README.md). Coding agents start with
 | Guide | For |
 |---|---|
 | [guides/app.md](guides/app.md) | Every screen of the app: workbench, shelf keys, Library, evidence, New behavior, chat |
+| [guides/env.md](guides/env.md) | Put `META_API_KEY` and other settings in `.env` |
 | [guides/live-mode.md](guides/live-mode.md) | Run the app with real weights |
 | [guides/replay-mode.md](guides/replay-mode.md) | Run the app with no weights, from recorded runs |
 | [guides/create.md](guides/create.md) | Turn a behavior into a tested patch (incl. the Muse Spark agent) |
