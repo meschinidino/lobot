@@ -20,7 +20,6 @@ run_trait() and write logs/<trait>/.
 """
 from __future__ import annotations
 
-import importlib.util
 import json
 import pathlib
 import os
@@ -43,10 +42,7 @@ from model_lobotomy import guard as guard_mod  # noqa: E402
 from model_lobotomy import pareto as pareto_mod  # noqa: E402
 from model_lobotomy import steer  # noqa: E402
 
-_SPIKE = importlib.util.spec_from_file_location(
-    "spike_knob_mod", ROOT / "scripts" / "spike_knob.py")
-spike = importlib.util.module_from_spec(_SPIKE)
-_SPIKE.loader.exec_module(spike)
+from model_lobotomy import spike  # noqa: E402
 
 TUNE_DOSES = [0.0, 0.5, 1.0, 1.5, 2.0]
 GEN_TOKENS = 60
