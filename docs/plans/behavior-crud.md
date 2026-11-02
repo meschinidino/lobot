@@ -9,7 +9,7 @@ Branch: main | Mode: EXPANSION
 Repo: local (model-lobotomy, no remote)
 
 ## Plan under review
-/Users/dinomeschini/.gstack/projects/model-lobotomy/plans/2026-10-29-lobot-10x-plan.md
+[lobot-10x-plan.md](lobot-10x-plan.md) (a copy of the reviewed plan).
 
 ## Vision
 

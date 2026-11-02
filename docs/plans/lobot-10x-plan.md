@@ -4,7 +4,7 @@
 
 Working plan for /plan-ceo-review, 2026-10-29. Branch: main (no remote). Review depth: strategy-only (the user asked for scope and direction, not implementation design). Mode: SCOPE EXPANSION (explicit user request).
 
-Source of truth for problem and constraints: office-hours design doc `~/.gstack/projects/model-lobotomy/dinomeschini-unknown-design-20261028-233909.md`.
+Source of truth for problem and constraints: the office-hours design doc (kept outside the repo, not public).
 
 ## Concept under review (as requested)
 
