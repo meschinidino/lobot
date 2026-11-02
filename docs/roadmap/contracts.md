@@ -142,7 +142,14 @@ D1 extension (what the tree needs to compare the two answers):
 ```
 Only jobs with `status: done`. `patch` is null when no `knob.lobot` exists.
 
-`GET /api/traits/{id}/report` → the job's `report.json` as is.
+Each item also has `delete_eligible` and (U4) `evidence`:
+`{"pareto_verdict", "dose_rule", "fluency", "screens", "repair"}`.
+
+`GET /api/traits/{id}/report` → the job's `report.json`, plus (U4)
+`pareto`, `repair`, `tuning.chosen` and `followups`. Follow-up routes
+(U4): `POST|GET /api/traits/{id}/pareto`, `POST|GET
+/api/traits/{id}/repair`, `POST /api/traits/{id}/{kind}/stop`, `GET
+/api/traits/{id}/repaired/{method}`; see `docs/reference/api.md`.
 `GET /api/traits/{id}/report.md` → `text/markdown`.
 `GET /api/traits/{id}/patch` → `application/zip`, `Content-Disposition:
 attachment; filename="<family>-v<version>.lobot"`.
