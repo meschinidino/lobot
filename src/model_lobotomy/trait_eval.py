@@ -1339,6 +1339,7 @@ def _stage_baseline(ctx):
     eng, spec, cfg, tun, fin, out, cancel, progress, params, base_cache, lane, timings = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["tun"], ctx["fin"], ctx["out"], ctx["cancel"], ctx["progress"], ctx["params"], ctx["base_cache"], ctx["lane"], ctx["timings"])
     frozen_layer, frozen_unit, frozen_dose = ctx["frozen_layer"], ctx["frozen_unit"], ctx["frozen_dose"]
     med, pareto = ctx["med"], ctx["pareto_flag"]
+    max_new = params["gen_tokens"]
     t_stage = time.time()
     base = baseline_top1(eng, spec, cfg, cfg["judge"], tun, fin,
                          cancel=cancel, progress=progress, params=params,

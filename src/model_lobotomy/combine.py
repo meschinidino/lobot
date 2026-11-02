@@ -119,6 +119,7 @@ def pair_matrix(names, patches, engine, *, medians: dict,
                 cancel=None, guard=None) -> dict:
     """Singles + all unordered pairs + the full set (CB)."""
     t_all = time.perf_counter()
+    from model_lobotomy import guards as _guards
     kw = dict(medians=medians, max_new_tokens=max_new_tokens,
               seed=seed, judge_fn=judge_fn, cancel=cancel,
               guard=guard or _guards.get_guard())
