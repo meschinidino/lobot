@@ -3,7 +3,7 @@ name = "model-lobotomy"
 version = "0.1.0"
 description = "See a behavior inside an open model, change it, prove it, keep it safe (local-first)"
 authors = [
-    { name = "Dino Meschini", email = "74841932+meschinidino@users.noreply.github.com" }
+    { name = "Dino Meschini" }
 ]
 # T3 (Eng D3): pin Python 3.12 minor; torch/MPS wheels verified for 3.12.
 requires-python = ">=3.12,<3.13"
