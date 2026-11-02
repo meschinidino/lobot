@@ -918,7 +918,8 @@ def get_engine() -> Engine:
     """
     global _ENGINE
     if _ENGINE is None:
-        which = os.environ.get("LOBOT_BACKEND", "torch")
+        from model_lobotomy.config import get_settings
+        which = get_settings().backend
         if which == "torch":
             _ENGINE = Engine()
         elif which == "llama":

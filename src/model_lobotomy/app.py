@@ -359,7 +359,8 @@ def build_demo() -> gr.Blocks:
 
 
 if __name__ == "__main__":
-    if os.environ.get("MODEL_LOBOTOMY_NO_MODEL"):
+    from model_lobotomy.config import get_settings
+    if get_settings().no_model:
         print("[app] NO_MODEL set: serving layout without weights", flush=True)
     else:
         load_engine()
