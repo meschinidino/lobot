@@ -21,6 +21,17 @@ change does, and check that it stays safe, all on your own computer.
 
 Hero model: `meta-llama/Llama-3.2-3B-Instruct`. `Qwen/Qwen3.5-4B` also works.
 
+## Built on
+
+| Part | What it does in lobot |
+|---|---|
+| Meta Llama 3.2 3B Instruct (open weights) | The model that lobot reads and edits. It runs on your computer. Every read, steer, Create run and guard check uses it. |
+| Muse Spark (`muse-spark-1.3`, Meta Model API) | Explains each evidence page in plain words. A check rejects any number that is not in the report. It also drafts new behaviors, suggests labels, and runs the Create agent. It can score evidence as a second judge ([J1 report](docs/roadmap/reports/J1.md)). |
+| Muse Code | The coding agent that built the module refactor ([MOD](docs/roadmap/reports/MOD.md)), version 2 of the evidence page ([U4](docs/roadmap/reports/U4.md)) and the Muse number check. |
+
+The local judge decides every pass or fail. Muse Spark explains and checks,
+but it never changes a verdict.
+
 ## Quickstart
 
 You need [`uv`](https://docs.astral.sh/uv/). The repo pins Python 3.12.
