@@ -71,7 +71,8 @@ command for their own terminal along with the link.
 - Muse features (agent, suggestions, "In plain words") need
   `META_API_KEY`. The server reads it from `.env` at the repo root
   (git-ignored; copy `.env.example`). If `.env` is missing, make it
-  with `printf 'META_API_KEY=%s\n' "$(cat ~/.config/lobot/meta_api_key)" > .env`.
+  with `printf 'META_API_KEY=%s\n' "$(cat ~/.config/lobot/meta_api_key)" > .env`
+  (full steps: `docs/guides/env.md`).
   Never print the key. The start log says `Meta API: on` when the
   key loaded.
 - Create from the app on the llama lane: add `LOBOT_CREATE_LANE=llama`
