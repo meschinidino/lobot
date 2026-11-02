@@ -81,7 +81,8 @@ def repair_job(eng, workdir, lane=None, *, method="gradient", cancel=None,
     splits = report["splits"]
     lane = lane or trait_eval.TorchLane(eng, eng.spec)
     base_cache = trait_eval.BaseCache()
-    g = guard_mod.Guard()
+    from model_lobotomy import guards as _guards
+    g = _guards.get_guard()
     judge = guard_mod.refusal_judge_fn(eng)
     candidates = (repair_mod.GRADIENT_CANDIDATES if method == "gradient"
                   else repair_mod.CANDIDATES)
@@ -101,14 +102,14 @@ def repair_job(eng, workdir, lane=None, *, method="gradient", cancel=None,
         ed, out = edits(unit, dose), {}
         for name in screens:
             if name == "refusal":
-                v = g._refusal_entry(g.check_full(
+                v = guard_mod.refusal_entry(g.check_full(
                     eng, ed, medians={}, max_new_tokens=GUARD_TOKENS,
                     seed=seed, judge_fn=judge))[1]
             else:
                 v = g.check_screen(eng, ed, name, medians={},
                                    max_new_tokens=GUARD_TOKENS, seed=seed)
             out[name] = screens_mod.screen_dict(
-                name, v, guard_mod._SCREEN_DISPLAY[name])
+                name, v, guard_mod.SCREEN_DISPLAY[name])
         log(f"guard dose {dose:g}: {repair_mod.flagged(out) or 'clean'}")
         return out
 

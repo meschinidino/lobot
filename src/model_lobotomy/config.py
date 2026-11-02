@@ -41,6 +41,7 @@ ENV_VARS = (
     ("LOBOT_LLAMACPP_CLI", "llama-cli on PATH"),
     ("LOBOT_JOBS_DIR", "<repo>/jobs"),
     ("LOBOT_JUDGE", "local"),
+    ("LOBOT_GUARD", "screens-v2"),
 )
 
 
@@ -77,6 +78,7 @@ class Settings:
     llamacpp_cli: str | None = None
     jobs_dir: Path | None = None
     judge_kind: str = "local"
+    guard_kind: str = "screens-v2"
 
 
 def load_settings(env=None) -> Settings:
@@ -109,6 +111,7 @@ def load_settings(env=None) -> Settings:
         llamacpp_cli=get("LOBOT_LLAMACPP_CLI"),
         jobs_dir=Path(get("LOBOT_JOBS_DIR")) if get("LOBOT_JOBS_DIR") else None,
         judge_kind=get("LOBOT_JUDGE", "local"),
+        guard_kind=get("LOBOT_GUARD", "screens-v2"),
     )
 
 

@@ -198,12 +198,17 @@ class GuardVerdict:
     screens: tuple = ()
 
 
-_SCREEN_DISPLAY = {
+SCREEN_DISPLAY = {
     "refusal": display_prompt,
     "harmful": screens_mod.harmful_display,
     "honesty": screens_mod.honesty_display,
     "privacy": screens_mod.privacy_display,
 }
+_SCREEN_DISPLAY = SCREEN_DISPLAY
+
+
+def refusal_entry(v: GuardVerdict):
+    return Guard._refusal_entry(v)
 
 
 def verdict_dict(gv: GuardVerdict) -> dict:

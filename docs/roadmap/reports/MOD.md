@@ -80,9 +80,28 @@ Parity: replay and live not run. Numbers did not change.
 - New setting: `LOBOT_JUDGE` (`local`, `meta_api`, `fake`).
 - Contract tests run the same checks on fake and local judges.
 
-Tests: before 708, after 714 (`OK, skipped=5`). New: 6 tests.
+Tests: before 708, after 715 (`OK, skipped=5`). New: 7 tests.
 Parity: replay and live not run. Scores did not change.
 
-## Phases 5 to 10
+## Phase 5: Guard port
+
+- New package: `src/model_lobotomy/guards/__init__.py`.
+- Port verdict: `GuardPortVerdict` with `blocked`, `would_block`,
+  `verified`, `enforced`, `research_mode` and `screens`.
+- Each screen holds `flagged_prompts`, `measure_text` and `measure`.
+  Guard numbers (`min_ratio`, `limit`) live in `measure`.
+- `ScreensV2Guard` wraps today's guard. `screen` is fast.
+  `confirm` is full generation.
+- `NoopGuard` is test-only. It proves a swap works.
+- Callers use `get_guard()`. No `Guard()` stays in `src/` outside
+  the port. `followups` uses public `refusal_entry` and
+  `SCREEN_DISPLAY`. It no longer touches private members.
+- Old `verdict_dict` did not change. Reports keep their shape.
+- New setting: `LOBOT_GUARD` (`screens-v2`, `noop`).
+
+Tests: before 715, after 719 (`OK, skipped=5`). New: 4 tests.
+Parity: replay and live not run. Verdict numbers did not change.
+
+## Phases 6 to 10
 
 Not started. Each phase gets its own branch and pull request.
