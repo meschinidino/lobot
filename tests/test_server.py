@@ -498,7 +498,8 @@ class GuardDefaultTest(unittest.TestCase):
 def _scripted_trait(out=None):
     def fn(eng, spec, trait, bank, seed, workdir, model_id,
            revision, cancel=None, progress=None,
-           guard=False, research_mode=False, schedule="full"):
+           guard=False, research_mode=False, schedule="full",
+           pareto=False):
         if progress is not None:
             progress("tune", 1, 1)
         return out or {"verdict": "knob",
@@ -624,7 +625,8 @@ class CreateApiTest(unittest.TestCase):
 
         def fn(eng, spec, trait, bank, seed, workdir, model_id,
                revision, cancel=None, progress=None,
-               guard=False, research_mode=False, schedule="full"):
+               guard=False, research_mode=False, schedule="full",
+           pareto=False):
             started.set()
             cancel.wait(timeout=30)
             from model_lobotomy import trait_eval

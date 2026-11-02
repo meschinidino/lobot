@@ -40,7 +40,8 @@ def validated_store(tmp):
 def scripted_run(stages=("extract", "tune", "verdict"), out=None):
     def fn(eng, spec, trait, bank, seed, workdir, model_id,
            revision, cancel=None, progress=None, guard=False,
-           research_mode=False, schedule="full"):
+           research_mode=False, schedule="full",
+           pareto=False):
         for s in stages:
             if cancel is not None and cancel.is_set():
                 raise T.Stopped("stopped")
@@ -92,7 +93,8 @@ class CreateRunnerTest(unittest.TestCase):
 
         def fn(eng, spec, trait, bank, seed, workdir, model_id,
                revision, cancel=None, progress=None,
-               guard=False, research_mode=False, schedule="full"):
+               guard=False, research_mode=False, schedule="full",
+           pareto=False):
             seen["guard"] = guard
             return {"verdict": "knob", "frozen": {}, "eligibility": {},
                     "guard": {}}
@@ -115,7 +117,8 @@ class CreateRunnerTest(unittest.TestCase):
 
         def fn(eng, spec, trait, bank, seed, workdir, model_id,
                revision, cancel=None, progress=None,
-               guard=False, research_mode=False, schedule="full"):
+               guard=False, research_mode=False, schedule="full",
+           pareto=False):
             started.set()
             cancel.wait(timeout=30)
             raise T.Stopped("stopped")
