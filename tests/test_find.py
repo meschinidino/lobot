@@ -28,10 +28,11 @@ class FakeMuse:
         self.turns = list(turns)
         self.usage = {"calls": 0}
         texts = list(summaries or [
-            "The search used 2 tool calls. The guard did not block "
-            "the recipe."])
+            "I read the top neuron and tried it on the prompt. "
+            "The edited answer brought up the target word."])
         self._summaries = muse_mod.Muse(
             lambda prompt: texts.pop(0) if len(texts) > 1 else texts[0])
+        self.texts = texts
 
     def tool_turn(self, items, tools):
         self.usage["calls"] += 1
@@ -52,6 +53,7 @@ def _tools(**over):
         "measure_lift": lambda a: {"lift": 4.0, "words": a["words"]},
         "try_recipe": lambda a: {
             "plain": "I stayed home.", "edited": "I saw a storm.",
+            "fluency": 0.9,
             "fork": {"index": 1}, "guard_pass": True, "guard": {}},
     }
     tools.update(over)
@@ -84,7 +86,7 @@ class FindAgentTest(AuditIsolatedTest):
         return find_mod.FindAgent(
             fake, kw.pop("tool_fns", _tools()),
             kw.pop("final_fn", _final()), kw.pop("lift_fn", _lift()),
-            **kw)
+            fluency_fn=kw.pop("fluency_fn", lambda rows: 0.95), **kw)
 
     def test_real_audit_log_is_never_used(self):
         self.assertTrue(str(audit_mod.log_path()).startswith(
@@ -98,8 +100,9 @@ class FindAgentTest(AuditIsolatedTest):
             [call("stop", rows=[{"layer": 20, "neuron": 123,
                                  "dose": 1.0}], words=["storm"],
                   reason="it lifts storm")],
-        ], summaries=["The search used 3 tool calls. The lift was "
-                      "4.0. The guard did not block the recipe."])
+        ], summaries=["I measured the top neuron and tried it "
+                      "once. The edited answer named the target "
+                      "word in plain words."])
         out = self._agent(fake).run("bring up storms", "Tell me.")
         self.assertEqual(out["status"], "passed")
         self.assertEqual(out["tool_calls"], 3)
@@ -109,8 +112,8 @@ class FindAgentTest(AuditIsolatedTest):
 
     def test_call_limit_is_twelve(self):
         fake = FakeMuse([[call("find_neurons", word="storm")]],
-                        summaries=["The search used 12 tool calls. "
-                                   "The guard did not block it."])
+                        summaries=["I kept asking for the same "
+                                   "search. The budget ran out."])
         out = self._agent(fake).run("bring up storms", "Tell me.")
         self.assertEqual(out["tool_calls"], 12)
         self.assertEqual(out["status"], "failed")
@@ -139,8 +142,8 @@ class FindAgentTest(AuditIsolatedTest):
         fake = FakeMuse([
             [call("try_recipe", rows=rows, prediction=["storm"])],
             [call("stop", rows=rows[:1], words=["storm"], reason="ok")],
-        ], summaries=["The search used 2 tool calls. The lift was "
-                      "4.0. The guard did not block the recipe."])
+        ], summaries=["I tried the wide recipe first. Then I "
+                      "stopped on the single neuron."])
         out = self._agent(fake).run("g", "p")
         bad = [s for s in out["steps"] if s["step"] == "result"][0]
         self.assertIn("at most 4", bad["result"]["error"])
@@ -161,8 +164,7 @@ class FindAgentTest(AuditIsolatedTest):
             [call("stop", rows=[{"layer": 20, "neuron": 123,
                                  "dose": 1.0}], words=["storm"],
                   reason="done")],
-        ], summaries=["The search used 1 tool calls. The guard "
-                      "blocked the recipe."])
+        ], summaries=["I stopped on the first recipe I had."])
         out = self._agent(fake, final_fn=_final(blocked=True)).run("g", "p")
         self.assertEqual(out["status"], "failed")
         self.assertTrue(out["final"]["guard_blocked"])
@@ -171,11 +173,56 @@ class FindAgentTest(AuditIsolatedTest):
     def test_summary_number_check(self):
         fake = FakeMuse([
             [call("stop", rows=[], words=[], reason="done")],
-        ], summaries=["The lift was 9.99 and it passed.",
-                      "The search used 1 tool calls. The guard did "
-                      "not block the recipe."])
+        ], summaries=["I tested 12 recipes and it passed.",
+                      "I stopped on the first recipe I had."])
         out = self._agent(fake).run("g", "p")
-        self.assertNotIn("9.99", out["summary"])
+        self.assertNotIn("tested 12 recipes", out["summary"])
+        self.assertTrue(out["summary"].startswith(
+            "Muse used 1 of 12 tool calls"))
+
+    def test_check_find_summary_rejects_tested_12_recipes(self):
+        tried = [[{"layer": 20, "neuron": 123, "dose": 1.0}]]
+        bad = muse_mod.check_find_summary(
+            "I tested 12 recipes and it passed.", tried)
+        self.assertIn("12", bad)
+        good = muse_mod.check_find_summary(
+            "I tried L20N123 at dose 1.0 on the prompt.", tried)
+        self.assertEqual(good, [])
+        many = muse_mod.check_find_summary(
+            "One. Two. Three. Four.", tried)
+        self.assertIn("more than 3 sentences", many)
+
+    def test_final_fluency_below_floor_fails(self):
+        fake = FakeMuse([
+            [call("stop", rows=[{"layer": 20, "neuron": 123,
+                                 "dose": 1.0}], words=["storm"],
+                  reason="done")],
+        ], summaries=["I stopped on the first recipe I had."])
+        out = self._agent(fake, fluency_fn=lambda rows: 0.2).run("g", "p")
+        self.assertEqual(out["status"], "failed")
+        self.assertEqual(out["final"]["fluency"], 0.2)
+        self.assertIn("FAIL (fluency below floor)", out["summary"])
+
+    def test_repeated_words_do_not_confirm(self):
+        tools = _tools(try_recipe=lambda a: {
+            "plain": "I stayed home.",
+            "edited": "storm storm storm storm",
+            "fluency": 0.1, "fork": {"index": 0},
+            "guard_pass": True, "guard": {}})
+        fake = FakeMuse([
+            [call("try_recipe",
+                  rows=[{"layer": 20, "neuron": 123, "dose": 1.0}],
+                  prediction=["storm"])],
+            [call("stop", rows=[{"layer": 20, "neuron": 123,
+                                 "dose": 1.0}], words=["storm"],
+                  reason="done")],
+        ], summaries=["I tried the recipe once. The answer "
+                      "repeated the word."])
+        out = self._agent(fake, tool_fns=tools).run("g", "p")
+        tried = [s for s in out["steps"] if s["step"] == "result"
+                 and s["tool"] == "try_recipe"][0]
+        self.assertFalse(tried["confirmed"])
+        self.assertEqual(tried["result"]["fluency"], 0.1)
 
     def test_lift_confirmed_factor_two(self):
         self.assertTrue(find_mod.lift_confirmed(3.0, 4.0))
@@ -212,11 +259,17 @@ class FindRouteWiringTest(AuditIsolatedTest):
             [call("stop", rows=[{"layer": 20, "neuron": 123,
                                  "dose": 1.0}], words=["storm"],
                   reason="done")],
-        ], summaries=["The search used 3 tool calls. The lift was "
-                      "4.0. The guard did not block the recipe."])
+        ], summaries=["I measured the top neuron and tried it "
+                      "once. The edited answer named the target "
+                      "word in plain words."])
+        def judge(model, tok, spec, q, reply, label):
+            return 0.9 if "storm" in reply else 0.1
+
         events = []
         with mock.patch.object(reader_mod, "steer_lift",
                                return_value={"lift": 4.0}), \
+                mock.patch.object(find_route.trait_eval, "judge_score",
+                                  judge), \
                 mock.patch.object(reader_mod, "steer_lift_recipe",
                                   return_value={"lift": 4.0}), \
                 mock.patch("model_lobotomy.guards.get_guard",

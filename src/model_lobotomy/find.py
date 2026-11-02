@@ -24,6 +24,7 @@ sets Research mode. A guard block is a result.
 from __future__ import annotations
 
 import json
+import math
 import time
 import uuid
 
@@ -110,12 +111,22 @@ def lift_confirmed(prediction: float, measured: float) -> bool:
     return hi / lo <= 2.0
 
 
-def recipe_confirmed(words, plain: str, edited: str) -> bool:
-    """True when a predicted word is new in the edited answer."""
+def recipe_confirmed(words, plain: str, edited: str,
+                     fluency) -> bool:
+    """True when a predicted word is new and the text stays fluent.
+
+    The word half: a predicted word shows in the edited answer and
+    not in the plain one. The fluency half: the edited answer
+    scores at or over FLUENCY_FLOOR. Lift alone passes repeated
+    words; this check does not.
+    """
+    from model_lobotomy import trait_eval
     plain_l, edited_l = (plain or "").lower(), (edited or "").lower()
-    return any(str(w).lower() in edited_l
-               and str(w).lower() not in plain_l
-               for w in (words or []))
+    new_word = any(str(w).lower() in edited_l
+                   and str(w).lower() not in plain_l
+                   for w in (words or []))
+    return bool(new_word and fluency is not None
+                and float(fluency) >= trait_eval.FLUENCY_FLOOR)
 
 
 def _check_rows(rows) -> list:
@@ -146,11 +157,12 @@ class FindAgent:
     """
 
     def __init__(self, muse, tool_fns, final_fn, lift_fn, *,
-                 audit_log=None, progress=None):
+                 fluency_fn=None, audit_log=None, progress=None):
         self.muse = muse
         self.tool_fns = tool_fns
         self.final_fn = final_fn
         self.lift_fn = lift_fn
+        self.fluency_fn = fluency_fn
         self.audit_log = audit_log
         self.progress = progress
         self.id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
@@ -171,6 +183,8 @@ class FindAgent:
         items = [{"role": "user", "content": muse_mod.FIND_PROMPT.format(
             goal=goal.strip(), prompt=prompt.strip())}]
         calls, confirmed_count = 0, 0
+        recipes_tried: list = []
+        recipes_confirmed = 0
         stop = None
         last_recipe: list = []
         last_words: list = []
@@ -203,6 +217,8 @@ class FindAgent:
                         last_recipe = _check_rows(args.get("rows"))
                         last_words = [str(w) for w in
                                       (args.get("prediction") or [])]
+                        recipes_tried.append(last_recipe)
+                        recipes_confirmed += 1 if confirmed else 0
                     except ValueError:
                         pass
                 items.append({"type": "function_call", "name": name,
@@ -221,6 +237,7 @@ class FindAgent:
         else:
             self._emit("stop", by="Muse", **stop)
 
+        from model_lobotomy import trait_eval
         rows = stop["rows"]
         guard = (self.final_fn(rows) or {}).get("guard") or {}
         guard_blocked = bool(guard.get("blocked")
@@ -229,25 +246,48 @@ class FindAgent:
         if rows and stop["words"]:
             lift = round(float(
                 self.lift_fn(rows, stop["words"])["lift"]), 3)
+        fluency = None
+        if rows and self.fluency_fn is not None:
+            fluency = round(float(self.fluency_fn(rows)), 3)
+        fluency_ok = bool(fluency is not None
+                          and fluency >= trait_eval.FLUENCY_FLOOR)
         passed = bool(lift is not None and lift >= evaluation.LIFT_BAR
-                      and not guard_blocked)
+                      and fluency_ok and not guard_blocked)
+        if guard_blocked:
+            verdict_reason = "guard blocked"
+        elif lift is None or lift < evaluation.LIFT_BAR:
+            verdict_reason = "lift below bar"
+        elif not fluency_ok:
+            verdict_reason = "fluency below floor"
+        else:
+            verdict_reason = "all checks passed"
         final = {"rows": rows, "words": stop["words"],
                  "lift": lift, "lift_bar": evaluation.LIFT_BAR,
+                 "fluency": fluency,
+                 "fluency_floor": trait_eval.FLUENCY_FLOOR,
                  "guard_blocked": guard_blocked, "guard": guard,
                  "passed": passed, "reason": stop["reason"]}
         self._audit("find.final", rows=rows, words=stop["words"],
                     lift=lift, lift_bar=evaluation.LIFT_BAR,
-                    guard_blocked=guard_blocked, passed=passed)
+                    fluency=fluency, guard_blocked=guard_blocked,
+                    passed=passed)
         self._emit("final", **final)
 
         summary_numbers = {
             "tool_calls": calls, "max_tool_calls": MAX_TOOL_CALLS,
             "max_recipe_neurons": MAX_RECIPE_NEURONS,
             "confirmed": confirmed_count,
+            "tried_recipes": recipes_tried,
             "recipe": rows, "words": len(stop["words"]),
             "final": {k: v for k, v in final.items() if k != "guard"},
             "guard_blocked": guard_blocked}
-        text = self.muse.find_summary(summary_numbers)
+        count_sentence = (
+            f"Muse used {calls} of {MAX_TOOL_CALLS} tool calls and "
+            f"tried {len(recipes_tried)} recipes. "
+            f"{recipes_confirmed} were confirmed. Final: "
+            f"{'PASS' if passed else 'FAIL'} ({verdict_reason}).")
+        text = count_sentence + " " + self.muse.find_summary(
+            summary_numbers)
         self._emit("summary", text=text)
         return {"find_id": self.id, "goal": goal, "prompt": prompt,
                 "status": "passed" if passed else "failed",
@@ -302,9 +342,14 @@ class FindAgent:
         confirmed = False
         if name == "measure_lift" and "lift" in got:
             confirmed = lift_confirmed(prediction, got["lift"])
+            got = dict(got)
+            got["lift_display"] = f"×{float(got['lift']):.3g}"
+            got["log10_lift"] = (round(math.log10(got["lift"]), 3)
+                                 if got["lift"] > 0 else None)
         elif name == "try_recipe" and "edited" in got:
             confirmed = recipe_confirmed(
-                prediction, got.get("plain", ""), got.get("edited", ""))
+                prediction, got.get("plain", ""), got.get("edited", ""),
+                got.get("fluency"))
         if name in MEASURING:
             self._audit("find.result", tool=name, confirmed=confirmed,
                         seconds=seconds,

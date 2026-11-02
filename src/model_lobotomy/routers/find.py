@@ -15,7 +15,9 @@ from fastapi import APIRouter, HTTPException
 from model_lobotomy import app as engine
 from model_lobotomy import find as find_mod
 from model_lobotomy import guard as guard_mod
+from model_lobotomy import pareto as pareto_mod
 from model_lobotomy import reader as reader_mod
+from model_lobotomy import trait_eval
 from model_lobotomy import server_helpers as helpers
 from model_lobotomy import steer
 from model_lobotomy.server_schemas import FindRequest
@@ -26,7 +28,7 @@ router = APIRouter()
 MAX_NEW_TOKENS = 60
 
 
-@router.post("/api/find-with-Muse")
+@router.post("/api/find-with-muse")
 def find_with_claude(req: FindRequest):
     """Stream one event per find step (NDJSON).
 
@@ -115,6 +117,11 @@ def _find_events(eng, muse, req):
     def edits_for(rows):
         return EditSet.from_rows(_rows(rows))
 
+    def _fluency(prompt, text):
+        return trait_eval.judge_score(
+            eng.model, eng.tokenizer, eng.spec, prompt, text,
+            pareto_mod.FLUENCY_LABEL)
+
     def try_recipe(args):
         rows = _rows(args["rows"])
         edits = edits_for(args["rows"])
@@ -127,6 +134,7 @@ def _find_events(eng, muse, req):
                          max_new_tokens=MAX_NEW_TOKENS,
                          seed=engine.SEED)["text"]
         return {"plain": plain, "edited": edited,
+                "fluency": round(_fluency(req.prompt, edited), 3),
                 "fork": _fork_word(plain, edited),
                 "guard": screen.to_dict(),
                 "guard_pass": not (screen.blocked or screen.would_block)}
@@ -146,13 +154,24 @@ def _find_events(eng, muse, req):
             eng, _rows(rows), [str(w) for w in words],
             _lift_prompts(), meds)
 
+    def fluency_fn(rows):
+        meds = medians([r["layer"] for r in rows])
+        edits = edits_for(rows)
+        scores = []
+        for q in _lift_prompts():
+            edited = eng.run(q, edits, medians=meds,
+                             max_new_tokens=MAX_NEW_TOKENS,
+                             seed=engine.SEED)["text"]
+            scores.append(_fluency(q, edited))
+        return sum(scores) / len(scores)
+
     events: queue.Queue = queue.Queue()
     box: dict = {}
     agent = find_mod.FindAgent(
         muse,
         {"find_neurons": find_neurons, "read_neuron": read_neuron,
          "measure_lift": measure_lift, "try_recipe": try_recipe},
-        final_fn, lift_fn,
+        final_fn, lift_fn, fluency_fn=fluency_fn,
         progress=lambda kind, row: events.put(
             helpers._event(stage=kind, **row)))
 

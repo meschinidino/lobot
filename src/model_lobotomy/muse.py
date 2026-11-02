@@ -116,14 +116,34 @@ FIND_PROMPT = (
 )
 
 FIND_SUMMARY_PROMPT = (
-    "Write the final summary of this neuron search in at most "
-    "5 short sentences. Use simple words, active voice, one idea "
-    "per sentence. Use only the numbers given. Write each number "
-    "exactly as given, or rounded to 2 decimal places. Do not "
-    "write any other number. Say the final verdict and the guard "
-    "result. lobot decided the verdict. Do not claim you decided "
-    "it.\n\nResult JSON:\n{summary}"
+    "Write at most 3 short sentences on what you tried in this "
+    "neuron search and why. Use simple words, active voice, one "
+    "idea per sentence. Write no number at all, except neuron "
+    "names and doses that appear in a tried recipe. Do not write "
+    "counts, lifts or scores. The code already wrote the counts "
+    "and the verdict. Do not repeat them.\n\nResult JSON:\n{summary}"
 )
+
+
+def check_find_summary(text: str, tried_recipes) -> list:
+    """Problems in a Muse find summary. Empty means it passes.
+
+    Muse may use only numbers from the tried recipes: layer,
+    neuron and dose values. More than 3 sentences also fails.
+    """
+    allowed = set()
+    for rows in (tried_recipes or []):
+        for r in (rows or []):
+            for k in ("layer", "neuron", "dose"):
+                if r.get(k) is not None:
+                    allowed.add(round(float(r[k]), 2))
+    bad = [tok for tok in _NUMBER_RE.findall(text or "")
+           if round(float(tok), 2) not in allowed]
+    sentences = [s for s in (text or "").replace("!", ".")
+                 .replace("?", ".").split(".") if s.strip()]
+    if len(sentences) > 3:
+        bad.append("more than 3 sentences")
+    return bad
 
 
 class MuseError(RuntimeError):
@@ -348,16 +368,16 @@ class Muse:
             if not text:
                 last = "empty summary"
             else:
-                bad = check_explanation(text, summary)
+                bad = check_find_summary(
+                    text, summary.get("tried_recipes"))
                 if not bad:
                     return text
-                last = ("numbers not in the summary: "
-                        + ", ".join(bad))
+                last = ("problems: " + ", ".join(bad))
             prompt = (f"{base}\n\nYour last answer was rejected: "
-                      f"{last}. Use only the numbers in the JSON "
-                      f"above, exactly as given or rounded to 2 "
-                      f"decimal places, and answer again.")
-        raise MuseError(f"find summary failed the number check: {last}")
+                      f"{last}. Write at most 3 sentences. Write no "
+                      f"number except neuron names and doses from "
+                      f"a tried recipe, and answer again.")
+        raise MuseError(f"find summary failed the check: {last}")
 
 
 _NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")

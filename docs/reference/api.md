@@ -319,7 +319,7 @@ a final summary. The summary must pass the number check. Events:
 without a patch. The request has no guard switch and no Research
 mode switch. The guard stays on.
 
-## POST /api/find-with-Muse
+## POST /api/find-with-muse
 
 `{"goal", "prompt"}` → NDJSON events. Muse Spark finds a neuron
 edit with five tools: `find_neurons`, `read_neuron`,
@@ -329,12 +329,21 @@ the engine dose range. `measure_lift` and `try_recipe` need a
 `prediction` field. The server writes each prediction to the
 audit log before the tool runs. It appends the result with
 `confirmed` true or false. A lift confirms when the measured
-lift lands within a factor of 2 of the prediction. At stop, the
-server runs the full guard check on the recipe. It measures the
-lift of the target words on the held-out lift prompts in
-`store/reader/lift_prompts.json`. Pass needs lift at or over
-`LIFT_BAR` (3.0) and no guard block. lobot decides pass or fail.
-Muse writes a final summary. It must pass the number check.
+lift lands within a factor of 2 of the prediction. A recipe
+confirms when a predicted word is new in the edited answer and
+that answer scores fluency at or over `FLUENCY_FLOOR`. Tool
+results show lift as "×" with 3 significant digits, plus
+`log10_lift`. The audit log keeps the raw lift. At stop, the
+server runs the full guard check on the recipe. It measures
+the lift of the target words on the held-out lift prompts in
+`store/reader/lift_prompts.json`. It also scores the edited
+answers on those prompts with the fluency judge. Pass needs
+lift at or over `LIFT_BAR` (3.0), mean fluency at or over
+`FLUENCY_FLOOR` (0.5), and no guard block. lobot decides pass
+or fail. The code writes the count sentence of the summary.
+Muse writes at most 3 sentences on what it tried and why.
+Its sentences hold no number except neuron names and doses
+from a tried recipe.
 Events: `prediction`, `result`, `stop`, `final`, `summary`,
 `done`, `error`. The events stream through a thread and a queue.
 503 in replay mode, without weights, or without `META_API_KEY`.

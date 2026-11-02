@@ -378,8 +378,8 @@ function findMuseRender() {
   const st = $("findMuseState"); if (st) st.textContent = FINDM.busy ? "Working…" : FINDM.err || "";
   const rows = FINDM.steps.map((s) => {
     if (s.stage === "prediction") return `<li><div><b>${esc(s.tool)}</b><br><span class="meta">Prediction: ${esc(JSON.stringify(s.prediction))} · args ${esc(JSON.stringify(s.args))}</span></div><span class="state info">PREDICTED</span></li>`;
-    if (s.stage === "result") { const r = s.result || {}, txt = r.error ? esc(r.error) : r.lift != null ? `lift <span class="mono">${num(r.lift)}</span>` : r.guard ? `guard ${r.guard_pass ? "passed" : "did not pass"}` : `${(r.results || []).length} results`; return `<li><div><b>${esc(s.tool)}</b><br><span class="meta">${txt} in <span class="mono">${s.seconds}s</span></span></div>${s.confirmed != null ? `<span class="state ${s.confirmed ? "ok" : "warn"}">${s.confirmed ? "CONFIRMED" : "NOT CONFIRMED"}</span>` : ""}</li>`; }
-    if (s.stage === "final") return `<li><div><b>Final recipe</b><br><span class="meta">${s.rows.map((r) => `L${r.layer}N${r.neuron} at ${fd(r.dose)}`).join(", ") || "none"} · lift <span class="mono">${num(s.lift)}</span> against <span class="mono">${num(s.lift_bar)}</span> · guard ${s.guard_blocked ? "blocked it" : "did not block it"}</span></div><span class="state ${s.passed ? "ok" : "err"}">${s.passed ? "PASS" : "FAIL"}</span></li>`;
+    if (s.stage === "result") { const r = s.result || {}, txt = r.error ? esc(r.error) : r.lift != null ? `lift <span class="mono">${esc(r.lift_display || "×" + Number(r.lift).toPrecision(3))}</span> (log10 <span class="mono">${r.log10_lift}</span>)` : r.guard ? `guard ${r.guard_pass ? "passed" : "did not pass"}, fluency <span class="mono">${num(r.fluency)}</span>` : `${(r.results || []).length} results`; return `<li><div><b>${esc(s.tool)}</b><br><span class="meta">${txt} in <span class="mono">${s.seconds}s</span></span></div>${s.confirmed != null ? `<span class="state ${s.confirmed ? "ok" : "warn"}">${s.confirmed ? "CONFIRMED" : "NOT CONFIRMED"}</span>` : ""}</li>`; }
+    if (s.stage === "final") return `<li><div><b>Final recipe</b><br><span class="meta">${s.rows.map((r) => `L${r.layer}N${r.neuron} at ${fd(r.dose)}`).join(", ") || "none"} · lift <span class="mono">${s.lift == null ? "—" : "×" + Number(s.lift).toPrecision(3)}</span> against <span class="mono">×${Number(s.lift_bar).toPrecision(3)}</span> · fluency <span class="mono">${num(s.fluency)}</span> against <span class="mono">${num(s.fluency_floor)}</span> · guard ${s.guard_blocked ? "blocked it" : "did not block it"}</span></div><span class="state ${s.passed ? "ok" : "err"}">${s.passed ? "PASS" : "FAIL"}</span></li>`;
     return "";
   }).join("");
   out.innerHTML = `${rows ? `<ol class="ruled screens">${rows}</ol>` : ""}${FINDM.result?.summary ? `<div class="explain"><p>${esc(FINDM.result.summary).replace(/\n/g, "<br>")}</p></div>` : ""}${FINDM.result ? `<div class="row2"><button class="btn btn-sm" type="button" id="findUse">Use in the sentence</button><span class="meta">Loads the recipe rows into the workbench.</span></div>` : ""}`;
@@ -389,7 +389,7 @@ async function findWithClaude() {
   const goal = $("findGoal").value.trim(); if (!goal) { FINDM.err = "Write a goal first."; findMuseRender(); return; }
   const prompt = $("prompt")?.value.trim() || "Tell me about your weekend.";
   FINDM.busy = true; FINDM.err = ""; FINDM.steps = []; FINDM.result = null; findMuseRender();
-  try { await stream("api/find-with-Muse", { goal, prompt }, (ev) => {
+  try { await stream("api/find-with-muse", { goal, prompt }, (ev) => {
       if (ev.stage === "done") { FINDM.result = ev.result; return true; }
       FINDM.steps.push(ev); findMuseRender(); return false; });
   } catch (e) { FINDM.err = e.message; }
