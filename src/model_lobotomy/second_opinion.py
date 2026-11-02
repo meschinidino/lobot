@@ -26,8 +26,39 @@ def pairs_hash(pairs: list) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
-def _sign(x: float) -> int:
-    return (x > 0) - (x < 0)
+BIN_MARGIN = 0.1
+
+
+def gain_bin(gain: float) -> str:
+    """One of up, down or flat, with a 0.1 margin around zero."""
+    if gain > BIN_MARGIN:
+        return "up"
+    if gain < -BIN_MARGIN:
+        return "down"
+    return "flat"
+
+
+def agreement(muse_gains: list, local_gains: list) -> dict:
+    """Bin agreement and Pearson correlation of the two gain lists."""
+    agree = sum(1 for m, l in zip(muse_gains, local_gains)
+                if gain_bin(m) == gain_bin(l))
+    try:
+        corr = statistics.correlation(muse_gains, local_gains)
+    except statistics.StatisticsError:
+        corr = 0.0
+    return {"agree": agree, "total": len(muse_gains),
+            "correlation": round(float(corr), 3)}
+
+
+def recompute(muse_gains: list, local_gains: list) -> dict:
+    """Mean, interval and agreement from stored gains. No API call."""
+    lo, hi = evaluation.bootstrap_ci(muse_gains)
+    return {
+        "muse_mean_gain": round(statistics.fmean(muse_gains), 3),
+        "muse_ci95": [round(lo, 3), round(hi, 3)],
+        "local_mean_gain": round(statistics.fmean(local_gains), 3),
+        **agreement(muse_gains, local_gains),
+    }
 
 
 def run_second_opinion(pairs: list, label: str, judge_factory) -> dict:
@@ -60,27 +91,21 @@ def run_second_opinion(pairs: list, label: str, judge_factory) -> dict:
         for i, side, value in pool.map(task, items):
             scored[(i, side)] = float(value)
 
-    muse_gains, local_gains = [], []
-    agree = 0
+    muse_scores, local_gains = [], []
     for i, p in enumerate(pairs):
-        muse_gain = scored[(i, "steered")] - scored[(i, "base")]
-        local_gain = float(p["js"]) - float(p["jb"])
-        muse_gains.append(muse_gain)
-        local_gains.append(local_gain)
-        agree += _sign(muse_gain) == _sign(local_gain)
+        muse_scores.append({"jb": round(scored[(i, "base")], 6),
+                            "js": round(scored[(i, "steered")], 6)})
+        local_gains.append(float(p["js"]) - float(p["jb"]))
+    muse_gains = [s["js"] - s["jb"] for s in muse_scores]
 
     usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0}
     for j in judges:
         for k in usage:
             usage[k] += int((getattr(j, "usage", None) or {}).get(k, 0))
-    lo, hi = evaluation.bootstrap_ci(muse_gains)
     return {
-        "muse_mean_gain": round(statistics.fmean(muse_gains), 3),
-        "muse_ci95": [round(lo, 3), round(hi, 3)],
-        "local_mean_gain": round(statistics.fmean(local_gains), 3),
-        "agree": agree,
-        "total": len(pairs),
+        **recompute(muse_gains, local_gains),
         "calls": usage["calls"],
         "tokens": usage["input_tokens"] + usage["output_tokens"],
         "model": getattr(judges[0], "model", None) if judges else None,
+        "muse_scores": muse_scores,
     }

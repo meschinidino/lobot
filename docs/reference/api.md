@@ -300,10 +300,14 @@ number check twice.
 ## POST /api/traits/{id}/second-opinion
 
 `{"id", "muse_mean_gain", "muse_ci95", "local_mean_gain", "agree",
-"total", "calls", "tokens", "model", "cached"}`: Muse Spark
-re-scores the base and steered replies in
+"total", "correlation", "calls", "tokens", "model", "cached"}`:
+Muse Spark re-scores the base and steered replies in
 `final.update_up.pairs`. At most 8 replies score at one time.
-`agree` counts pairs where both judges give the same sign of gain.
+`agree` counts pairs where both judges put the gain in the same
+bin: up (gain over 0.1), down (gain under -0.1), or flat (the
+rest). `correlation` is the Pearson correlation of the two gain
+lists. The cache holds the per-pair Muse scores. A cache with
+scores but no correlation field recomputes with no API call.
 The local judge still gates Create. This route changes no gate
 and no verdict. Cached in the job's `trait/second_opinion.json`,
 keyed by a hash of the pairs. 404 without a report; 422 without

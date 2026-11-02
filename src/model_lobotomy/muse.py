@@ -335,8 +335,12 @@ def _second_opinion_summary(report: dict) -> dict | None:
         "local_mean_gain_meaning": "average rise of the local judge "
                                    "score on the same pairs",
         "agree": so.get("agree"),
-        "agree_meaning": "pairs where both judges give the same "
-                         "sign of gain",
+        "agree_meaning": "pairs where both judges put the gain in "
+                         "the same bin: up over 0.1, down under "
+                         "-0.1, flat between them",
+        "correlation": _r(so.get("correlation")),
+        "correlation_meaning": "Pearson correlation of the two "
+                               "judges' gain lists, from -1 to 1",
         "total": so.get("total"),
         "total_meaning": "pairs re-scored",
         "calls": so.get("calls"),

@@ -85,8 +85,10 @@ Open a behavior from the shelf or the Library. Top to bottom:
     and steered replies of the turn-up pairs. The card sits next to
     the turn-up card. Press "Run second opinion (about 3 min, 600
     Meta API calls)" to run it. After a run, the page shows the
-    cached numbers at once. The local judge gates the Create
-    verdict. Muse Spark does not gate it.
+    cached numbers at once. The card shows the same-direction
+    count ("Same direction (up, down or flat, 0.1 margin): N of
+    30") and the correlation of the two judges. The local judge
+    gates the Create verdict. Muse Spark does not gate it.
 11. **In plain words**: Muse Spark explains the report from its own
     numbers. With `META_API_KEY` in `.env`, it writes this as the page
     opens (one call per report; the server keeps it). Without the key,

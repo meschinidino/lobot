@@ -397,6 +397,7 @@ class RoutesTest(unittest.TestCase):
         self.assertEqual(body["muse_mean_gain"], 0.0)
         self.assertEqual(body["local_mean_gain"], 0.0)
         self.assertEqual(body["agree"], 3)
+        self.assertEqual(body["correlation"], 1.0)
         self.assertEqual(body["total"], 3)
         self.assertEqual(body["calls"], 6)
         self.assertEqual(body["tokens"], 90)
@@ -413,6 +414,29 @@ class RoutesTest(unittest.TestCase):
         self.assertEqual((trait_dir / "report.json").read_text(),
                          report_before)
         self.assertEqual(before["verdict"], "knob")
+
+    def test_second_opinion_recomputes_from_cached_scores(self):
+        from model_lobotomy import second_opinion as so_mod
+        from tests.test_second_opinion import FakeJudge
+        trait_dir, before = self._add_pairs()
+        pairs = before["final"]["update_up"]["pairs"]
+        result = {"muse_mean_gain": 0.0, "muse_ci95": [-0.5, 0.5],
+                  "local_mean_gain": 0.0, "agree": 0, "total": 3,
+                  "calls": 6, "tokens": 90, "model": "fake-judge",
+                  "muse_scores": [{"jb": 0.1, "js": 0.9},
+                                   {"jb": 0.9, "js": 0.1},
+                                   {"jb": 0.1, "js": 0.1}]}
+        (trait_dir / "second_opinion.json").write_text(json.dumps(
+            {"pairs_hash": so_mod.pairs_hash(pairs), "result": result}))
+        FakeJudge.total_calls = 0
+        with mock.patch.object(trait_eval, "MetaApiJudge", FakeJudge):
+            r = self.client.post(
+                f"/api/traits/{self.job}/second-opinion")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertTrue(r.json()["cached"])
+        self.assertEqual(r.json()["agree"], 3)
+        self.assertIn("correlation", r.json())
+        self.assertEqual(FakeJudge.total_calls, 0)
 
     def test_second_opinion_no_key_is_503(self):
         self._add_pairs()

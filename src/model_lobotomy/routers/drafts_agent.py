@@ -124,7 +124,21 @@ def trait_second_opinion(job_id: str):
     key = so_mod.pairs_hash(pairs)
     cached = helpers._read_json(paths.second_opinion)
     if cached and cached.get("pairs_hash") == key:
-        return {"id": job_id, **cached["result"], "cached": True}
+        result = dict(cached["result"])
+        if "correlation" not in result and result.get("muse_scores"):
+            # Old cache with stored scores: recompute, no API call.
+            muse_gains = [s["js"] - s["jb"]
+                          for s in result["muse_scores"]]
+            local_gains = [p["js"] - p["jb"] for p in pairs]
+            result.update(so_mod.recompute(muse_gains, local_gains))
+            paths.second_opinion.write_text(json.dumps(
+                {"pairs_hash": key, "result": result}, indent=1))
+        if "correlation" in result:
+            out = {k: v for k, v in result.items()
+                   if k != "muse_scores"}
+            return {"id": job_id, **out, "cached": True}
+        # A cache with no stored scores cannot recompute. Fall
+        # through and score again; the new cache stores the scores.
     try:
         label = trait_eval.family_cfg(rep.get("trait"))["judge"]
     except KeyError:
@@ -148,7 +162,8 @@ def trait_second_opinion(job_id: str):
         raise HTTPException(502, f"Muse Spark failed: {e}") from None
     paths.second_opinion.write_text(json.dumps(
         {"pairs_hash": key, "result": result}, indent=1))
-    return {"id": job_id, **result, "cached": False}
+    out = {k: v for k, v in result.items() if k != "muse_scores"}
+    return {"id": job_id, **out, "cached": False}
 
 @router.post("/api/agent")
 def agent_start(req: AgentRequest):
