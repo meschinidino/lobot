@@ -186,6 +186,20 @@ function tuningSection(R) {
     <div class="evwrap"><table class="ev pt tgrid"><thead><tr><th scope="col">Layer</th>${doses.map((k) => `<th scope="col" class="mono">${fd(Number(k))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+// Second opinion: Muse Spark re-scores the turn-up pairs. The local judge still gates the verdict.
+const opinions = {};
+function secondOpinionSection(R, id) {
+  const so = opinions[id]?.res || R.second_opinion, x = opinions[id];
+  const head = `<h2 class="sec">Second opinion: Muse Spark</h2>`;
+  if (so) return `${head}<div class="kv2"><span>Muse Spark mean gain</span><span class="mono">${num(so.muse_mean_gain)} ${ci(so.muse_ci95)}</span>
+    <span>Local judge mean gain</span><span class="mono">${num(so.local_mean_gain)}</span>
+    <span>Same direction (up, down or flat, 0.1 margin)</span><span class="mono">${so.agree} of ${so.total}</span>
+    <span>Correlation</span><span class="mono">${so.correlation}</span>
+    <span>Cost</span><span class="mono">${so.calls} calls, ${so.tokens} tokens (${esc(so.model || "")})</span></div>
+    <p class="meta">The local judge gates the Create verdict. Muse Spark does not gate it. This opinion changes no gate and no verdict.</p>`;
+  return `${head}<div class="row2"><button class="btn" type="button" data-second-opinion="${esc(id)}" ${x?.busy ? "disabled" : ""}>${x?.busy ? "Running…" : "Run second opinion (about 3 min, 600 Meta API calls)"}</button><span class="meta">${x?.err ? esc(x.err) : "Muse Spark re-scores the base and steered replies of the turn-up pairs. The local judge gates the Create verdict. Muse Spark does not gate it. It needs META_API_KEY in the .env file on the server."}</span></div>`;
+}
+
 // In plain words: Muse Spark explains the report from its own numbers; the page keeps the numbers above as the source.
 const explains = {};
 function explainSection(id) {
@@ -213,4 +227,4 @@ const KEY_HELP = {
 };
 const SHELF_KEYS = ["PASS", "INCREASE FAIL", "DECREASE FAIL", "GUARD", "NO KNOB"];
 
-export { short, num, ci, mins, STROKE, stroke, RULES, reports, vecPoint, VERDICT, pointName, paretoSentence, followupKey, noWeights, followupCtl, compareSection, looksLikeReply, doseRuleLine, SCREEN, screenMeasure, guardSection, EXS, exDoses, exQuestions, sampleFor, baseFor, splitWord, markSplit, exState, DIAL, dialAngle, exDial, exOut, setExDose, wireExplorer, explorerSection, tuningSection, explains, explainSection, KEY_HELP, SHELF_KEYS };
+export { short, num, ci, mins, STROKE, stroke, RULES, reports, vecPoint, VERDICT, pointName, paretoSentence, followupKey, noWeights, followupCtl, compareSection, looksLikeReply, doseRuleLine, SCREEN, screenMeasure, guardSection, EXS, exDoses, exQuestions, sampleFor, baseFor, splitWord, markSplit, exState, DIAL, dialAngle, exDial, exOut, setExDose, wireExplorer, explorerSection, tuningSection, explains, explainSection, opinions, secondOpinionSection, KEY_HELP, SHELF_KEYS };

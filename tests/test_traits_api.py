@@ -196,8 +196,9 @@ class TraitsApiTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         got = r.json()
         # U4: the report gains pareto, repair, tuning.chosen, followups.
-        for key in ("pareto", "repair", "followups"):
+        for key in ("pareto", "repair", "followups", "second_opinion"):
             self.assertIn(key, got)
+        self.assertIsNone(got.pop("second_opinion"))
         self.assertIsNone(got.pop("pareto"))
         self.assertIsNone(got.pop("repair"))
         got.pop("followups")

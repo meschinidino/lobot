@@ -1,5 +1,5 @@
 import { update } from "./workbench.js";
-import { KEY_HELP, RULES, SCREEN, SHELF_KEYS, VERDICT, ci, compareSection, doseRuleLine, exOut, exState, explainSection, explains, explorerSection, followupCtl, guardSection, markSplit, mins, noWeights, num, reports, setExDose, short, splitWord, stroke, tuningSection, vecPoint, wireExplorer } from "./evidence.js";
+import { KEY_HELP, RULES, SCREEN, SHELF_KEYS, VERDICT, ci, compareSection, doseRuleLine, exOut, exState, explainSection, explains, explorerSection, followupCtl, guardSection, markSplit, mins, noWeights, num, opinions, reports, secondOpinionSection, setExDose, short, splitWord, stroke, tuningSection, vecPoint, wireExplorer } from "./evidence.js";
 import { libraryPage } from "./library.js";
 import { legend } from "../components/legend.js";
 import { blockedMsg, confirmDlg, creating, renderGuard, run, stop, stream } from "./run.js";
@@ -113,6 +113,14 @@ async function explain(id) {
   } catch (err) { explains[id] = { err: `The request failed: ${err.message}` }; }
   renderPage();
 }
+async function secondOpinion(id) {
+  opinions[id] = { busy: true }; renderPage();
+  try { const r = await postJSON(`api/traits/${encodeURIComponent(id)}/second-opinion`, {}), body = await r.json();
+    opinions[id] = r.ok ? { res: body } : { err: typeof body.detail === "string" ? body.detail : `HTTP ${r.status}` };
+    if (r.ok && reports[id]) reports[id].second_opinion = body;
+  } catch (err) { opinions[id] = { err: `The request failed: ${err.message}` }; }
+  renderPage();
+}
 async function renderPage(first = false) {
   const el = $("vPage"), p = S.page; if (!p || el.hidden) return;
   const keep = document.activeElement && el.contains(document.activeElement) ? document.activeElement.id : null;
@@ -169,6 +177,7 @@ async function renderPage(first = false) {
         <tr><td class="verb">${stroke("read")}Read</td><td>${rg ? `<span class="state ${rg.pass ? "ok" : "warn"}">${rg.pass ? "PASS" : "FAIL"}</span>${rg.pass ? "" : `<br><span class="meta">the reading does not track the judge (margin under 0.10)</span>`}` : `<span class="state info">NOT TESTED</span>`}</td><td class="mono">${rg ? `margin ${num(rg.agreement?.margin)}` : ""}</td><td></td><td class="meta">none (reading only)</td><td class="mono">none</td></tr>
         ${verb("Increase", "up", F.update_up?.card, el_.update_up, d != null ? fd(d) : "", upSide)}${verb("Decrease", "down", F.update_down?.card, el_.update_down, d != null ? fd(-d) : "")}${verb("Delete", "delete", F.delete?.card, el_.delete, "ablation", delSide)}
         </tbody></table></div>
+        ${secondOpinionSection(R, p.id)}
         ${compareSection(R, p.id, fam)}
         ${explorerSection(R, p.id)}
         ${tuningSection(R)}
@@ -271,6 +280,7 @@ $("vPage").addEventListener("click", async (e) => {
     const id = S.page.id, R = reports[id]; if (!R?.pareto) return;
     exState(R, id).qi = Number(t.closest("[data-exq]").dataset.exq); setExDose(id, exState(R, id).d);
     $("exOut")?.querySelector(`[data-exq="${exState(R, id).qi}"]`)?.focus();
+  } else if (t.closest("[data-second-opinion]")) { secondOpinion(t.closest("[data-second-opinion]").dataset.secondOpinion);
   } else if (t.closest("[data-explain]")) { explain(t.closest("[data-explain]").dataset.explain);
   } else if (t.closest("[data-fu]")) {
     const btn = t.closest("[data-fu]"), kind = btn.dataset.fu, id = btn.dataset.id; btn.disabled = true;

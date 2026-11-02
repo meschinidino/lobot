@@ -48,6 +48,10 @@ class WorkPaths:
     def pareto(self) -> Path:
         return self.workdir / "pareto.json"
 
+    @property
+    def second_opinion(self) -> Path:
+        return self.workdir / "second_opinion.json"
+
     def repair(self, method: str) -> Path:
         return self.workdir / f"{repair_stem(method)}.json"
 
