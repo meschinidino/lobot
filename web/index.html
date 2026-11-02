@@ -1471,12 +1471,13 @@ async function chatSend() {
 // Evidence actions: re-check on this machine, remove the behavior on one prompt, install into llama.cpp or Ollama.
 const ACT = {}; // per job: { verify, del, targets, install, iverify }
 function actionsSection(R, id, b) {
-  const a = ACT[id] || (ACT[id] = {}), off = noWeights(), v = a.verify, d = a.del;
+  const a = ACT[id] || (ACT[id] = {}), off = noWeights(), v = a.verify, d = a.del, name = b?.name;
   const vOut = !v ? "" : v.busy ? `<p class="meta">Re-checking: <span class="mono">${v.done ?? 0}</span> of <span class="mono">${v.total ?? "?"}</span> prompts.</p>` : v.err ? `<p class="meta" style="color:var(--error)">${esc(v.err)}</p>`
     : `<p><span class="state ${v.res.pass ? "ok" : "warn"}">${v.res.pass ? "HOLDS" : "DOES NOT HOLD"}</span> Measured ${num(v.res.measured_mean)} on <span class="mono">${v.res.n}</span> held-out prompts; the patch shipped ${num(v.res.shipped_mean)} ${ci(v.res.shipped_ci)}. ${v.res.pass ? "The measured mean is inside the shipped interval." : "The measured mean is outside the shipped interval."}</p>`;
   const col = (c, base, cls) => `<div class="br"><div class="bl mono">${c.mode === "on" ? "behavior removed" : "as is"}</div><p class="bt">${base != null && c.mode === "on" ? markSplit(c.text, base, cls) : esc(c.text)}</p></div>`;
   const dOut = !d ? "" : d.busy ? `<p class="meta">Running. The guard first checks the removal with full generation, which can take a few minutes; then both answers stream.</p>` : d.err ? `<p class="meta" style="color:var(--error)">${esc(d.err)}</p>`
-    : `<div class="fork">${col(d.cols[0], null)}${col(d.cols[1], d.cols[0].text, "ink")}</div><p class="meta">Same prompt, same seed. The direction is removed at layer ${d.layer ?? "?"}; the first changed word is underlined.</p>`;
+    : `<div class="fork">${col(d.cols[0], null)}${col(d.cols[1], d.cols[0].text, "ink")}</div><p class="meta">Same prompt, same seed. The direction is removed at layer ${d.layer ?? "?"}; the first changed word is underlined.</p>
+      ${splitWord(d.cols[0].text, d.cols[1].text) == null ? `<p class="note"><span class="state info">NO CHANGE</span> The two answers are the same. The behavior was not in this answer, so removing it changed nothing. Try a prompt that asks for the behavior, for example “Speak like ${esc(name || "it")}. Tell me about your favorite food.”</p>` : ""}`;
   const t = a.targets, ins = a.install, iv = a.iverify;
   const tOut = !t ? "" : t.err ? `<p class="meta" style="color:var(--error)">${esc(t.err)}</p>` : `<ol class="ruled screens">${t.list.map((x) => `<li><div><b>${x.target === "llamacpp" ? "llama.cpp" : "Ollama"}</b><br><span class="meta">${esc(x.version || x.detail || "")}</span>
       ${x.available ? `<div class="row2"><label style="flex:1;min-width:220px"><span class="meta">${x.target === "llamacpp" ? "Path to the model GGUF" : "Ollama base model"}</span><input class="num" type="text" spellcheck="false" id="mref-${x.target}" style="font-family:var(--mono)" placeholder="${x.target === "llamacpp" ? "models/llama-3.2-3b-instruct-f16.gguf" : "llama3.2:3b"}"></label><button class="btn btn-sm" type="button" data-install="${x.target}" data-id="${esc(id)}" ${ins?.busy ? "disabled" : ""}>Install</button></div>` : ""}</div>
@@ -1520,7 +1521,9 @@ async function actDelete(id, name) {
   try { await stream("api/delete", { prompt: a.delPrompt, trait: name, guard: !S.research, research_mode: S.research, max_new_tokens: 120 }, (ev) => {
       if (ev.stage === "token") cols[ev.col].text += ev.text;
       else if (ev.stage === "blocked") throw new Error(blockedMsg(ev.guard, `removing ${name}`).replace(" Lower the dose, or use Research mode.", " Removing a direction can also remove part of the model's refusals. Research mode runs it anyway and records that."));
-      else if (ev.stage === "done") { const r = ev.result || {}; a.del = { cols: r.columns || cols, layer: r.layer }; return true; }
+      // The removal stream ends with "complete" (the other streams end with "done").
+      else if (ev.stage === "complete" || ev.stage === "done") { const r = ev.result || {}; a.del = { cols: r.columns || cols, layer: r.layer }; return true; }
+      else if (ev.stage === "stopped") throw new Error(`The removal stopped (after: ${ev.after}).`);
       return false; });
   } catch (e) { a.del = { err: e.message }; }
   if (a.del.busy) a.del = { err: "The run stopped before it finished." };

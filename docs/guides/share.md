@@ -4,6 +4,10 @@ A Create job writes `jobs/<id>/trait/knob.lobot`: the direction, layer,
 dose, report card, guard record and model fingerprint, with hashes of the
 evidence and the direction. Anyone can check it was not changed.
 
+In the app, the evidence page's "Use it elsewhere" section runs
+re-check, install and the installed-patch check from buttons (see
+[app.md](app.md#the-evidence-page)).
+
 ## Install into llama.cpp or Ollama
 
 ```sh
@@ -15,7 +19,8 @@ It writes a control-vector GGUF and prints the exact `llama-cli` flags.
 support and says so plainly when it has none. From the app: the install
 buttons call `POST /api/install` and `/api/install/{id}/verify`
 (`judged_n` compares the mean gain over the patch's own held-out prompts
-with its shipped interval).
+with its shipped interval). Measured live: pirate v4 in llama.cpp Q4_K_M
+gained +0.40 on 16 prompts, inside its shipped [+0.19, +0.48].
 
 ## Re-check the evidence on your machine
 

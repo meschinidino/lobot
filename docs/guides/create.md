@@ -4,6 +4,10 @@ Create turns a behavior ("talks like a pirate") into a tested patch: a
 direction inside the model, a dose, and a report card that proves what it
 does. It needs the model loaded and takes the GPU for several minutes.
 
+In the app, all of this lives on the New behavior page (shelf, "+ New")
+and the evidence page: see [app.md](app.md#new-behavior). This guide
+shows the same steps from the API and the command line.
+
 ## 1. Pick or describe the behavior
 
 - **A known family** (pirate, cheerful, shakespeare, noir, cowboy, and
@@ -18,10 +22,11 @@ does. It needs the model loaded and takes the GPU for several minutes.
   ```
 
   `"drafter": "muse"` uses Muse Spark (Meta model API, needs
-  `META_API_KEY`); `"local"` uses the loaded model. Then label the 20
-  candidate replies (`/prelabel` suggests labels), and validate: the family
-  registers when the local judge agrees with your labels on at least 17
-  of 20.
+  `META_API_KEY`); `"local"` uses the loaded model (the app's "Label it
+  yourself" uses it). The local drafter can drift from the description,
+  so read its parts before you label. Then label the 20 candidate replies
+  (`/prelabel` suggests labels), and validate: the family registers when
+  the local judge agrees with your labels on at least 17 of 20.
 
 ## 2. Run Create
 
@@ -56,7 +61,11 @@ The agent drafts with Muse Spark, has the local model write replies, lets
 Muse pre-label them, checks the local judge against those labels, registers
 the family, runs Create, and explains the result. When a gate fails, Muse
 rewrites the description or stops, at most three rounds. The local judge
-and the gates decide every number. API: `POST /api/agent`.
+and the gates decide every number. API: `POST /api/agent`; past runs:
+`GET /api/agents`. A patch the agent makes is registered as a job, so it
+appears on the shelf. Measured: "nervous museum tour guide" stopped
+after 3 rounds (judge agreement 0.30, 0.40, 0.50; gate 0.85), so a
+description the 3B judge cannot see does not reach Create.
 
 ## 4. Read the report
 
