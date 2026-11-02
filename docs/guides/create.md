@@ -53,10 +53,10 @@ read gate. Set it up once: [llama-backend.md](llama-backend.md).
 ## 3. Or let the agent do all of it
 
 ```sh
-export META_API_KEY="$(cat ~/.config/lobot/meta_api_key)"
 uv run python scripts/agent_create.py "talks like an excited sports commentator" --lane llama
 ```
 
+It needs `META_API_KEY` in `.env` or the shell ([env.md](env.md)).
 The agent drafts with Muse Spark, has the local model write replies, lets
 Muse pre-label them, checks the local judge against those labels, registers
 the family, runs Create, and explains the result. When a gate fails, Muse

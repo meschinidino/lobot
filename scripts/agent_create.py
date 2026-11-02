@@ -1,6 +1,7 @@
 """Run the Create agent: words in, tested patch out (Muse Spark + local gates).
 
-Needs META_API_KEY and the model lane (loads weights).
+Needs META_API_KEY (shell or .env, see docs/guides/env.md) and the
+model lane (loads weights).
 
 Run:
     uv run python scripts/agent_create.py "talks like an old-west cowboy" --lane llama
@@ -52,4 +53,6 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    from model_lobotomy.config import load_env_file
+    load_env_file()  # META_API_KEY from .env; a shell value wins
     raise SystemExit(main())

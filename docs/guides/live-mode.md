@@ -20,7 +20,7 @@ mode](replay-mode.md).
 ## Steps
 
 1. Optional, for the Muse Spark features: copy `.env.example` to
-   `.env` and set `META_API_KEY`. The start log says
+   `.env` and set `META_API_KEY` ([env.md](env.md)). The start log says
    `Meta API: on` when the key loaded.
 
 2. Start the server.
