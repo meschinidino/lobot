@@ -1642,7 +1642,7 @@ def _wrap_chat(tok, messages: list[dict], spec) -> str:
 
 
 def _guard_event_dict(gv) -> dict:
-    return {**guard_mod.verdict_dict(gv),
+    return {**gv.report,
             "enforced": not gv.research_mode}
 
 
@@ -1655,7 +1655,7 @@ def _dial_entry(ev: dict, trait: str) -> dict:
 
 def _verified_guard(eng, edits, medians, enforce):
     from model_lobotomy import guards as _guards
-    return _guards.get_guard().check_verified(
+    return _guards.get_guard().confirm(
         eng, edits, medians=medians, max_new_tokens=24, seed=engine.SEED,
         judge_fn=guard_mod.refusal_judge_fn(eng),
         research_mode=not enforce, cancel=_cancel)

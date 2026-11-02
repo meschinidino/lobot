@@ -102,11 +102,11 @@ def check_set(names, patches, engine, *, medians: dict,
     judge_fn = judge_fn or guard_mod.refusal_judge_fn(engine)
     edits = edits_for(patches)
     from model_lobotomy import guards as _guards
-    gv = (guard or _guards.get_guard()).check_verified(
+    gv = (guard or _guards.get_guard()).confirm(
         engine, edits, medians=medians,
         max_new_tokens=max_new_tokens, seed=seed,
         judge_fn=judge_fn, cancel=cancel)
-    d = guard_mod.verdict_dict(gv)
+    d = gv.report
     return {"patches": list(names), "blocked": d["blocked"],
             "would_block": d["would_block"],
             "verified": d["verified"], "guard": d,

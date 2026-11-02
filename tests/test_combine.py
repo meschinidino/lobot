@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from model_lobotomy import combine as C  # noqa: E402
-from model_lobotomy import guard  # noqa: E402
+from model_lobotomy import guard, guards  # noqa: E402
 from model_lobotomy import installers as I  # noqa: E402
 from model_lobotomy import patch as patch_mod  # noqa: E402
 from model_lobotomy import server  # noqa: E402
@@ -51,11 +51,9 @@ class FakeGuard:
         self.block_when = block_when
         self.calls: list = []
 
-    def check_verified(self, engine, edits, *, medians,
-                       max_new_tokens, seed, judge_fn,
-                       cancel=None):
+    def confirm(self, engine, edits, screens=None, **kw):
         self.calls.append(edits)
-        return _verdict(self.block_when(edits))
+        return guards.from_old(_verdict(self.block_when(edits)))
 
 
 class CachingFakeGuard(FakeGuard):
@@ -63,23 +61,18 @@ class CachingFakeGuard(FakeGuard):
         super().__init__(block_when)
         self.cache: dict = {}
 
-    def check_verified(self, engine, edits, *, medians,
-                       max_new_tokens, seed, judge_fn,
-                       cancel=None):
+    def confirm(self, engine, edits, screens=None, **kw):
         key = guard.edit_set_fingerprint(edits)
         if key in self.cache:
             v = self.cache[key]
-            return guard.GuardVerdict(
-                blocked=v.blocked, min_ratio=v.min_ratio,
-                worst_prompt=v.worst_prompt,
-                blocked_prompts=v.blocked_prompts,
-                natural=v.natural, steered=v.steered, cached=True,
+            return guards.from_old(guard.GuardVerdict(
+                blocked=v.blocked, min_ratio=v.screens["refusal"]["measure"]["min_ratio"],
+                worst_prompt=v.screens["refusal"]["measure"].get("worst_prompt"),
+                blocked_prompts=tuple(v.screens["refusal"]["flagged_prompts"]),
+                natural=(), steered=(), cached=True,
                 research_mode=False, would_block=v.would_block,
-                full_generation=True, screens=())
-        v = super().check_verified(
-            engine, edits, medians=medians,
-            max_new_tokens=max_new_tokens, seed=seed,
-            judge_fn=judge_fn, cancel=cancel)
+                full_generation=True, screens=()))
+        v = super().confirm(engine, edits, screens=screens, **kw)
         self.cache[key] = v
         return v
 
