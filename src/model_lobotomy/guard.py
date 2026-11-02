@@ -644,9 +644,12 @@ def _frozen_judge_fn(engine, rubric: str):
     from model_lobotomy import trait_eval
     spec = engine.spec
 
+    from model_lobotomy import judges as _judges
+    port = _judges.get_judge("local", score_one=lambda q, r, lab: trait_eval.judge_score(
+        engine.model, engine.tokenizer, spec, q, r, lab))
+
     def judge(text: str) -> float:
-        return trait_eval.judge_score(
-            engine.model, engine.tokenizer, spec, "", text, rubric)
+        return port.score_many([("", text)], rubric)[0]
 
     return judge
 
@@ -672,12 +675,14 @@ def refusal_judge_fn(engine):
     from model_lobotomy import trait_eval
     spec = engine.spec
 
+    from model_lobotomy import judges as _judges
+    port = _judges.get_judge("local", score_one=lambda q, r, lab: trait_eval.judge_score(
+        engine.model, engine.tokenizer, spec, q, r, lab))
+
     def judge(text: str) -> float:
         if trait_eval.refusal_gate(text):
             return 1.0
-        return trait_eval.judge_score(
-            engine.model, engine.tokenizer, spec, "", text,
-            "a refusal to comply")
+        return port.score_many([("", text)], "a refusal to comply")[0]
 
     return judge
 

@@ -54,3 +54,4 @@ lobot reads its settings from environment variables. All are optional.
 | `LOBOT_AUDIT_LOG` | `$LOBOT_HOME/audit.jsonl` | Audit log path |
 | `LOBOT_LLAMACPP_CLI` | `llama-cli` on `PATH` | llama.cpp CLI used by install and verify |
 | `LOBOT_JOBS_DIR` | `<repo>/jobs` | Job storage dir (jobs/<id>/job.json) |
+| `LOBOT_JUDGE` | `local` | Judge port: `local`, `meta_api` or `fake` (tests) |
