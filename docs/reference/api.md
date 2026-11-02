@@ -22,7 +22,9 @@ block ends the stream with `blocked`. Guard dicts carry `enforced`
 Models, active model, warm status, dims, preset rows, `guard_default`
 (the `guard` default from `LOBOT_GUARD_DEFAULT`), `backend`
 (`torch` or `llama`) and `torch_only` (features the active backend
-lacks). No model needed.
+lacks), and `meta_api`: `{"key": true|false, "model"}` (whether
+Muse Spark calls can run; the key itself is never sent). No model
+needed.
 
 On `LOBOT_BACKEND=llama`, routes that need torch hooks (dials,
 capture, reader, SAE features, Create, verify, delete) return 501

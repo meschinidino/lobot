@@ -403,6 +403,14 @@ class ReplayModeTest(unittest.TestCase):
     def test_state_reports_replay(self):
         self.assertTrue(self.client.get("/api/state").json()["replay"])
 
+    def test_state_reports_meta_api_without_the_key(self):
+        with mock.patch.dict("os.environ", {"META_API_KEY": "secret-k"}):
+            r = self.client.get("/api/state")
+        self.assertEqual(r.json()["meta_api"]["key"], True)
+        self.assertNotIn("secret-k", r.text)
+        with mock.patch.dict("os.environ", {"META_API_KEY": ""}):
+            self.assertEqual(self.client.get("/api/state").json()["meta_api"]["key"], False)
+
 
 class DialReplayTest(unittest.TestCase):
     """D1: replay returns the recorded dial, or null without one."""

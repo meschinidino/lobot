@@ -13,7 +13,8 @@ coding agents. Human docs start at [README.md](README.md).
   numbers.
 - **No event or competition references** in any repo file, commit or PR.
 - **No secrets in the repo.** `META_API_KEY` comes from the environment
-  only; publisher keys live in `~/.lobot`.
+  or the git-ignored `.env` (never commit `.env`; `.env.example` holds
+  the names only); publisher keys live in `~/.lobot`.
 
 ## Map
 

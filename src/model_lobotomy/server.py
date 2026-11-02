@@ -17,6 +17,11 @@ Run:
 
 from __future__ import annotations
 
+if __name__ == "__main__":
+    # `python -m model_lobotomy.server`: read .env before any setting is read.
+    from model_lobotomy.config import load_env_file
+    _ENV_SET = load_env_file()
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -110,5 +115,8 @@ if __name__ == "__main__":
         engine.load_engine()
         print(f"[server] engine warm ({engine._ENGINE.model_id}); models: "
               f"{sorted(engine._PRESETS)}", flush=True)
+    m = helpers._meta_api()
+    print(f"[server] Meta API: {'on, ' + m['model'] if m['key'] else 'off (set META_API_KEY in .env)'}"
+          f"{' (from .env)' if 'META_API_KEY' in _ENV_SET else ''}", flush=True)
     from model_lobotomy.config import get_settings
     uvicorn.run(api, host="127.0.0.1", port=get_settings().port)

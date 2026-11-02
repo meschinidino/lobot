@@ -69,11 +69,13 @@ command for their own terminal along with the link.
   '{"model_id": "meta-llama/Llama-3.2-3B-Instruct"}'
   http://127.0.0.1:7860/api/model`.
 - Muse features (agent, suggestions, "In plain words") need
-  `META_API_KEY` in the server's environment: start it with
-  `export META_API_KEY="$(cat ~/.config/lobot/meta_api_key)"` first.
-  Never print the key.
-- Create from the app on the llama lane: also export
-  `LOBOT_CREATE_LANE=llama` (about 8 to 13 min instead of 35 to 50).
+  `META_API_KEY`. The server reads it from `.env` at the repo root
+  (git-ignored; copy `.env.example`). If `.env` is missing, make it
+  with `printf 'META_API_KEY=%s\n' "$(cat ~/.config/lobot/meta_api_key)" > .env`.
+  Never print the key. The start log says `Meta API: on` when the
+  key loaded.
+- Create from the app on the llama lane: add `LOBOT_CREATE_LANE=llama`
+  to `.env` (about 8 to 13 min instead of 35 to 50).
 - A run started from the app waits for a full-generation guard check
   before the first token in chat and removal (minutes). A closed tab
   frees the model only after the running step ends.

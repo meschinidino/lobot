@@ -80,7 +80,15 @@ def _state() -> dict:
         "preset_rows": list(preset["rows"]),
         "guard_default": _guard_default(),
         "guard_screens": list(guard_screens_mod.enabled_screens()),
+        "meta_api": _meta_api(),
     }
+
+
+def _meta_api() -> dict:
+    """Whether Muse Spark calls can run: a key is set (its value never leaves the server)."""
+    from model_lobotomy.config import get_settings
+    s = get_settings()
+    return {"key": bool(s.meta_api_key), "model": s.muse_model or "muse-spark-1.3"}
 
 
 def _recordings() -> list[dict]:

@@ -19,18 +19,22 @@ mode](replay-mode.md).
 
 ## Steps
 
-1. Start the server.
+1. Optional, for the Muse Spark features: copy `.env.example` to
+   `.env` and set `META_API_KEY`. The start log says
+   `Meta API: on` when the key loaded.
+
+2. Start the server.
 
    ```sh
    uv run python -m model_lobotomy.server
    ```
 
-2. Open `http://127.0.0.1:7860`.
+3. Open `http://127.0.0.1:7860`.
 
-3. Pick a model. Qwen 3.5 4B is the default; Llama 3.2 3B
+4. Pick a model. Qwen 3.5 4B is the default; Llama 3.2 3B
    Instruct is the demo model.
 
-4. Type any prompt, set edits, press Run. The first run
+5. Type any prompt, set edits, press Run. The first run
    downloads the weights (about 9 GB for Qwen) and takes a few
    minutes. Later runs reuse the cache.
 
