@@ -183,7 +183,7 @@ plan. Only abstracts were read; no paper was reproduced.
 
 Open work outside v-next, each with its reason, lives in
 [../TODOS.md](../TODOS.md): the C2 two-minute gate (HD attacks it), a
-live judged install check (IN), a live "model update breaks a patch"
+live judged install check on Ollama (IN), a live "model update breaks a patch"
 case for behavior CI, a fairer privacy rule, the O6 chat-cache
 decision, and 70B scale (SC, needs rented GPUs).
 
