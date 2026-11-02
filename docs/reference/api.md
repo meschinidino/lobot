@@ -297,6 +297,19 @@ job's `trait/explanation.txt`. 404 without a report; 503 without
 `META_API_KEY`; 502 when the API fails or the answer fails the
 number check twice.
 
+## POST /api/traits/{id}/second-opinion
+
+`{"id", "muse_mean_gain", "muse_ci95", "local_mean_gain", "agree",
+"total", "calls", "tokens", "model", "cached"}`: Muse Spark
+re-scores the base and steered replies in
+`final.update_up.pairs`. At most 8 replies score at one time.
+`agree` counts pairs where both judges give the same sign of gain.
+The local judge still gates Create. This route changes no gate
+and no verdict. Cached in the job's `trait/second_opinion.json`,
+keyed by a hash of the pairs. 404 without a report; 422 without
+turn-up pairs; 503 without `META_API_KEY`; 502 when the API fails.
+The response never holds the key.
+
 ## GET /api/traits/{id}/patch (E1 evidence)
 
 The job's `knob.lobot` patch as `application/zip`, download name
