@@ -30,8 +30,8 @@ from model_lobotomy import prompt_bank  # noqa: E402
 from model_lobotomy import trait_eval  # noqa: E402
 from model_lobotomy.trait_store import TraitStore, UnsupportedTrait  # noqa: E402
 
-STAGES = ("extract", "tune", "read_gate", "final", "baseline", "pareto",
-          "guard", "verdict")
+from model_lobotomy.create import stages as _stages
+STAGES = _stages.STAGE_NAMES
 
 from model_lobotomy import jobs_store as _jobs_store
 DEFAULT_JOBS_DIR = _jobs_store.default_jobs_dir()

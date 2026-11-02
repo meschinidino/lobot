@@ -115,9 +115,26 @@ Parity: replay and live not run. Verdict numbers did not change.
 - New settings: `LOBOT_DIRECTION`, `LOBOT_DOSE_RULE`.
 - A `fake` dose rule exists for tests.
 
-Tests: before 719, after 724 (`OK, skipped=5`). New: 5 tests.
+Tests: before 719, after 723 (`OK, skipped=5`). New: 4 tests.
 Parity: replay and live not run. Numbers did not change.
 
-## Phases 7 to 10
+## Phase 7: Create stages
+
+- New modules: `create/__init__.py`, `create/stages.py`.
+- The stage order lives there, with each stage's UI label.
+- `run_trait` now loops over that order. Each stage is one
+  function that takes and returns a shared `ctx` dict.
+- The early `no_knob` exit sets `ctx["stop"]`.
+- `create_job.STAGES` reads the same order.
+- A test checks the UI list in `web/index.html` matches.
+- No new route. The spec marks its route idea as an example.
+  The test reads the file instead, so no route changes.
+
+Tests: before 723, after 726 (`OK, skipped=5`). New: 3 tests.
+Parity: replay and live not run. Stage order did not change.
+Known gap: the `pareto` stage still runs inside `baseline`,
+as before. Its stage entry is a no-op placeholder in the loop.
+
+## Phases 8 to 10
 
 Not started. Each phase gets its own branch and pull request.
