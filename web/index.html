@@ -945,12 +945,13 @@ async function stream(url, body, onEvent) {
 }
 const setupKey = () => `${S.model}|${rowsKey(S.rows)}`;
 const creating = () => S.jobs.find(active);
-function blockedMsg(g) {
+// what: the words for the edit set the guard checked (default: the sentence's edits).
+function blockedMsg(g, what = editsText(S.rows)) {
   const pct = (x) => Math.round(x * 100) + "%", where = g.display_prompt ? ` on “${g.display_prompt}”` : "";
   // The first-token check passed, so the block came from the full-answer confirm step.
   if (g.min_ratio != null && g.min_ratio >= (g.limit ?? 0.5))
-    return `The refusal guard blocked ${editsText(S.rows)}. The first-token check passed (refusal at ${pct(g.min_ratio)} of its usual level; the limit is ${pct(g.limit ?? 0.5)}), but in the full-answer check ${g.blocked_prompts?.length > 1 ? `${g.blocked_prompts.length} test prompts` : "a test prompt"} no longer got a refusal. Lower the dose, or use Research mode.`;
-  return `The refusal guard blocked ${editsText(S.rows)}. With these edits, the model's chance of refusing fell to ${g.min_ratio != null ? pct(g.min_ratio) : "under half"} of its usual level${where}; the limit is ${pct(g.limit ?? 0.5)}. Lower the dose, or use Research mode.`;
+    return `The refusal guard blocked ${what}. The first-token check passed (refusal at ${pct(g.min_ratio)} of its usual level; the limit is ${pct(g.limit ?? 0.5)}), but in the full-answer check ${g.blocked_prompts?.length > 1 ? `${g.blocked_prompts.length} test prompts` : "a test prompt"} no longer got a refusal. Lower the dose, or use Research mode.`;
+  return `The refusal guard blocked ${what}. With these edits, the model's chance of refusing fell to ${g.min_ratio != null ? pct(g.min_ratio) : "under half"} of its usual level${where}; the limit is ${pct(g.limit ?? 0.5)}. Lower the dose, or use Research mode.`;
 }
 async function run(fan = false) {
   if (S.running) return;
@@ -1432,9 +1433,10 @@ function chatPage() {
   const beh = S.rows.find(isB), neu = S.rows.filter((r) => !isB(r));
   const edits = S.rows.length ? S.rows.map((r) => `<span class="mono">${esc(eid(r))} ${fd(r.dose)}</span>`).join(", ") : "no edit";
   const msgs = CH.turns.map((t, i) => t.role === "user" ? `<div class="msg user"><span class="bl mono">you</span><p class="bt">${esc(t.text)}</p></div>`
-    : `<div class="msg bot${t.dial ? " dialed" : ""}" data-i="${i}"><span class="bl mono">model${t.blocked ? " · blocked by the guard" : ""}</span><p class="bt">${t.dial ? t.dial.map((x, j) => `<span class="w" data-v="${x.value}" data-i="${j}">${esc(x.text)}</span>`).join("") : esc(t.text || "")}${t.live ? '<span class="redact" style="width:3ch"></span>' : ""}</p><svg class="cstrip" aria-hidden="true"></svg></div>`).join("");
+    : `<div class="msg bot${t.dial ? " dialed" : ""}" data-i="${i}"><span class="bl mono">model${t.blocked ? " · blocked by the guard" : ""}</span><p class="bt">${t.dial ? t.dial.map((x, j) => `<span class="w" data-v="${x.value}" data-i="${j}">${esc(x.text)}</span>`).join("") : esc(t.text || "")}${t.live ? '<span class="redact" style="width:3ch"></span>' : ""}</p>${t.live && !t.text && i === 1 ? `<p class="meta">Before the first reply, the guard checks these edits with full generation on every screen. That can take a few minutes; the result is kept for these edits.</p>` : ""}<svg class="cstrip" aria-hidden="true"></svg></div>`).join("");
   return `<p class="lead">On <span class="mono">${esc(short(S.model))}</span> with ${edits}${S.read ? `, reading <span class="mono">${esc(S.read)}</span>` : ""}. The edits stay on for every turn. Change them in the sentence on the tree; a change starts a new chat.${S.research ? " Research mode: the guard is off." : ""}</p>
     ${neu.length && beh ? `<p class="meta">A chat uses one behavior or neurons, not both.</p>` : ""}
+    ${beh && S.read === beh.trait ? `<p class="note"><span class="state info">SAME DIRECTION</span> You read the behavior you push. The reading includes the push itself, so it sits high from the first word. Read another behavior to see a side effect.</p>` : ""}
     <div class="chat" id="chatLog" aria-live="polite">${msgs || `<p class="empty">Write a message. The model answers with the edits on${S.read ? `, and the pen line under each reply reads ${esc(S.read)} word by word (band: 0 = neutral, 1 = the behavior's mean)` : ""}.</p>`}</div>
     ${CH.err ? `<p class="meta" role="alert" style="color:var(--error)">${esc(CH.err)}</p>` : ""}
     <label class="label" for="chatIn" style="margin-top:16px">Message</label><textarea id="chatIn" class="field" rows="2" spellcheck="true" ${CH.busy ? "disabled" : ""}></textarea>
@@ -1461,7 +1463,9 @@ async function chatSend() {
       return false;
     });
   } catch (e) { CH.err = e.message; if (!bot.text) CH.turns.splice(-2, 2); }
-  bot.live = false; CH.busy = false; renderPage(); $("chatIn")?.focus();
+  bot.live = false; CH.busy = false; renderPage();
+  if (CH.err && !bot.text && $("chatIn")) $("chatIn").value = msg; // a failed send keeps the message
+  $("chatIn")?.focus();
 }
 
 // Evidence actions: re-check on this machine, remove the behavior on one prompt, install into llama.cpp or Ollama.
@@ -1471,7 +1475,7 @@ function actionsSection(R, id, b) {
   const vOut = !v ? "" : v.busy ? `<p class="meta">Re-checking: <span class="mono">${v.done ?? 0}</span> of <span class="mono">${v.total ?? "?"}</span> prompts.</p>` : v.err ? `<p class="meta" style="color:var(--error)">${esc(v.err)}</p>`
     : `<p><span class="state ${v.res.pass ? "ok" : "warn"}">${v.res.pass ? "HOLDS" : "DOES NOT HOLD"}</span> Measured ${num(v.res.measured_mean)} on <span class="mono">${v.res.n}</span> held-out prompts; the patch shipped ${num(v.res.shipped_mean)} ${ci(v.res.shipped_ci)}. ${v.res.pass ? "The measured mean is inside the shipped interval." : "The measured mean is outside the shipped interval."}</p>`;
   const col = (c, base, cls) => `<div class="br"><div class="bl mono">${c.mode === "on" ? "behavior removed" : "as is"}</div><p class="bt">${base != null && c.mode === "on" ? markSplit(c.text, base, cls) : esc(c.text)}</p></div>`;
-  const dOut = !d ? "" : d.busy ? `<p class="meta">Running with and without the behavior.</p>` : d.err ? `<p class="meta" style="color:var(--error)">${esc(d.err)}</p>`
+  const dOut = !d ? "" : d.busy ? `<p class="meta">Running. The guard first checks the removal with full generation, which can take a few minutes; then both answers stream.</p>` : d.err ? `<p class="meta" style="color:var(--error)">${esc(d.err)}</p>`
     : `<div class="fork">${col(d.cols[0], null)}${col(d.cols[1], d.cols[0].text, "ink")}</div><p class="meta">Same prompt, same seed. The direction is removed at layer ${d.layer ?? "?"}; the first changed word is underlined.</p>`;
   const t = a.targets, ins = a.install, iv = a.iverify;
   const tOut = !t ? "" : t.err ? `<p class="meta" style="color:var(--error)">${esc(t.err)}</p>` : `<ol class="ruled screens">${t.list.map((x) => `<li><div><b>${x.target === "llamacpp" ? "llama.cpp" : "Ollama"}</b><br><span class="meta">${esc(x.version || x.detail || "")}</span>
@@ -1484,7 +1488,8 @@ function actionsSection(R, id, b) {
   return `<h2 class="sec">Use it elsewhere</h2>
     <h3 class="sub">Re-check on this machine</h3><p class="meta">Re-runs 16 of the patch's held-out prompts on the loaded model and compares the effect with the interval the patch shipped with.</p>
     <div class="row2"><button class="btn" type="button" data-verify="${esc(id)}" ${off || v?.busy || !b?.patch ? "disabled" : ""}>Re-check</button>${off ? `<span class="meta">${off}</span>` : !b?.patch ? `<span class="meta">Only a patch can be re-checked.</span>` : ""}</div>${vOut}
-    ${b?.del ? `<h3 class="sub">Remove it from one answer</h3><p class="meta">Removes the behavior's direction from the model on one prompt, next to the answer as is.</p>
+    ${b?.del && !b.newest ? `<h3 class="sub">Remove it from one answer</h3><p class="meta">Removing runs on the newest version of ${esc(b.name)}. Open the newest version to try it.</p>` : ""}
+    ${b?.del && b.newest ? `<h3 class="sub">Remove it from one answer</h3><p class="meta">Removes the behavior's direction from the model on one prompt, next to the answer as is.</p>
     <label class="label" for="delIn-${esc(id)}">Prompt</label><textarea class="field" rows="1" id="delIn-${esc(id)}">${esc(a.delPrompt || "Tell me about the ocean.")}</textarea>
     <div class="row2"><button class="btn" type="button" data-del="${esc(id)}" ${off || d?.busy ? "disabled" : ""}>Run with it removed</button>${off ? `<span class="meta">${off}</span>` : ""}</div>${dOut}` : ""}
     <h3 class="sub">Install into llama.cpp or Ollama</h3><p class="meta">Exports the patch as a control vector for the tool you run models with. Nothing is sent anywhere.</p>
@@ -1505,7 +1510,7 @@ async function actDelete(id, name) {
   const cols = [{ mode: "off", text: "" }, { mode: "on", text: "" }];
   try { await stream("api/delete", { prompt: a.delPrompt, trait: name, guard: !S.research, research_mode: S.research, max_new_tokens: 120 }, (ev) => {
       if (ev.stage === "token") cols[ev.col].text += ev.text;
-      else if (ev.stage === "blocked") throw new Error(blockedMsg(ev.guard));
+      else if (ev.stage === "blocked") throw new Error(blockedMsg(ev.guard, `removing ${name}`).replace(" Lower the dose, or use Research mode.", " Removing a direction can also remove part of the model's refusals. Research mode runs it anyway and records that."));
       else if (ev.stage === "done") { const r = ev.result || {}; a.del = { cols: r.columns || cols, layer: r.layer }; return true; }
       return false; });
   } catch (e) { a.del = { err: e.message }; }

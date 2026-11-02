@@ -326,3 +326,46 @@ class AgentJobsTest(unittest.TestCase):
             self.assertEqual(client.get("/api/agent/../x").status_code, 404)
             self.assertIsNone(server._register_agent_job(
                 {"agent_id": aid, "workdir": str(Path(tmp) / "none")}))
+
+
+class StreamCloseTest(unittest.TestCase):
+    """A client that leaves mid-stream must not keep the engine lock."""
+
+    def _gen(self, lock, log):
+        lock.acquire()
+        try:
+            yield '{"stage": "token"}\n'
+            yield '{"stage": "done"}\n'
+        finally:
+            log.append("closed")
+            lock.release()
+
+    def test_disconnect_closes_generator_and_releases_lock(self):
+        import asyncio
+        lock, log = threading.Lock(), []
+        server._cancel.clear()
+        resp = server._ndjson(self._gen(lock, log))
+
+        async def leave_early():
+            it = resp.body_iterator
+            await it.__anext__()
+            await it.aclose()  # what a client disconnect does
+
+        asyncio.run(leave_early())
+        self.assertEqual(log, ["closed"])
+        self.assertFalse(lock.locked())
+        self.assertTrue(server._cancel.is_set())
+        server._cancel.clear()
+
+    def test_normal_end_does_not_cancel(self):
+        import asyncio
+        lock, log = threading.Lock(), []
+        server._cancel.clear()
+        resp = server._ndjson(self._gen(lock, log))
+
+        async def read_all():
+            return [c async for c in resp.body_iterator]
+
+        self.assertEqual(len(asyncio.run(read_all())), 2)
+        self.assertFalse(lock.locked())
+        self.assertFalse(server._cancel.is_set())
