@@ -8,6 +8,10 @@ import { NST, STAGES, active, behaviors, closeInspector, closePop, inspect, pop,
 import { strip } from "../components/strip.js";
 import { $, S, at, eid, esc, fd, isB, rowsKey } from "../state.js";
 import { getJSON, postJSON } from "../api.js";
+import { AG, agentPage, loadAgents } from "./agent.js";
+import { describeBox } from "./new-behavior.js";
+import { draftPage } from "./labeling.js";
+import { chatPage, chatSend, drawChatStrips } from "./chat.js";
 /* ---------- 100X on screen: describe in words, the agent, self-labeling, chat, and evidence actions ---------- */
 const errText = async (r) => { const b = await r.json().catch(() => ({})); return typeof b.detail === "string" ? b.detail : b.detail?.reason || `The server returned HTTP ${r.status}.`; };
 const DR = {}; // drafts: id -> { draft, suggest, result, err, busy }

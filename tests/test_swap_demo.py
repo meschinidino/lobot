@@ -48,3 +48,32 @@ class SwapDemoTest(unittest.TestCase):
         self.assertEqual(jobs_bad, [], jobs_bad)
 
 if __name__=="__main__": unittest.main()
+
+
+class StageNamesTest(unittest.TestCase):
+    """Names a stage reads must exist in that stage (pyflakes found two misses)."""
+
+    def test_create_with_pareto_passes_max_new(self):
+        eng=FakeEng()
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(T.spike,"median_norms",return_value=[1.0]*4), \
+                 mock.patch.object(T.spike,"nll",return_value=1.0), \
+                 mock.patch.object(T.pareto_mod,"run_pareto",return_value={"points":[]}) as rp, \
+                 mock.patch.object(T.pareto_mod,"pareto_lines",return_value=[]), \
+                 mock.patch.dict("os.environ",{"LOBOT_GUARD":"noop","LOBOT_JUDGE":"fake","LOBOT_DOSE_RULE":"fake"}):
+                out=T.run_trait(eng, eng.spec, "pirate", [f"q{i}" for i in range(130)], 0, Path(tmp)/"w", "fake", "rev", schedule="fast", pareto=True)
+        if out["verdict"] == "no_knob":
+            self.skipTest("fake run stopped before the baseline stage")
+        rp.assert_called_once()
+        self.assertEqual(rp.call_args.kwargs["max_new"], T.schedule_params("fast")["gen_tokens"])
+
+    def test_pair_matrix_builds_its_own_guard(self):
+        from model_lobotomy import combine as C
+        seen=[]
+        def fake_check(names, patches, engine, **kw):
+            seen.append(kw["guard"]); return {"cached": False}
+        with mock.patch.object(C,"check_set",fake_check), \
+             mock.patch("model_lobotomy.guards.get_guard",return_value="G"):
+            out=C.pair_matrix(["a","b"],[None,None],object(),medians={},max_new_tokens=4,seed=0)
+        self.assertEqual(out["checks"], 4)
+        self.assertEqual(set(seen), {"G"})
