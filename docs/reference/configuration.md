@@ -6,7 +6,10 @@ lobot reads its settings from environment variables. All are optional.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `PORT` | `7860` | Server port (the server binds `127.0.0.1` only) |
+| `PORT` | `7860` | Server port |
+| `LOBOT_HOST` | `127.0.0.1` | Address the server binds to. A public host needs `0.0.0.0` and `LOBOT_PUBLIC_DEMO=1` |
+| `LOBOT_PUBLIC_DEMO` | off | `1`: read-only public demo. Needs replay mode and no `META_API_KEY`. POSTs outside the read-only list return 403 |
+| `LOBOT_MODEL` | `Qwen/Qwen3.5-4B` | Startup model. `meta-llama/Llama-3.2-3B-Instruct` starts on Llama. The model menu still switches |
 | `MODEL_LOBOTOMY_REPLAY` | off | `1`: no weights; runs answer only recorded setups |
 | `MODEL_LOBOTOMY_REPLAY_STAGE_S` | `0.4` | Seconds between replayed stream stages |
 | `MODEL_LOBOTOMY_NO_MODEL` | off | `1`: UI only; every run returns 503 |
