@@ -287,3 +287,21 @@ wired in this session.
   local jobs and drafts that the clean worktree did not share.
   With the same data, the screen list and text match.
 - Live weights: not run. Replay mode and fakes only.
+
+## Fix 4: Remove the other MOD shims (stacked PR 4)
+
+- `job_import.py` is deleted. Its only callers were docstrings.
+- They now name `jobs_store.import_run`. `AGENTS.md` follows.
+- Lanes: `judge_many` is gone. The method is `score_many`.
+- The `score_many = judge_many` alias line is gone.
+- Callers in `trait_eval.py`, `pareto.py` and the lane tests
+  use `score_many`.
+- `run_trait` docstring: the "pre-MOD" pointer is gone.
+- `guard.py`: the `_SCREEN_DISPLAY` alias is gone.
+- `app.py`: `_ENGINE_ALIASES` and the module `__getattr__` are gone.
+- Its two callers read `engine._ENGINE.model` and `.model_id`.
+- New tests: `tests/test_no_shims.py` (4 tests).
+- Tests: `Ran 749 tests, OK (skipped=5)`.
+- Browser: `scripts/ui_walk.py`, 28 screens, 0 pageerrors.
+- Page text matches the main run with the same data.
+- Live weights: not run. Replay mode and fakes only.

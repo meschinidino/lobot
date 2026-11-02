@@ -108,7 +108,7 @@ if __name__ == "__main__":
         print("[server] NO_MODEL set: serving the UI without weights", flush=True)
     else:
         engine.load_engine()
-        print(f"[server] engine warm ({engine._model_id}); models: "
+        print(f"[server] engine warm ({engine._ENGINE.model_id}); models: "
               f"{sorted(engine._PRESETS)}", flush=True)
     from model_lobotomy.config import get_settings
     uvicorn.run(api, host="127.0.0.1", port=get_settings().port)

@@ -63,7 +63,7 @@ def _state() -> dict:
     eng = get_engine()
     return {
         "active_model": engine._active_model_id,
-        "warm": engine._model is not None and engine._model_id == engine._active_model_id,
+        "warm": engine._ENGINE.model is not None and engine._ENGINE.model_id == engine._active_model_id,
         "backend": eng.backend,
         "torch_only": sorted(f for f in FEATURES if not eng.supports(f)),
         "no_model": STATE.no_model,

@@ -116,9 +116,9 @@ def paired_diff(rows_a: list[dict], rows_b: list[dict], key: str,
 
 def _score(lane, prompts, replies, trait_label) -> dict:
     pairs = list(zip(prompts, replies))
-    return {"trait": lane.judge_many(pairs, trait_label),
-            "relevance": lane.judge_many(pairs, RELEVANCE_LABEL),
-            "fluency": lane.judge_many(pairs, FLUENCY_LABEL)}
+    return {"trait": lane.score_many(pairs, trait_label),
+            "relevance": lane.score_many(pairs, RELEVANCE_LABEL),
+            "fluency": lane.score_many(pairs, FLUENCY_LABEL)}
 
 
 def run_pareto(lane, label: str, final, *, layer: int, unit, scale,
@@ -127,7 +127,7 @@ def run_pareto(lane, label: str, final, *, layer: int, unit, scale,
                progress=None) -> dict:
     """Score every point on the final split; returns the PP block.
 
-    lane: a Create lane (gen_many, judge_many). unit: the frozen
+    lane: a Create lane (gen_many, score_many). unit: the frozen
     direction (tensor); scale: the layer median norm. instruction:
     the top baseline instruction.
     """

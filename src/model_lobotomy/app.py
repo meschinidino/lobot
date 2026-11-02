@@ -51,26 +51,11 @@ def _load_presets() -> dict:
 
 _PRESETS = _load_presets()
 
-# Warm engine state lives in the Engine (D2); this module keeps UI state plus
-# read-only aliases (_model, _run_lock, ...) for server.py and tests.
+# Warm engine state lives in the Engine (D2); this module keeps UI state.
 _ENGINE = engine_mod.get_engine()
 _last_artifact: str = ""
 _active_model_id: str = steer.MODEL_ID  # Qwen default; dropdown switches
 
-_ENGINE_ALIASES = {
-    "_model": "model",
-    "_tokenizer": "tokenizer",
-    "_model_id": "model_id",
-    "_rung_n": "rung",
-    "_revision": "revision",
-    "_run_lock": "lock",
-}
-
-
-def __getattr__(name: str):
-    if name in _ENGINE_ALIASES:
-        return getattr(_ENGINE, _ENGINE_ALIASES[name])
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def active_preset() -> dict:
