@@ -96,7 +96,7 @@ class FindAgentTest(AuditIsolatedTest):
         fake = FakeMuse([
             [call("find_neurons", word="storm", k=5)],
             [call("measure_lift", layer=20, neuron=123, dose=1.0,
-                  words=["storm"], prediction=3.0)],
+                  words=["storm"], prediction=0.6)],
             [call("stop", rows=[{"layer": 20, "neuron": 123,
                                  "dose": 1.0}], words=["storm"],
                   reason="it lifts storm")],
@@ -115,7 +115,8 @@ class FindAgentTest(AuditIsolatedTest):
                         summaries=["I kept asking for the same "
                                    "search. The budget ran out."])
         out = self._agent(fake).run("bring up storms", "Tell me.")
-        self.assertEqual(out["tool_calls"], 12)
+        # The 12th slot stays free for stop, so 11 calls run.
+        self.assertEqual(out["tool_calls"], 11)
         self.assertEqual(out["status"], "failed")
 
     def test_prediction_logged_before_measuring_call(self):
@@ -128,7 +129,7 @@ class FindAgentTest(AuditIsolatedTest):
 
         fake = FakeMuse([
             [call("measure_lift", layer=20, neuron=123, dose=1.0,
-                  words=["storm"], prediction=3.0)],
+                  words=["storm"], prediction=0.6)],
             [call("stop", rows=[], words=[], reason="done")],
         ])
         self._agent(fake, tool_fns=_tools(measure_lift=measure),
@@ -180,6 +181,83 @@ class FindAgentTest(AuditIsolatedTest):
         self.assertTrue(out["summary"].startswith(
             "Muse used 1 of 12 tool calls"))
 
+    def test_harness_keeps_last_confirmed_recipe(self):
+        good = [{"layer": 20, "neuron": 123, "dose": 1.0}]
+        bad = [{"layer": 21, "neuron": 9, "dose": 1.0}]
+
+        def try_fn(args):
+            ok = args["rows"][0]["neuron"] == 123
+            return {"plain": "I stayed home.",
+                    "edited": "I saw a storm." if ok else "I stayed home.",
+                    "fluency": 0.9, "fork": None,
+                    "guard_pass": True, "guard": {}}
+
+        fake = FakeMuse([
+            [call("try_recipe", rows=good, prediction=["storm"])],
+            [call("try_recipe", rows=bad, prediction=["storm"])],
+            [call("find_neurons", word="storm")],
+        ], summaries=["I tried two recipes. The first one "
+                      "brought up the word."])
+        out = self._agent(fake, tool_fns=_tools(try_recipe=try_fn),
+                          ).run("g", "p")
+        self.assertEqual(out["picked_by"], "harness")
+        self.assertEqual(out["final"]["rows"], good)
+        self.assertIn("The harness picked the last confirmed recipe.",
+                      out["summary"])
+        self.assertTrue(out["steps"][-3]["step"] in ("stop", "final"))
+
+    def test_no_confirmed_recipe_fails_without_final_check(self):
+        seen = {"final": False}
+
+        def final_fn(rows):
+            seen["final"] = True
+            return {"guard": {}}
+
+        tools = _tools(try_recipe=lambda a: {
+            "plain": "I stayed home.", "edited": "storm storm storm",
+            "fluency": 0.1, "fork": None, "guard_pass": True,
+            "guard": {}})
+        fake = FakeMuse([
+            [call("try_recipe",
+                  rows=[{"layer": 20, "neuron": 123, "dose": 1.0}],
+                  prediction=["storm"])],
+            [call("find_neurons", word="storm")],
+        ], summaries=["I tried one recipe. The answer repeated "
+                      "the word."])
+        out = self._agent(fake, tool_fns=tools, final_fn=final_fn,
+                          ).run("g", "p")
+        self.assertEqual(out["status"], "failed")
+        self.assertEqual(out["final"]["reason"], "no confirmed recipe")
+        self.assertIn("FAIL (no confirmed recipe)", out["summary"])
+        self.assertFalse(seen["final"])
+
+    def test_last_call_left_only_allows_stop(self):
+        ran = {"measure": False}
+
+        def measure(args):
+            ran["measure"] = True
+            return {"lift": 4.0}
+
+        fake = FakeMuse([
+            [call("find_neurons", word="storm")],
+            [call("measure_lift", layer=20, neuron=123, dose=1.0,
+                  words=["storm"], prediction=0.6)],
+            [call("stop", rows=[], words=[], reason="done")],
+        ], summaries=["I stopped when the budget ran low."])
+        with mock.patch.object(find_mod, "MAX_TOOL_CALLS", 2):
+            out = self._agent(
+                fake, tool_fns=_tools(measure_lift=measure)).run("g", "p")
+        self.assertFalse(ran["measure"])
+        rejected = [s for s in out["steps"] if s["step"] == "result"
+                    and (s["result"] or {}).get("calls_left") == 1
+                    and (s["result"] or {}).get("error")]
+        self.assertEqual(len(rejected), 1)
+        self.assertIn("only 1 tool call left",
+                      rejected[0]["result"]["error"])
+        results = [s for s in out["steps"] if s["step"] == "result"]
+        self.assertTrue(all("calls_left" in (s["result"] or {})
+                            for s in results))
+
     def test_check_find_summary_rejects_tested_12_recipes(self):
         tried = [[{"layer": 20, "neuron": 123, "dose": 1.0}]]
         bad = muse_mod.check_find_summary(
@@ -191,6 +269,11 @@ class FindAgentTest(AuditIsolatedTest):
         many = muse_mod.check_find_summary(
             "One. Two. Three. Four.", tried)
         self.assertIn("more than 3 sentences", many)
+        # Dose decimals do not split sentences.
+        doses = muse_mod.check_find_summary(
+            "I tried dose 1.0 first. Then I lowered it. "
+            "The word appeared.", tried)
+        self.assertEqual(doses, [])
 
     def test_final_fluency_below_floor_fails(self):
         fake = FakeMuse([
@@ -224,11 +307,13 @@ class FindAgentTest(AuditIsolatedTest):
         self.assertFalse(tried["confirmed"])
         self.assertEqual(tried["result"]["fluency"], 0.1)
 
-    def test_lift_confirmed_factor_two(self):
-        self.assertTrue(find_mod.lift_confirmed(3.0, 4.0))
-        self.assertTrue(find_mod.lift_confirmed(3.0, 1.5))
-        self.assertFalse(find_mod.lift_confirmed(3.0, 1.4))
-        self.assertFalse(find_mod.lift_confirmed(3.0, 6.1))
+    def test_lift_confirmed_uses_log10(self):
+        # The prediction is log10(lift). Within 1.0 confirms.
+        self.assertTrue(find_mod.lift_confirmed(0.6, 4.0))
+        self.assertTrue(find_mod.lift_confirmed(0.6, 39.0))
+        self.assertFalse(find_mod.lift_confirmed(0.6, 40.0))
+        self.assertFalse(find_mod.lift_confirmed(7.0, 4.0))
+        self.assertFalse(find_mod.lift_confirmed(0.6, 0.0))
 
 
 class FakeEng:
@@ -252,7 +337,7 @@ class FindRouteWiringTest(AuditIsolatedTest):
 
         fake = FakeMuse([
             [call("measure_lift", layer=20, neuron=123, dose=1.0,
-                  words=["storm"], prediction=3.0)],
+                  words=["storm"], prediction=0.6)],
             [call("try_recipe",
                   rows=[{"layer": 20, "neuron": 123, "dose": 1.0}],
                   prediction=["storm"])],

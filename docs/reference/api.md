@@ -329,9 +329,16 @@ the engine dose range. `measure_lift` and `try_recipe` need a
 `prediction` field. The server writes each prediction to the
 audit log before the tool runs. It appends the result with
 `confirmed` true or false. A lift confirms when the measured
-lift lands within a factor of 2 of the prediction. A recipe
-confirms when a predicted word is new in the edited answer and
-that answer scores fluency at or over `FLUENCY_FLOOR`. Tool
+is a log10(lift). It confirms when the measured log10 lands
+within 1.0 of the predicted log10. A recipe confirms when a
+predicted word is new in the edited answer and that answer
+scores fluency at or over `FLUENCY_FLOOR`. Each tool result
+holds `calls_left`. When `calls_left` is 1, only `stop` may
+run. Any other call there gets a rejection and keeps the call.
+When the budget ends without `stop`, the harness keeps the
+last confirmed recipe. With no confirmed recipe, the verdict
+is FAIL with the reason "no confirmed recipe" and no final
+check runs. Tool
 results show lift as "×" with 3 significant digits, plus
 `log10_lift`. The audit log keeps the raw lift. At stop, the
 server runs the full guard check on the recipe. It measures
@@ -341,9 +348,12 @@ answers on those prompts with the fluency judge. Pass needs
 lift at or over `LIFT_BAR` (3.0), mean fluency at or over
 `FLUENCY_FLOOR` (0.5), and no guard block. lobot decides pass
 or fail. The code writes the count sentence of the summary.
-Muse writes at most 3 sentences on what it tried and why.
-Its sentences hold no number except neuron names and doses
-from a tried recipe.
+That sentence also says who picked the final recipe. Muse
+writes at most 3 sentences on what it tried and why, from the
+given facts only: `picked_by`, the final recipe, and for each
+tried recipe whether a target word appeared and whether it
+was confirmed. Its sentences hold no number except neuron
+names and doses from a tried recipe.
 Events: `prediction`, `result`, `stop`, `final`, `summary`,
 `done`, `error`. The events stream through a thread and a queue.
 503 in replay mode, without weights, or without `META_API_KEY`.

@@ -128,3 +128,5 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-11-02 19:55 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  end  Find with Muse live done: storms fail (lift 354836, full guard blocked), pirate fail (lift 162205, full guard blocked)
 2026-11-02 20:15 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  start  Find with Muse fixes live: storms goal with fluency gate
 2026-11-02 20:21 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  end  Find fixes live done: storms fail (lift x2.18e+04, final fluency 0.896, full guard blocked)
+2026-11-02 20:35 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  start  Find fixes round 2 live: storms, last confirmed recipe and log10 predictions
+2026-11-02 20:51 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  end  Find fixes round 2 live done: storms fail (Muse picked L19N4330@1.2, lift x1.14e+05, fluency 0.623, full guard blocked)

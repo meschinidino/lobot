@@ -6,11 +6,20 @@ The harness enforces the limits in the constants below.
 
 measure_lift and try_recipe need a prediction. The harness writes
 that prediction to the audit log before the tool runs. It appends
-the result with confirmed true or false. A lift prediction
-confirms when the measured lift lands within a factor of 2 of
-the prediction. A recipe prediction confirms when at least one
-predicted word shows in the edited answer and not in the plain
-answer.
+the result with confirmed true or false. A lift prediction is a
+log10(lift). It confirms when the measured log10 lands within
+1.0 of the predicted log10. A recipe prediction confirms when at
+least one predicted word shows in the edited answer, not in the
+plain answer, and the edited answer stays fluent.
+
+Every tool result holds calls_left. When calls_left is 1, the
+only tool Muse may call is stop. Any other call there gets a
+rejection and keeps the last call.
+
+When the budget runs out without a stop call, the harness keeps
+the last confirmed recipe. With no confirmed recipe, the verdict
+is FAIL with the reason "no confirmed recipe" and no final check
+runs.
 
 At stop, lobot runs the full guard check on the recipe and
 measures the lift of the target words on the held-out lift
@@ -53,7 +62,9 @@ TOOLS = [
                     "required": ["layer", "neuron"]}},
     {"type": "function", "name": "measure_lift",
      "description": "Measure the steering lift of one neuron at "
-                    "one dose on the held-out lift prompts.",
+                    "one dose on the held-out lift prompts. Lift "
+                    "is a probability ratio and is often in the "
+                    "millions. Give the prediction as log10(lift).",
      "parameters": {"type": "object",
                     "properties": {
                         "layer": {"type": "integer"},
@@ -102,13 +113,22 @@ MEASURING = ("measure_lift", "try_recipe")
 
 
 def lift_confirmed(prediction: float, measured: float) -> bool:
-    """True when the measured lift is within a factor of 2."""
-    if prediction is None or measured is None:
+    """True when measured log10(lift) is within 1.0 of the prediction.
+
+    The prediction is a log10(lift), not a lift. Lift is a
+    probability ratio and is often in the millions.
+    """
+    if prediction is None or measured is None or float(measured) <= 0:
         return False
-    lo, hi = sorted((float(prediction), float(measured)))
-    if lo <= 0:
-        return lo == hi
-    return hi / lo <= 2.0
+    return abs(math.log10(float(measured)) - float(prediction)) <= 1.0
+
+
+def recipe_word_appeared(words, plain: str, edited: str) -> bool:
+    """True when a predicted word is new in the edited answer."""
+    plain_l, edited_l = (plain or "").lower(), (edited or "").lower()
+    return any(str(w).lower() in edited_l
+               and str(w).lower() not in plain_l
+               for w in (words or []))
 
 
 def recipe_confirmed(words, plain: str, edited: str,
@@ -184,10 +204,10 @@ class FindAgent:
             goal=goal.strip(), prompt=prompt.strip())}]
         calls, confirmed_count = 0, 0
         recipes_tried: list = []
+        recipe_facts: list = []
         recipes_confirmed = 0
+        confirmed_recipes: list = []
         stop = None
-        last_recipe: list = []
-        last_words: list = []
         for _turn in range(MAX_TURNS):
             if stop is not None or calls >= MAX_TOOL_CALLS:
                 break
@@ -202,23 +222,51 @@ class FindAgent:
             for call in calls_out:
                 if calls >= MAX_TOOL_CALLS:
                     break
-                calls += 1
                 name = call.get("name")
                 try:
                     args = json.loads(call.get("arguments") or "{}")
                 except ValueError:
                     args = {}
+                if name != "stop" and calls == MAX_TOOL_CALLS - 1:
+                    # One call left. Only stop may use it.
+                    result = {
+                        "error": "only 1 tool call left; call stop "
+                                 "with the final recipe",
+                        "calls_left": 1}
+                    self._emit("result", tool=name, args=args,
+                               result=result, confirmed=None,
+                               seconds=0.0)
+                    items.append({"type": "function_call", "name": name,
+                                  "arguments":
+                                      call.get("arguments") or "{}",
+                                  "call_id": call.get("call_id")})
+                    items.append({"type": "function_call_output",
+                                  "call_id": call.get("call_id"),
+                                  "output": json.dumps(result)})
+                    continue
+                calls += 1
                 result, confirmed, done = self._run_tool(
-                    name, args, goal, prompt)
+                    name, args, goal, prompt,
+                    calls_left=MAX_TOOL_CALLS - calls)
                 if confirmed:
                     confirmed_count += 1
                 if name == "try_recipe" and "error" not in result:
                     try:
-                        last_recipe = _check_rows(args.get("rows"))
-                        last_words = [str(w) for w in
-                                      (args.get("prediction") or [])]
-                        recipes_tried.append(last_recipe)
+                        this_recipe = _check_rows(args.get("rows"))
+                        words = [str(w) for w in
+                                 (args.get("prediction") or [])]
+                        recipes_tried.append(this_recipe)
                         recipes_confirmed += 1 if confirmed else 0
+                        appeared = recipe_word_appeared(
+                            words, result.get("plain", ""),
+                            result.get("edited", ""))
+                        recipe_facts.append({
+                            "rows": this_recipe,
+                            "target_word_appeared": appeared,
+                            "confirmed": bool(confirmed)})
+                        if confirmed:
+                            confirmed_recipes.append(
+                                {"rows": this_recipe, "words": words})
                     except ValueError:
                         pass
                 items.append({"type": "function_call", "name": name,
@@ -230,80 +278,117 @@ class FindAgent:
                 if done is not None:
                     stop = done
                     break
+        picked_by = "Muse"
+        no_confirmed = False
         if stop is None:
-            stop = {"rows": last_recipe, "words": last_words,
-                    "reason": "tool budget used up"}
+            picked_by = "harness"
+            if confirmed_recipes:
+                last = confirmed_recipes[-1]
+                stop = {"rows": last["rows"], "words": last["words"],
+                        "reason": "tool budget used up"}
+            else:
+                no_confirmed = True
+                stop = {"rows": [], "words": [],
+                        "reason": "no confirmed recipe"}
             self._emit("stop", by="harness", **stop)
         else:
             self._emit("stop", by="Muse", **stop)
 
         from model_lobotomy import trait_eval
         rows = stop["rows"]
-        guard = (self.final_fn(rows) or {}).get("guard") or {}
-        guard_blocked = bool(guard.get("blocked")
-                             or guard.get("would_block"))
-        lift = None
-        if rows and stop["words"]:
-            lift = round(float(
-                self.lift_fn(rows, stop["words"])["lift"]), 3)
-        fluency = None
-        if rows and self.fluency_fn is not None:
-            fluency = round(float(self.fluency_fn(rows)), 3)
-        fluency_ok = bool(fluency is not None
-                          and fluency >= trait_eval.FLUENCY_FLOOR)
-        passed = bool(lift is not None and lift >= evaluation.LIFT_BAR
-                      and fluency_ok and not guard_blocked)
-        if guard_blocked:
-            verdict_reason = "guard blocked"
-        elif lift is None or lift < evaluation.LIFT_BAR:
-            verdict_reason = "lift below bar"
-        elif not fluency_ok:
-            verdict_reason = "fluency below floor"
+        if no_confirmed:
+            # No final check runs. The verdict is FAIL.
+            final = {"rows": [], "words": [],
+                     "lift": None, "lift_bar": evaluation.LIFT_BAR,
+                     "fluency": None,
+                     "fluency_floor": trait_eval.FLUENCY_FLOOR,
+                     "guard_blocked": False, "guard": {},
+                     "passed": False, "reason": stop["reason"]}
+            verdict_reason = "no confirmed recipe"
+            self._audit("find.final", rows=[], words=[], lift=None,
+                        lift_bar=evaluation.LIFT_BAR, fluency=None,
+                        guard_blocked=False, passed=False)
+            self._emit("final", **final)
+            guard_blocked = False
         else:
-            verdict_reason = "all checks passed"
-        final = {"rows": rows, "words": stop["words"],
-                 "lift": lift, "lift_bar": evaluation.LIFT_BAR,
-                 "fluency": fluency,
-                 "fluency_floor": trait_eval.FLUENCY_FLOOR,
-                 "guard_blocked": guard_blocked, "guard": guard,
-                 "passed": passed, "reason": stop["reason"]}
-        self._audit("find.final", rows=rows, words=stop["words"],
-                    lift=lift, lift_bar=evaluation.LIFT_BAR,
-                    fluency=fluency, guard_blocked=guard_blocked,
-                    passed=passed)
-        self._emit("final", **final)
+            guard = (self.final_fn(rows) or {}).get("guard") or {}
+            guard_blocked = bool(guard.get("blocked")
+                                 or guard.get("would_block"))
+            lift = None
+            if rows and stop["words"]:
+                lift = round(float(
+                    self.lift_fn(rows, stop["words"])["lift"]), 3)
+            fluency = None
+            if rows and self.fluency_fn is not None:
+                fluency = round(float(self.fluency_fn(rows)), 3)
+            fluency_ok = bool(fluency is not None
+                              and fluency >= trait_eval.FLUENCY_FLOOR)
+            passed = bool(lift is not None
+                          and lift >= evaluation.LIFT_BAR
+                          and fluency_ok and not guard_blocked)
+            if guard_blocked:
+                verdict_reason = "guard blocked"
+            elif lift is None or lift < evaluation.LIFT_BAR:
+                verdict_reason = "lift below bar"
+            elif not fluency_ok:
+                verdict_reason = "fluency below floor"
+            else:
+                verdict_reason = "all checks passed"
+            final = {"rows": rows, "words": stop["words"],
+                     "lift": lift, "lift_bar": evaluation.LIFT_BAR,
+                     "fluency": fluency,
+                     "fluency_floor": trait_eval.FLUENCY_FLOOR,
+                     "guard_blocked": guard_blocked, "guard": guard,
+                     "passed": passed, "reason": stop["reason"]}
+            self._audit("find.final", rows=rows, words=stop["words"],
+                        lift=lift, lift_bar=evaluation.LIFT_BAR,
+                        fluency=fluency, guard_blocked=guard_blocked,
+                        passed=passed)
+            self._emit("final", **final)
+        passed = final["passed"]
 
+        picked_sentence = (
+            "The harness picked the last confirmed recipe."
+            if picked_by == "harness" and confirmed_recipes else
+            "The harness picked no recipe."
+            if picked_by == "harness" else
+            "Muse picked the final recipe.")
         summary_numbers = {
             "tool_calls": calls, "max_tool_calls": MAX_TOOL_CALLS,
             "max_recipe_neurons": MAX_RECIPE_NEURONS,
             "confirmed": confirmed_count,
+            "picked_by": picked_by,
+            "final_recipe": rows,
             "tried_recipes": recipes_tried,
+            "tried_facts": recipe_facts,
             "recipe": rows, "words": len(stop["words"]),
             "final": {k: v for k, v in final.items() if k != "guard"},
             "guard_blocked": guard_blocked}
         count_sentence = (
             f"Muse used {calls} of {MAX_TOOL_CALLS} tool calls and "
             f"tried {len(recipes_tried)} recipes. "
-            f"{recipes_confirmed} were confirmed. Final: "
+            f"{recipes_confirmed} were confirmed. "
+            f"{picked_sentence} Final: "
             f"{'PASS' if passed else 'FAIL'} ({verdict_reason}).")
         text = count_sentence + " " + self.muse.find_summary(
             summary_numbers)
         self._emit("summary", text=text)
         return {"find_id": self.id, "goal": goal, "prompt": prompt,
                 "status": "passed" if passed else "failed",
+                "picked_by": picked_by,
                 "tool_calls": calls, "final": final, "summary": text,
                 "steps": self.steps,
                 "muse": self.muse.info() if hasattr(self.muse, "info")
                 else {}}
 
-    def _run_tool(self, name, args, goal, prompt):
+    def _run_tool(self, name, args, goal, prompt, calls_left=None):
         """Run one tool. Returns (output, confirmed, stop_or_None)."""
         if name == "stop":
             try:
                 rows = _check_rows(args.get("rows"))
             except (ValueError, TypeError, KeyError) as e:
                 return {"error": str(e)}, False, None
-            return ({"stopped": True}, False,
+            return ({"stopped": True, "calls_left": calls_left}, False,
                     {"rows": rows,
                      "words": [str(w) for w in (args.get("words") or [])],
                      "reason": str(args.get("reason", ""))[:300]})
@@ -321,7 +406,7 @@ class FindAgent:
                         f"dose {dose:g} outside "
                         f"[{DOSE_MIN:g}, {DOSE_MAX:g}]")
         except (ValueError, TypeError, KeyError) as e:
-            got = {"error": str(e)}
+            got = {"error": str(e), "calls_left": calls_left}
             self._emit("result", tool=name, args=args, result=got,
                        confirmed=None, seconds=0.0)
             return got, False, None
@@ -350,6 +435,8 @@ class FindAgent:
             confirmed = recipe_confirmed(
                 prediction, got.get("plain", ""), got.get("edited", ""),
                 got.get("fluency"))
+        got = dict(got)
+        got["calls_left"] = calls_left
         if name in MEASURING:
             self._audit("find.result", tool=name, confirmed=confirmed,
                         seconds=seconds,

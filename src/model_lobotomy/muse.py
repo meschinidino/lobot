@@ -107,7 +107,9 @@ FIND_PROMPT = (
     "Work with the tools. find_neurons ranks neurons for a word. "
     "read_neuron says what one neuron pushes toward and fires on. "
     "measure_lift measures one neuron at one dose and needs your "
-    "predicted lift. try_recipe runs a recipe of at most 4 neurons "
+    "predicted log10(lift). Lift is a probability ratio and is "
+    "often in the millions, so predict its log10. try_recipe runs "
+    "a recipe of at most 4 neurons "
     "on the user prompt and needs the words you expect to appear "
     "or change. Call stop with the final recipe, the target words "
     "and your reason when the recipe looks right. At most 12 tool "
@@ -118,10 +120,14 @@ FIND_PROMPT = (
 FIND_SUMMARY_PROMPT = (
     "Write at most 3 short sentences on what you tried in this "
     "neuron search and why. Use simple words, active voice, one "
-    "idea per sentence. Write no number at all, except neuron "
-    "names and doses that appear in a tried recipe. Do not write "
-    "counts, lifts or scores. The code already wrote the counts "
-    "and the verdict. Do not repeat them.\n\nResult JSON:\n{summary}"
+    "idea per sentence. State only the facts in the JSON: who "
+    "picked the final recipe (picked_by), the final recipe, and "
+    "for each tried recipe whether a target word appeared and "
+    "whether it was confirmed. Write no number at all, except "
+    "neuron names and doses that appear in a tried recipe. Do "
+    "not write counts, lifts or scores. The code already wrote "
+    "the counts and the verdict. Do not repeat them."
+    "\n\nResult JSON:\n{summary}"
 )
 
 
@@ -139,8 +145,10 @@ def check_find_summary(text: str, tried_recipes) -> list:
                     allowed.add(round(float(r[k]), 2))
     bad = [tok for tok in _NUMBER_RE.findall(text or "")
            if round(float(tok), 2) not in allowed]
-    sentences = [s for s in (text or "").replace("!", ".")
-                 .replace("?", ".").split(".") if s.strip()]
+    # A sentence ends at ., ! or ? before a capital. Dose decimals
+    # (0.8) never split a sentence.
+    sentences = [s for s in re.split(
+        r"(?<=[.!?])\s+(?=[A-Z])", (text or "").strip()) if s.strip()]
     if len(sentences) > 3:
         bad.append("more than 3 sentences")
     return bad
