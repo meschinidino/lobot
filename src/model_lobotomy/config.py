@@ -39,6 +39,7 @@ ENV_VARS = (
     ("LOBOT_HOME", "~/.lobot"),
     ("LOBOT_AUDIT_LOG", "$LOBOT_HOME/audit.jsonl"),
     ("LOBOT_LLAMACPP_CLI", "llama-cli on PATH"),
+    ("LOBOT_JOBS_DIR", "<repo>/jobs"),
 )
 
 
@@ -73,6 +74,7 @@ class Settings:
     lobot_home: Path = Path.home() / ".lobot"
     audit_log: str | None = None
     llamacpp_cli: str | None = None
+    jobs_dir: Path | None = None
 
 
 def load_settings(env=None) -> Settings:
@@ -103,6 +105,7 @@ def load_settings(env=None) -> Settings:
         lobot_home=home,
         audit_log=get("LOBOT_AUDIT_LOG"),
         llamacpp_cli=get("LOBOT_LLAMACPP_CLI"),
+        jobs_dir=Path(get("LOBOT_JOBS_DIR")) if get("LOBOT_JOBS_DIR") else None,
     )
 
 

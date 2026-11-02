@@ -33,7 +33,8 @@ from model_lobotomy.trait_store import TraitStore, UnsupportedTrait  # noqa: E40
 STAGES = ("extract", "tune", "read_gate", "final", "baseline", "pareto",
           "guard", "verdict")
 
-DEFAULT_JOBS_DIR = ROOT / "jobs"
+from model_lobotomy import jobs_store as _jobs_store
+DEFAULT_JOBS_DIR = _jobs_store.default_jobs_dir()
 
 
 @dataclass
@@ -176,7 +177,7 @@ class CreateRunner:
 
     def reattach(self, job_id: str) -> dict:
         """Status from disk; works across processes and restarts."""
-        path = self.jobs_dir / job_id / "job.json"
+        path = _jobs_store.JobPaths(job_id, self.jobs_dir).job_json
         if not path.exists():
             raise KeyError(f"unknown job {job_id}")
         disk = json.loads(path.read_text())
@@ -187,13 +188,7 @@ class CreateRunner:
         return disk
 
     def list_jobs(self) -> list[dict]:
-        out = []
-        if self.jobs_dir.exists():
-            for path in sorted(self.jobs_dir.iterdir()):
-                job_json = path / "job.json"
-                if job_json.exists():
-                    out.append(json.loads(job_json.read_text()))
-        return out
+        return _jobs_store.list_jobs(self.jobs_dir)
 
     # -- internals --
 
@@ -205,9 +200,9 @@ class CreateRunner:
 
     def _persist(self, job: _Job) -> None:
         job.updated = time.time()
-        d = self.jobs_dir / job.id
-        d.mkdir(parents=True, exist_ok=True)
-        (d / "job.json").write_text(json.dumps(job.to_dict(), indent=2))
+        paths = _jobs_store.JobPaths(job.id, self.jobs_dir)
+        paths.root.mkdir(parents=True, exist_ok=True)
+        paths.job_json.write_text(json.dumps(job.to_dict(), indent=2))
 
     def _engine_lock(self, eng):
         return getattr(eng, "lock", None) or self._local_lock
@@ -242,7 +237,7 @@ class CreateRunner:
                     extra["pareto"] = True
                 out = self._run_trait(
                     eng, eng.spec, job.trait, prompt_bank.PROMPT_BANK,
-                    job.seed, self.jobs_dir / job_id / "trait",
+                    job.seed, _jobs_store.JobPaths(job_id, self.jobs_dir).trait.workdir,
                     job.model_id, getattr(eng, "revision", job.revision),
                     cancel=job.cancel, progress=progress,
                     guard=job.guard_opt_in,

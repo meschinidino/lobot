@@ -30,9 +30,7 @@ KINDS = ("pareto", "repair")
 REPAIR_METHODS = ("gradient", "project")
 
 
-def repair_stem(method: str) -> str:
-    """repair.json for project (gr-v1), repair_<method>.json otherwise."""
-    return "repair" if method == "project" else f"repair_{method}"
+from model_lobotomy.jobs_store import WorkPaths, repair_stem  # noqa: F401
 
 
 def _no_progress(stage, done, total):
@@ -57,7 +55,7 @@ def pareto_job(eng, workdir, lane=None, *, max_new=None, cancel=None,
         cancel=cancel, progress=progress)
     block["lane"] = lane.info()
     block["trait"] = report["trait"]
-    (workdir / "pareto.json").write_text(json.dumps(block, indent=2))
+    WorkPaths(workdir).pareto.write_text(json.dumps(block, indent=2))
     return block
 
 
@@ -182,7 +180,7 @@ def repair_job(eng, workdir, lane=None, *, method="gradient", cancel=None,
                              "cos_to_original": ch["cos_to_original"],
                              "source_dose": float(meta["dose"])}}
         path = patch_mod.save_patch(
-            workdir / f"knob.repaired-{method}.lobot",
+            WorkPaths(workdir).repaired_patch(method),
             direction=rec["unit"],
             layer=layer, dose=ch["dose"], scale=scale,
             trait=report["trait"], recipe=recipe,
@@ -192,8 +190,7 @@ def repair_job(eng, workdir, lane=None, *, method="gradient", cancel=None,
         audit.record("repair", path=str(path), status=rec["status"],
                      method=ch["method"], factor=ch["factor"])
     progress("repair", total, total)
-    (workdir / f"{repair_stem(method)}.json").write_text(
-        json.dumps(out, indent=2))
+    WorkPaths(workdir).repair(method).write_text(json.dumps(out, indent=2))
     return out
 
 
