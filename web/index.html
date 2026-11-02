@@ -276,6 +276,12 @@ mark.ink { background: transparent; color: inherit; font-weight: 700; text-decor
 .vb { display: inline-flex; gap: 8px; align-items: center; font: 700 14px var(--body); }
 .vb .stroke { display: inline-block; }
 .kv2.tight { margin-top: 0; }
+.legend { margin-top: 24px; max-width: 900px; border-top: 1px solid var(--grid); padding-top: 12px; }
+.legend summary { cursor: pointer; font: 700 14px var(--body); min-height: 32px; }
+.legend summary:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.legend dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 12px 0 0; font-size: 14px; }
+.legend dd { margin: 0; }
+.keyhelp { margin: 4px 0 0; max-width: 72ch; font-size: 14px; color: var(--ink-muted); }
 .shelf h2 > span { display: inline-flex; gap: 8px; }
 @media (max-width: 720px) { .ex { grid-template-columns: minmax(0, 1fr); } .exdial { justify-self: center; text-align: center; } }
 .kv2 { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 24px; margin-top: 16px; max-width: 900px; font-size: 14px; }
@@ -476,8 +482,9 @@ function behaviors() {
     b.newest = newest[b.name] === b;
     [b.kind, b.key, b.usable] = b.verdict === "blocked" || b.guard.blocked
       ? (S.research ? ["warn", "BLOCKED", true] : ["err", "GUARD", false])
-      : b.guard.would_block ? ["warn", "GUARD", true]
       : b.verdict !== "knob" ? ["warn", "NO KNOB", false]
+      : b.guard.would_block ? ["warn", "GUARD", true]
+      : b.cards.update_up && !b.cards.update_up.passed ? ["warn", "INCREASE FAIL", true]
       : b.cards.update_down && !b.cards.update_down.passed ? ["warn", "DECREASE FAIL", true] : ["ok", "PASS", true];
   }
   return { saved: out.filter((b) => b.newest).sort((a, b) => b.created - a.created), all: out, running: mine.filter(active) };
@@ -486,7 +493,7 @@ function renderBehaviors() {
   const B = behaviors(), cur = S.page && S.page.id;
   const run = B.running.map((j) => { const i = STAGES.findIndex(([k]) => k === j.stage) + 1;
     return `<div class="beh"><button class="open" type="button" data-job="${esc(j.id)}" aria-current="${cur === j.id}"><b>${esc(j.trait)}</b><span class="state info">${j.status === "queued" ? "QUEUED" : `CREATING ${i}/${NST}`}</span></button><span></span></div>`; });
-  const saved = B.saved.map((b) => `<div class="beh${b.usable ? "" : " dim"}"><button class="open" type="button" data-beh="${esc(b.id)}" aria-current="${cur === b.id}" aria-label="Evidence for ${esc(b.name)} v${b.version}"><b>${esc(b.name)}</b><span class="meta">v${b.version}</span> <span class="state ${b.kind}">${b.key}</span></button>
+  const saved = B.saved.map((b) => `<div class="beh${b.usable ? "" : " dim"}"><button class="open" type="button" data-beh="${esc(b.id)}" aria-current="${cur === b.id}" aria-label="Evidence for ${esc(b.name)} v${b.version}"><b>${esc(b.name)}</b><span class="meta">v${b.version}</span> <span class="state ${b.kind}" title="${esc(KEY_HELP[b.key] || "")}">${b.key}</span></button>
     <button class="btn btn-sm" type="button" data-use="${esc(b.id)}" ${!b.usable || S.running || S.rows.some((r) => r.trait === b.name) ? "disabled" : ""} aria-label="Use ${esc(b.name)} in the sentence">Use</button></div>`);
   const noCreate = S.state?.replay ? "Replay mode loads no weights, so Create is off." : S.state?.no_model ? "The server runs without weights, so Create is off." : "";
   $("behaviors").innerHTML = run.join("") + saved.join("") || (!S.api ? `<p class="empty">Behaviors load from the server.</p>`
@@ -1292,6 +1299,27 @@ function explainSection(id) {
     : `<div class="row2"><button class="btn" type="button" data-explain="${esc(id)}" ${x?.busy ? "disabled" : ""}>${x?.busy ? "Writing…" : "Explain with Muse"}</button><span class="meta">${x?.err ? esc(x.err) : "Muse Spark reads only this report's numbers and writes a short explanation. It needs META_API_KEY on the server."}</span></div>`}`;
 }
 
+// What each state key means. One sentence each, shown in legends and as hover text.
+const KEY_HELP = {
+  "PASS": "Create found a dose that passed its checks, and no other key applies. Open the evidence for each verb.",
+  "INCREASE FAIL": "Create found a dose, but turning the behavior up did not pass its held-out report card. You can still try it.",
+  "DECREASE FAIL": "Turning the behavior up passed, but turning it down (the negative dose) did not pass its report card.",
+  "GUARD": "A guard check would block this patch: for example, it weakened refusals of harmful requests. It is recorded, not enforced, so you can still use it with care. Red means the guard blocked it, and it cannot be used.",
+  "BLOCKED": "The guard blocked this patch. Research mode lets you use it anyway; every run records that.",
+  "NO KNOB": "Create found no layer and dose that passed its checks. Nothing was saved to use.",
+  "FAIL": "The held-out report card failed. The reason is printed under it.",
+  "NOT TESTED": "This verb was not measured in this run.",
+  "KNOB BETTER": "The patch gives more effect with fewer side effects than a plain prompt.",
+  "PROMPT BETTER": "A plain prompt gives more effect with fewer side effects than the patch at every dose.",
+  "NO CLEAR WINNER": "Neither wins on both: one gives more effect, the other costs less.",
+  "NOT FLUENT": "The judge scores the replies at this dose as not fluent text. A high trait score there can come from broken words.",
+  "FLAGGED": "This guard check would block the patch.",
+  "OK": "This guard check passed.",
+};
+const SHELF_KEYS = ["PASS", "INCREASE FAIL", "DECREASE FAIL", "GUARD", "NO KNOB"];
+function legend(keys, open = false) {
+  return `<details class="legend"${open ? " open" : ""}><summary>What the keys mean</summary><dl>${keys.map((k) => `<dt><span class="state ${k === "PASS" || k === "KNOB BETTER" || k === "OK" ? "ok" : k === "NO CLEAR WINNER" || k === "NOT TESTED" ? "info" : "warn"}">${k}</span></dt><dd>${esc(KEY_HELP[k])}</dd>`).join("")}</dl></details>`;
+}
 // Library: every behavior on this model, newest version first, with where it stands against its own prompt.
 function libraryPage() {
   const all = behaviors().all, fams = [...new Set(all.map((b) => b.name))];
@@ -1312,6 +1340,7 @@ function libraryPage() {
         ${e.repair ? `<span>Repair</span><span>${Object.entries(e.repair).map(([m, s]) => `<span class="state ${s === "repaired" ? "ok" : "warn"}">${m.toUpperCase()} ${String(s).toUpperCase()}</span>`).join(" ")}</span>` : ""}</div>
     </div><span class="state ${b.kind}">${b.key}</span></li>`; }).join("");
   return `<p class="lead">${newest.length} behavior${newest.length === 1 ? "" : "s"} on <span class="mono">${esc(short(S.model))}</span>, newest version of each. Against a plain prompt: ${cnt("vector_dominates")} beat it on effect and side effects, ${cnt("tradeoff")} trade off, ${cnt("prompt_dominates")} lose to it, and ${none} ${none === 1 ? "has" : "have"} no comparison yet.</p>
+    ${legend([...SHELF_KEYS, "KNOB BETTER", "NO CLEAR WINNER", "PROMPT BETTER", "NOT FLUENT", "FLAGGED"], true)}
     <ol class="ruled library">${rows}</ol>`;
 }
 // Every version of this behavior on this model, newest first; the open one is marked.
@@ -1406,7 +1435,7 @@ async function renderPage(first = false) {
           <span>Model fingerprint</span><span class="mono">${esc(!R.fingerprint ? "not recorded" : typeof R.fingerprint === "string" ? R.fingerprint : Object.entries(R.fingerprint).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join("; "))}</span>
           <span>Create time</span><span class="mono">${R.seconds ? mins(R.seconds) : "n/a"}</span></div>`;
     }
-    el.innerHTML = top(esc(name) + (b ? ` <span class="meta">v${b.version}</span>` : "")) + (b ? `<p><span class="state ${b.kind}">${b.key}</span> <span class="meta"><span class="mono">${esc(short(S.model))}</span>${b.created ? `, created ${new Date(b.created * 1000).toLocaleDateString()}` : ""}</span></p>` : "") + actions + body;
+    el.innerHTML = top(esc(name) + (b ? ` <span class="meta">v${b.version}</span>` : "")) + (b ? `<p><span class="state ${b.kind}">${b.key}</span> <span class="meta"><span class="mono">${esc(short(S.model))}</span>${b.created ? `, created ${new Date(b.created * 1000).toLocaleDateString()}` : ""}</span></p><p class="keyhelp">${esc(KEY_HELP[b.key] || "")}</p>` : "") + actions + body + legend([...SHELF_KEYS, "FAIL", "NOT TESTED", "KNOB BETTER", "NO CLEAR WINNER", "PROMPT BETTER", "NOT FLUENT"]);
     wireExplorer(p.id);
   } else if (p.kind === "library") {
     el.innerHTML = top("Library") + libraryPage();
