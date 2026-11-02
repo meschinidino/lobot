@@ -105,6 +105,14 @@ function repairSection(R, id) {
   return head + tables + (flagged.length ? followupCtl("repair", id, R, Object.keys(recs).length ? "Run repair again" : "Try repair", "About 10 to 20 min. It needs torch for the gradients.") : "");
 }
 function openPage(p) { S.page = p; closePop(); if (S.inspect || S.card) closeInspector(); setView("page"); renderPage(true); }
+// In plain words: one Muse Spark call per report (the server caches it by the report's numbers).
+async function explain(id) {
+  explains[id] = { busy: true }; renderPage();
+  try { const r = await postJSON(`api/traits/${encodeURIComponent(id)}/explain`, {}), body = await r.json();
+    explains[id] = r.ok ? { text: body.explanation, cached: body.cached } : { err: typeof body.detail === "string" ? body.detail : `HTTP ${r.status}` };
+  } catch (err) { explains[id] = { err: `The request failed: ${err.message}` }; }
+  renderPage();
+}
 async function renderPage(first = false) {
   const el = $("vPage"), p = S.page; if (!p || el.hidden) return;
   const keep = document.activeElement && el.contains(document.activeElement) ? document.activeElement.id : null;
@@ -141,6 +149,8 @@ async function renderPage(first = false) {
     const b = behaviors().all.find((x) => x.id === p.id), j = S.jobs.find((x) => x.id === p.id), name = b ? b.name : j ? j.trait : "Behavior";
     if (!(p.id in reports)) { el.innerHTML = top(esc(name)) + `<p class="meta">Loading the evidence.</p>`; try { reports[p.id] = await getJSON(`api/traits/${encodeURIComponent(p.id)}/report`); } catch (e) { reports[p.id] = { missing: e.status || e.message }; } if (S.page !== p) return; }
     if (!S.families) S.families = await getJSON("api/families").then((x) => x.families).catch(() => []);
+    // With a Meta API key on the server, Muse Spark writes the plain-words summary as the page opens.
+    if (S.state?.meta_api?.key && !explains[p.id] && !reports[p.id].missing) explain(p.id);
     const R = reports[p.id], fam = (S.families || []).find((f) => f.name === name), fr = R.frozen || (b && { layer: b.layer, dose: b.dose }) || {};
     const actions = `<div class="row2">${b && b.usable ? `<button class="btn" type="button" data-use="${esc(b.id)}">Use in the sentence</button>` : ""}${b && b.patch ? `<a class="btn" href="${esc(b.patch)}" download>Download patch</a>` : `<button class="btn" type="button" disabled>Download patch</button><span class="meta">${b && b.verdict === "knob" ? "Patch download needs the evidence API." : "Only a passing knob has a patch."}</span>`}</div>`;
     let body;
@@ -261,12 +271,7 @@ $("vPage").addEventListener("click", async (e) => {
     const id = S.page.id, R = reports[id]; if (!R?.pareto) return;
     exState(R, id).qi = Number(t.closest("[data-exq]").dataset.exq); setExDose(id, exState(R, id).d);
     $("exOut")?.querySelector(`[data-exq="${exState(R, id).qi}"]`)?.focus();
-  } else if (t.closest("[data-explain]")) {
-    const id = t.closest("[data-explain]").dataset.explain; explains[id] = { busy: true }; renderPage();
-    try { const r = await postJSON(`api/traits/${encodeURIComponent(id)}/explain`, {}), body = await r.json();
-      explains[id] = r.ok ? { text: body.explanation, cached: body.cached } : { err: typeof body.detail === "string" ? body.detail : `HTTP ${r.status}` };
-    } catch (err) { explains[id] = { err: `The request failed: ${err.message}` }; }
-    renderPage();
+  } else if (t.closest("[data-explain]")) { explain(t.closest("[data-explain]").dataset.explain);
   } else if (t.closest("[data-fu]")) {
     const btn = t.closest("[data-fu]"), kind = btn.dataset.fu, id = btn.dataset.id; btn.disabled = true;
     try {
