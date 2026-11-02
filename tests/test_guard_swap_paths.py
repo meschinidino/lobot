@@ -102,6 +102,16 @@ class NoopSwapTest(unittest.TestCase):
         self.assertFalse(seen["confirm"]["verdict"]["blocked"])
         self.assertTrue(seen["confirm"]["verdict"]["confirmed"])
 
+    def test_stream_guard_two_steps(self):
+        from model_lobotomy import server_helpers as helpers
+        with mock.patch.object(helpers.guard_mod, "refusal_judge_fn",
+                               return_value=lambda text: 1.0):
+            events = list(helpers._verified_guard_stream(
+                object(), object(), {}, True))
+        stages = [e.decode() if isinstance(e, bytes) else str(e)
+                  for e in events]
+        self.assertTrue(any("guard_full" in s for s in stages), stages)
+
     def test_delete_check_guard_entry(self):
         # trait_eval.delete_check reads the port verdict report.
         gv = guards.get_guard().confirm(

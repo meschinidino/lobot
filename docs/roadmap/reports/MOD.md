@@ -305,3 +305,26 @@ wired in this session.
 - Browser: `scripts/ui_walk.py`, 28 screens, 0 pageerrors.
 - Page text matches the main run with the same data.
 - Live weights: not run. Replay mode and fakes only.
+
+## Fix 5: Guard key shows both steps (stacked PR 5)
+
+- Streams now run the verified guard in two steps.
+- `server_helpers._verified_guard_stream` runs `screen()` first.
+- After the first-token check passes, it emits `guard_full`.
+- Then `confirm()` runs the full-answer check. Same final verdict.
+- The workbench key shows `CHECKING EDITS · FIRST-TOKEN CHECK`.
+- Then it shows `FIRST-TOKEN CHECK PASSED · FULL CHECK RUNNING`.
+- The final result is `CHECK PASSED` or `BLOCKED`. No early pass.
+- `docs/reference/api.md` lists the new `guard_full` stage.
+- The run status line names both steps too.
+- New tests: one stream two-step test, one frontend text test.
+- Stage-sequence tests now expect `guard_full` before generation.
+- Tests: `Ran 751 tests, OK (skipped=5)`.
+- Browser: `scripts/ui_walk.py`, 28 screens, 0 pageerrors.
+- Page text diff against main: one line. The guard key reads
+  `CHECKING EDITS · FIRST-TOKEN CHECK` during the run.
+  That line is this fix. Every other screen matches.
+- Replay mode and fakes only. No weights loaded.
+- Known gap: one earlier suite run failed with one error while
+  an orphan replay server held the GPU slot. I killed that server
+  (I had started it in a walk). The rerun passes: 751, OK.

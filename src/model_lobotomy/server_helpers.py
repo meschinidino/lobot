@@ -511,7 +511,7 @@ def _delete_stream(prompt: str, trait: str, knob: dict, max_new: int,
             return
         edits = _delete_edits(knob)
         yield _event(stage="guard")
-        gv = _verified_guard(
+        gv = yield from _verified_guard_stream(
             eng, edits, medians,
             guard_mod.should_enforce(guard, research_mode))
         if gv.blocked:
@@ -1314,6 +1314,30 @@ def _verified_guard(eng, edits, medians, enforce):
         research_mode=not enforce, cancel=STATE.cancel)
 
 
+def _verified_guard_stream(eng, edits, medians, enforce):
+    """Verified guard for streams, in two visible steps.
+
+    Yields one guard_full event after the first-token check passes
+    and before the full-answer check runs. The final verdict comes
+    from confirm(), so its numbers match _verified_guard.
+    """
+    from model_lobotomy import guards as _guards
+    guard = _guards.get_guard()
+    first = guard.screen(
+        eng, edits, medians=medians, research_mode=not enforce)
+    if first.blocked or (not enforce and first.would_block):
+        return guard.confirm(
+            eng, edits, medians=medians, max_new_tokens=24,
+            seed=engine.SEED,
+            judge_fn=guard_mod.refusal_judge_fn(eng),
+            research_mode=not enforce, cancel=STATE.cancel)
+    yield _event(stage="guard_full", guard=_guard_event_dict(first))
+    return guard.confirm(
+        eng, edits, medians=medians, max_new_tokens=24, seed=engine.SEED,
+        judge_fn=guard_mod.refusal_judge_fn(eng),
+        research_mode=not enforce, cancel=STATE.cancel)
+
+
 def _run_stream(prompt: str, rows: list[RecipeRow], spec,
                 guard: bool = False, research_mode: bool = False,
                 dial_trait: str | None = None):
@@ -1359,7 +1383,7 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
             return
 
         yield _event(stage="guard")
-        gv = _verified_guard(
+        gv = yield from _verified_guard_stream(
             eng, EditSet.from_rows(rows), medians,
             guard_mod.should_enforce(guard, research_mode))
         if gv.blocked:
@@ -1497,7 +1521,7 @@ def _update_stream(prompt: str, layer: int, direction: list,
         unit = tuple(direction)
         strongest = max(doses, key=abs)
         yield _event(stage="guard")
-        gv = _verified_guard(
+        gv = yield from _verified_guard_stream(
             eng, EditSet(vector=(VectorEdit(layer, unit, scale, strongest),)),
             medians, guard_mod.should_enforce(guard, research_mode))
         if gv.blocked:

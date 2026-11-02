@@ -70,6 +70,15 @@ class FakeDeleteEngine:
                                          "cancelled": False}}
 
 
+
+def _fake_guard_stream(blocked=False):
+    def fake(eng, edits, medians, enforce):
+        if False:
+            yield None
+        return SimpleNamespace(blocked=blocked)
+    return fake
+
+
 class DeleteCase(unittest.TestCase):
     def setUp(self):
         self.eng = FakeDeleteEngine()
@@ -79,9 +88,8 @@ class DeleteCase(unittest.TestCase):
                               return_value=self.eng),
             mock.patch.object(server.helpers, "_latest_knob",
                               return_value=dict(KNOB)),
-            mock.patch.object(server.helpers, "_verified_guard",
-                              return_value=SimpleNamespace(
-                                  blocked=False)),
+            mock.patch.object(server.helpers, "_verified_guard_stream",
+                              side_effect=_fake_guard_stream(False)),
             mock.patch.object(server.helpers, "_dial_spec",
                               side_effect=KeyError("pirate")),
             mock.patch.object(server.helpers, "_calibrate",
@@ -138,8 +146,8 @@ class DeleteStreamTest(DeleteCase):
 
     def test_delete_guard_block_first(self):
         with mock.patch.object(
-                server.helpers, "_verified_guard",
-                return_value=SimpleNamespace(blocked=True)):
+                server.helpers, "_verified_guard_stream",
+                side_effect=_fake_guard_stream(True)):
             evs = self._events({"prompt": "Say hi.",
                                 "trait": "pirate"})
         self.assertEqual(

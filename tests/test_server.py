@@ -184,7 +184,7 @@ class ServerStreamTest(unittest.TestCase):
     def test_stage_order_and_split_offsets(self):
         ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "baseline", "steered", "complete"])
+                         ["weights", "guard", "guard_full", "baseline", "steered", "complete"])
         res = ev[-1]["result"]
         self.assertEqual(res["split"]["token"], 2)
         # The offset is the start of the divergent token, leading space included
@@ -704,7 +704,7 @@ class UpdateApiTest(unittest.TestCase):
     def test_explicit_streams_columns(self):
         ev = self._events(self._explicit())
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "columns", "token",
+                         ["weights", "guard", "guard_full", "columns", "token",
                           "token", "complete"])
         toks = [e for e in ev if e["stage"] == "token"]
         self.assertEqual([(t["col"], t["text"]) for t in toks],
@@ -813,10 +813,10 @@ class DialStreamTest(_Wave2Base):
         self.assertEqual(r.status_code, 200, r.text)
         ev = [json.loads(line) for line in r.text.splitlines() if line]
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "baseline", "steered",
-                          "token", "token", "complete"])
-        self.assertEqual(ev[4]["dial"], {"blunt": 0.7})
-        self.assertNotIn("dial", ev[5])
+                         ["weights", "guard", "guard_full", "baseline",
+                          "steered", "token", "token", "complete"])
+        self.assertEqual(ev[5]["dial"], {"blunt": 0.7})
+        self.assertNotIn("dial", ev[6])
         res = ev[-1]["result"]
         self.assertEqual(res["dial"], {"trait": "blunt", "layer": 5,
                                       "neutral": 0.0, "trait_mean": 2.0,
@@ -850,8 +850,8 @@ class DialStreamTest(_Wave2Base):
             "/api/run", json={"prompt": "Who are you?", "rows": [ROW]}
         ).text.splitlines() if line]
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "baseline", "steered",
-                          "complete"])
+                         ["weights", "guard", "guard_full", "baseline",
+                          "steered", "complete"])
         self.assertIsNone(ev[-1]["result"]["dial"])
 
 
@@ -939,8 +939,8 @@ class DialListsTest(_Wave2Base):
                                                "rows": [ROW]})
         ev = [json.loads(line) for line in r.text.splitlines() if line]
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "baseline", "steered",
-                          "complete"])
+                         ["weights", "guard", "guard_full", "baseline",
+                          "steered", "complete"])
         self.assertIsNone(ev[-1]["result"]["dial"])
         for _, edits, kw in self.eng.runs:
             self.assertNotIn("dial", kw)
