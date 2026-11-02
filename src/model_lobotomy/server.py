@@ -62,6 +62,7 @@ from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StrictBool
+from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 from starlette.responses import FileResponse, JSONResponse
 
 from model_lobotomy import app as engine
@@ -125,6 +126,39 @@ def _get_followups() -> followups_mod.FollowupRunner:
     return _followups
 
 api = FastAPI(title="lobot", docs_url=None, redoc_url=None)
+
+
+def _close_when_done(gen) -> None:
+    """Close a sync generator; wait while a step of it still runs."""
+    for _ in range(2400):  # up to 2 minutes; a step stops at its next cancel check
+        try:
+            gen.close()
+            return
+        except ValueError:  # generator already executing
+            time.sleep(0.05)
+
+
+def _ndjson(gen) -> StreamingResponse:
+    """NDJSON response that closes its generator when the client leaves.
+
+    Starlette does not close a sync generator when the client
+    disconnects. A run paused at a yield then never reached its
+    finally, so it kept the engine lock until a restart. On a
+    disconnect this sets the cancel event and closes the generator,
+    which runs its finally (the lock release). A stream that ends
+    normally is left alone, so it cannot cancel the next run.
+    """
+    async def body():
+        finished = False
+        try:
+            async for chunk in iterate_in_threadpool(gen):
+                yield chunk
+            finished = True
+        finally:
+            if not finished:
+                _cancel.set()
+                await run_in_threadpool(_close_when_done, gen)
+    return StreamingResponse(body(), media_type="application/x-ndjson")
 
 
 def _need_torch(eng, feature: str) -> None:
@@ -487,7 +521,7 @@ def run(req: RunRequest):
         if get_engine().lock.locked():
             raise HTTPException(409, "A run is in progress. Wait for it to finish.")
         _cancel.clear()
-        return StreamingResponse(_replay_stream(rec), media_type="application/x-ndjson")
+        return _ndjson(_replay_stream(rec))
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
@@ -496,11 +530,9 @@ def run(req: RunRequest):
     if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     _cancel.clear()
-    return StreamingResponse(
-        _run_stream(prompt, rows, spec, guard=req.guard,
+    return _ndjson(_run_stream(prompt, rows, spec, guard=req.guard,
                     research_mode=req.research_mode,
-                    dial_trait=req.dial_trait),
-        media_type="application/x-ndjson")
+                    dial_trait=req.dial_trait))
 
 
 @api.post("/api/stop")
@@ -1248,12 +1280,10 @@ def update(req: UpdateRequest):
     if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     _cancel.clear()
-    return StreamingResponse(
-        _update_stream(prompt, layer, direction, scale, list(req.doses),
+    return _ndjson(_update_stream(prompt, layer, direction, scale, list(req.doses),
                        min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
                        spec, guard=req.guard,
-                       research_mode=req.research_mode),
-        media_type="application/x-ndjson")
+                       research_mode=req.research_mode))
 
 
 def _delete_edits(knob: dict):
@@ -1280,12 +1310,10 @@ def delete(req: DeleteRequest):
     if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     _cancel.clear()
-    return StreamingResponse(
-        _delete_stream(prompt, req.trait, knob,
+    return _ndjson(_delete_stream(prompt, req.trait, knob,
                        min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
                        guard=req.guard,
-                       research_mode=req.research_mode),
-        media_type="application/x-ndjson")
+                       research_mode=req.research_mode))
 
 
 def _delete_stream(prompt: str, trait: str, knob: dict, max_new: int,
@@ -1660,8 +1688,7 @@ def verify(req: VerifyRequest):
     _need_torch(get_engine(), "verify")
     _verify_pin(patch_path)
     _cancel.clear()
-    return StreamingResponse(_verify_stream(patch_path, req.quick),
-                             media_type="application/x-ndjson")
+    return _ndjson(_verify_stream(patch_path, req.quick))
 
 
 @api.post("/api/verify/upload")
@@ -1689,8 +1716,7 @@ async def verify_upload(file: UploadFile = File(...)):
         probe.write_bytes(data)
         _verify_pin(probe)
     _cancel.clear()
-    return StreamingResponse(_verify_stream(data, True),
-                             media_type="application/x-ndjson")
+    return _ndjson(_verify_stream(data, True))
 
 
 def _verify_stream(patch, quick: bool):
@@ -2623,9 +2649,7 @@ def chat(req: ChatRequest):
     max_new = sess["max_new_tokens"]
     if req.max_new_tokens is not None:
         max_new = min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP)
-    return StreamingResponse(
-        _chat_stream(req.session_id, message, rows, max_new),
-        media_type="application/x-ndjson")
+    return _ndjson(_chat_stream(req.session_id, message, rows, max_new))
 
 
 def _chat_stream(session_id: str, message: str, rows, max_new: int):
