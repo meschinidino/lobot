@@ -42,6 +42,8 @@ ENV_VARS = (
     ("LOBOT_JOBS_DIR", "<repo>/jobs"),
     ("LOBOT_JUDGE", "local"),
     ("LOBOT_GUARD", "screens-v2"),
+    ("LOBOT_DIRECTION", "diffmean"),
+    ("LOBOT_DOSE_RULE", "nll+fluency-v1"),
 )
 
 
@@ -79,6 +81,8 @@ class Settings:
     jobs_dir: Path | None = None
     judge_kind: str = "local"
     guard_kind: str = "screens-v2"
+    direction_kind: str = "diffmean"
+    dose_rule_kind: str = "nll+fluency-v1"
 
 
 def load_settings(env=None) -> Settings:
@@ -112,6 +116,8 @@ def load_settings(env=None) -> Settings:
         jobs_dir=Path(get("LOBOT_JOBS_DIR")) if get("LOBOT_JOBS_DIR") else None,
         judge_kind=get("LOBOT_JUDGE", "local"),
         guard_kind=get("LOBOT_GUARD", "screens-v2"),
+        direction_kind=get("LOBOT_DIRECTION", "diffmean"),
+        dose_rule_kind=get("LOBOT_DOSE_RULE", "nll+fluency-v1"),
     )
 
 
