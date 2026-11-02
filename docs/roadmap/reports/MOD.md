@@ -259,3 +259,31 @@ wired in this session.
   names. Fix 3 removes them.
 - Browser: not run. This PR touches no `web/` or router file.
 - Live weights: not run. Unit tests and fakes only.
+
+## Fix 3: Real router modules (stacked PR 3)
+
+- New modules: `server_state.py`, `server_schemas.py`, `server_helpers.py`.
+- `AppState` in `server_state.py` holds the state as plain fields.
+- `STATE` is that one object. `api.state.app_state` is `STATE`.
+- Request shapes live in `server_schemas.py`.
+- Helpers and stream builders live in `server_helpers.py`.
+- Routers import from those modules. No `_Live`, no `__getattr__`,
+  no `__dict__.update`, no `_delegate` in `server.py` or routers.
+- Routers call helpers as `helpers.<name>()`.
+- Tests patch `STATE` fields and `server.helpers`, not server globals.
+- Pyflakes gate: `tests/test_pyflakes.py` runs pyflakes on `src`
+  and `scripts`. It fails on any finding.
+- `uvx pyflakes src scripts`: clean (612 findings before this series).
+- That cleanup also fixed a real bug: `engine.py` batched `_post`
+  used an undefined `dev`. It now uses `x.device`.
+- It also replaced `app.py` alias globals (`_rung_n`, `_run_lock`,
+  `_model_id`) with `_ENGINE` attributes. Same values.
+- Tests: `Ran 745 tests, OK (skipped=5)`. Count after this PR's runs is recorded in the PR body.
+- Browser: `scripts/ui_walk.py` walks 28 screens in replay mode.
+- It switches the server to Llama first. Zero pageerrors.
+- Page text: identical to a run of the same script against `main`
+  with the same local jobs and drafts (both 28 screens).
+- First main run had 32 screens. The extra screens came from
+  local jobs and drafts that the clean worktree did not share.
+  With the same data, the screen list and text match.
+- Live weights: not run. Replay mode and fakes only.

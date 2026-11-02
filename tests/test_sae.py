@@ -440,8 +440,8 @@ class FeatureRoutesTest(unittest.TestCase):
     def setUp(self):
         self.eng = FakeRouteEngine()
         self.patches = [
-            mock.patch.object(server, "NO_MODEL", False),
-            mock.patch.object(server, "get_engine",
+            mock.patch.object(server.STATE, "no_model", False),
+            mock.patch.object(server.helpers, "get_engine",
                               return_value=self.eng),
             mock.patch.object(steer, "calibration_cache_key",
                               return_value={}),
@@ -452,7 +452,7 @@ class FeatureRoutesTest(unittest.TestCase):
         ]
         for p in self.patches:
             p.start()
-        self.addCleanup(server._sae_cache.clear)
+        self.addCleanup(server.STATE.sae_cache.clear)
         self.client = TestClient(server.api)
 
     def tearDown(self):
@@ -466,7 +466,7 @@ class FeatureRoutesTest(unittest.TestCase):
 
     def _write_sae(self, root, layer=5):
         from model_lobotomy import app as engine_mod
-        slug = server._model_slug(engine_mod._active_model_id)
+        slug = server.helpers._model_slug(engine_mod._active_model_id)
         out = root / "store" / "sae" / slug / f"L{layer}"
         torch.manual_seed(0)
         model = sae.TopkSAE(HIDDEN, FEATS, TOPK, seed=0)
@@ -488,7 +488,7 @@ class FeatureRoutesTest(unittest.TestCase):
 
     def test_features_empty_without_saes(self):
         root = self._tmp_root()
-        with mock.patch.object(server, "ROOT", root):
+        with mock.patch.object(server.STATE, "root", root):
             r = self.client.get("/api/features")
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json(), {"saes": []})
@@ -497,7 +497,7 @@ class FeatureRoutesTest(unittest.TestCase):
         from model_lobotomy import app as engine_mod
         root = self._tmp_root()
         self._write_sae(root, layer=5)
-        with mock.patch.object(server, "ROOT", root):
+        with mock.patch.object(server.STATE, "root", root):
             r = self.client.get("/api/features")
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json(), {"saes": [{
@@ -515,8 +515,8 @@ class FeatureRoutesTest(unittest.TestCase):
         tokens = ["w%d" % i for i in range(24)]
         sae.build_feature_fires(model, acts, tokens, [0, 12], out, k=3)
         stub = self._stub_reader()
-        with mock.patch.object(server, "ROOT", root), \
-                mock.patch.object(server, "reader", stub), \
+        with mock.patch.object(server.STATE, "root", root), \
+                mock.patch.object(server.STATE, "reader", stub), \
                 mock.patch.object(sae, "reader", stub):
             r = self.client.get("/api/feature/5/7?k=3")
         self.assertEqual(r.status_code, 200, r.text)
@@ -531,7 +531,7 @@ class FeatureRoutesTest(unittest.TestCase):
 
     def test_feature_card_404_without_sae(self):
         root = self._tmp_root()
-        with mock.patch.object(server, "ROOT", root):
+        with mock.patch.object(server.STATE, "root", root):
             r = self.client.get("/api/feature/5/7")
         self.assertEqual(r.status_code, 404)
 
@@ -539,8 +539,8 @@ class FeatureRoutesTest(unittest.TestCase):
         root = self._tmp_root()
         self._write_sae(root, layer=5)
         stub = self._stub_reader()
-        with mock.patch.object(server, "ROOT", root), \
-                mock.patch.object(server, "reader", stub):
+        with mock.patch.object(server.STATE, "root", root), \
+                mock.patch.object(server.STATE, "reader", stub):
             r = self.client.get(f"/api/feature/5/{FEATS}")
         self.assertEqual(r.status_code, 400)
 
@@ -548,8 +548,8 @@ class FeatureRoutesTest(unittest.TestCase):
         root = self._tmp_root()
         self._write_sae(root, layer=5)
         stub = self._stub_reader()
-        with mock.patch.object(server, "ROOT", root), \
-                mock.patch.object(server, "reader", stub):
+        with mock.patch.object(server.STATE, "root", root), \
+                mock.patch.object(server.STATE, "reader", stub):
             r = self.client.post("/api/feature-lift", json={
                 "layer": 5, "index": 7, "dose": 1.0,
                 "words": ["pirate"], "prompts": ["Say hi."]})
@@ -564,8 +564,8 @@ class FeatureRoutesTest(unittest.TestCase):
         root = self._tmp_root()
         self._write_sae(root, layer=5)
         stub = self._stub_reader()
-        with mock.patch.object(server, "ROOT", root), \
-                mock.patch.object(server, "reader", stub):
+        with mock.patch.object(server.STATE, "root", root), \
+                mock.patch.object(server.STATE, "reader", stub):
             r = self.client.post("/api/feature-lift", json={
                 "layer": 5, "index": 7, "dose": 1.0,
                 "prompts": ["Say hi."]})
@@ -575,7 +575,7 @@ class FeatureRoutesTest(unittest.TestCase):
 
     def test_feature_lift_404_without_sae(self):
         root = self._tmp_root()
-        with mock.patch.object(server, "ROOT", root):
+        with mock.patch.object(server.STATE, "root", root):
             r = self.client.post("/api/feature-lift", json={
                 "layer": 5, "index": 7, "dose": 1.0,
                 "words": ["pirate"]})
@@ -584,8 +584,8 @@ class FeatureRoutesTest(unittest.TestCase):
     def test_feature_routes_503_without_weights(self):
         root = self._tmp_root()
         self._write_sae(root, layer=5)
-        with mock.patch.object(server, "ROOT", root), \
-                mock.patch.object(server, "NO_MODEL", True):
+        with mock.patch.object(server.STATE, "root", root), \
+                mock.patch.object(server.STATE, "no_model", True):
             r = self.client.get("/api/feature/5/7")
             self.assertEqual(r.status_code, 503)
             r = self.client.post("/api/feature-lift", json={
@@ -598,7 +598,7 @@ class FeatureRoutesTest(unittest.TestCase):
         self._write_sae(root, layer=5)
         self.eng.lock.acquire()
         try:
-            with mock.patch.object(server, "ROOT", root):
+            with mock.patch.object(server.STATE, "root", root):
                 r = self.client.get("/api/feature/5/7")
                 self.assertEqual(r.status_code, 409)
                 r = self.client.post("/api/feature-lift", json={
@@ -611,7 +611,7 @@ class FeatureRoutesTest(unittest.TestCase):
     def test_feature_routes_reject_cross_origin_post(self):
         root = self._tmp_root()
         self._write_sae(root, layer=5)
-        with mock.patch.object(server, "ROOT", root):
+        with mock.patch.object(server.STATE, "root", root):
             r = self.client.post(
                 "/api/feature-lift",
                 json={"layer": 5, "index": 7, "dose": 1.0,

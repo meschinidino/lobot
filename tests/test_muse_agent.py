@@ -242,8 +242,8 @@ class RoutesTest(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         jobs = Path(tmp.name) / "jobs"
         jobs.mkdir()
-        server._runner = create_job.CreateRunner(jobs_dir=jobs)
-        self.addCleanup(setattr, server, "_runner", None)
+        server.STATE.runner = create_job.CreateRunner(jobs_dir=jobs)
+        self.addCleanup(setattr, server.STATE, "runner", None)
         self.job = "pirate-0-20260101-000000-000"
         _write_job(jobs, self.job, trait="pirate")
         self.jobs, self.server = jobs, server
@@ -284,7 +284,7 @@ class RoutesTest(unittest.TestCase):
         self.assertIn("META_API_KEY", r.json()["detail"])
 
     def test_agent_refuses_harmful_description(self):
-        with mock.patch.object(self.server.guard_mod,
+        with mock.patch.object(self.server.helpers.guard_mod,
                                "draft_description_allowed",
                                return_value=(False, "Not allowed.")):
             r = self.client.post("/api/agent",

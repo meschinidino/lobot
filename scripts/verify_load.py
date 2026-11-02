@@ -74,7 +74,7 @@ def main(quick: bool) -> int:
     logdir = ROOT / "logs"
     logdir.mkdir(exist_ok=True)
     (logdir / "load_proof.json").write_text(json.dumps(receipt, indent=2))
-    print(f"receipt -> logs/load_proof.json")
+    print("receipt -> logs/load_proof.json")
     print("LOAD PROOF OK: rung-1 weights load and generate on MPS.")
     return 0
 

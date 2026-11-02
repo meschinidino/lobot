@@ -1,18 +1,19 @@
-"""Routes: chat. Helpers and state live in server (late import)."""
+"""Routes: chat. Helpers live in server_helpers. State lives in server_state.STATE."""
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, Query, Request, UploadFile  # noqa: F401
+from fastapi import APIRouter
+from model_lobotomy.server_state import STATE
+from model_lobotomy import server_helpers as helpers
+from model_lobotomy.server_schemas import (ChatRequest, ChatStartRequest, ReplayRequest, ReplayTurn)
+from fastapi import HTTPException
+from model_lobotomy.steer import RecipeRow
+from model_lobotomy import app as engine
+import json
+from model_lobotomy import steer
+import time
+import uuid
 
 router = APIRouter()
-
-
-class _Live:
-    def __getattr__(self, name):
-        from model_lobotomy import server as _server
-        return getattr(_server, name)
-
-
-_live = _Live()
 
 
 @router.post("/api/chat/start")
@@ -29,28 +30,28 @@ def chat_start(req: ChatStartRequest):
         raise HTTPException(400, f"Invalid row: {e}.") from None
     dose = 1.0
     if req.trait is not None:
-        knob = _latest_knob(req.trait)
+        knob = helpers._latest_knob(req.trait)
         if knob is None:
             raise HTTPException(404, f"No finished Create job for trait "
                                      f"'{req.trait}' with a saved direction. "
                                      f"Create the trait first.")
         dose = req.dose if req.dose is not None else float(knob["dose"])
     dial_traits = list(req.dial_traits or [])
-    if len(dial_traits) > MAX_CHAT_DIALS:
+    if len(dial_traits) > helpers.MAX_CHAT_DIALS:
         raise HTTPException(400, f"Too many dial traits. "
-                                 f"The limit is {MAX_CHAT_DIALS}.")
+                                 f"The limit is {helpers.MAX_CHAT_DIALS}.")
     for trait in dial_traits:
-        if _latest_knob(trait) is None:
+        if helpers._latest_knob(trait) is None:
             raise HTTPException(404, f"No finished Create job for trait "
                                      f"'{trait}' with a saved direction. "
                                      f"Create the trait first.")
     if dial_traits:
-        _need_torch(get_engine(), "dial")
-    if len(_chats) >= MAX_CHAT_SESSIONS:
-        oldest = min(_chats, key=lambda k: _chats[k]["created"])
-        del _chats[oldest]
+        helpers._need_torch(helpers.get_engine(), "dial")
+    if len(STATE.chats) >= helpers.MAX_CHAT_SESSIONS:
+        oldest = min(STATE.chats, key=lambda k: STATE.chats[k]["created"])
+        del STATE.chats[oldest]
     sid = uuid.uuid4().hex[:16]
-    _chats[sid] = {"messages": [], "rows": rows, "trait": req.trait,
+    STATE.chats[sid] = {"messages": [], "rows": rows, "trait": req.trait,
                    "dose": dose, "dial_traits": dial_traits,
                    "turn_records": [],
                    "max_new_tokens": min(req.max_new_tokens,
@@ -63,7 +64,7 @@ def chat_start(req: ChatStartRequest):
 @router.get("/api/chat/{session_id}")
 def chat_history(session_id: str):
     """Chat history for reattach (turns stay server-side)."""
-    sess = _chats.get(session_id)
+    sess = STATE.chats.get(session_id)
     if sess is None:
         raise HTTPException(404, f"Unknown chat {session_id}.")
     return {"session_id": session_id, "model_id": sess["model_id"],
@@ -76,7 +77,7 @@ def chat_history(session_id: str):
 @router.get("/api/chat/{session_id}/transcript")
 def chat_transcript(session_id: str):
     """Full replay spec for a chat: per-turn messages, rows, dials (CH)."""
-    sess = _chats.get(session_id)
+    sess = STATE.chats.get(session_id)
     if sess is None:
         raise HTTPException(404, f"Unknown chat {session_id}.")
     return {
@@ -109,10 +110,10 @@ def chat_replay(req: ReplayRequest):
         parsed = [ReplayTurn(**t) for t in turns]
     except Exception as e:
         raise HTTPException(400, f"Bad transcript turn: {e}.") from None
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    if get_engine().lock.locked():
+    if helpers.get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     spec = engine.active_spec()
     for turn in parsed:
@@ -131,25 +132,25 @@ def chat_replay(req: ReplayRequest):
         research_mode=bool(data.get("research_mode", False)),
         dial_traits=list(data.get("dial_traits") or []))
     try:
-        if start.trait is not None and _latest_knob(start.trait) is None:
+        if start.trait is not None and helpers._latest_knob(start.trait) is None:
             raise KeyError(start.trait)
         for trait in start.dial_traits:
-            if _latest_knob(trait) is None:
+            if helpers._latest_knob(trait) is None:
                 raise KeyError(trait)
     except KeyError as e:
         raise HTTPException(404, f"No finished Create job for trait "
                                  f"'{e.args[0]}' with a saved direction. "
                                  f"Create the trait first.") from None
-    if len(start.dial_traits) > MAX_CHAT_DIALS:
+    if len(start.dial_traits) > helpers.MAX_CHAT_DIALS:
         raise HTTPException(400, f"Too many dial traits. "
-                                 f"The limit is {MAX_CHAT_DIALS}.")
+                                 f"The limit is {helpers.MAX_CHAT_DIALS}.")
     if start.dial_traits:
-        _need_torch(get_engine(), "dial")
-    if len(_chats) >= MAX_CHAT_SESSIONS:
-        oldest = min(_chats, key=lambda k: _chats[k]["created"])
-        del _chats[oldest]
+        helpers._need_torch(helpers.get_engine(), "dial")
+    if len(STATE.chats) >= helpers.MAX_CHAT_SESSIONS:
+        oldest = min(STATE.chats, key=lambda k: STATE.chats[k]["created"])
+        del STATE.chats[oldest]
     sid = uuid.uuid4().hex[:16]
-    _chats[sid] = {"messages": [], "rows": [], "trait": start.trait,
+    STATE.chats[sid] = {"messages": [], "rows": [], "trait": start.trait,
                    "dose": start.dose if start.trait is not None else 1.0,
                    "dial_traits": start.dial_traits, "turn_records": [],
                    "max_new_tokens": steer.MAX_NEW_TOKENS_CAP,
@@ -161,11 +162,11 @@ def chat_replay(req: ReplayRequest):
     for i, (turn, want) in enumerate(zip(parsed, turns), start=1):
         rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose)
                 for r in turn.rows]
-        _live._cancel.clear()
+        STATE.cancel.clear()
         reply, dials, err = None, None, None
         max_new = want.get("max_new_tokens") or steer.MAX_NEW_TOKENS_CAP
         max_new = min(int(max_new), steer.MAX_NEW_TOKENS_CAP)
-        for chunk in _chat_stream(sid, turn.message, rows, max_new):
+        for chunk in helpers._chat_stream(sid, turn.message, rows, max_new):
             ev = json.loads(chunk.decode())
             if ev.get("stage") == "done":
                 reply = ev["result"]["reply"]
@@ -173,7 +174,7 @@ def chat_replay(req: ReplayRequest):
             elif ev.get("stage") in ("error", "blocked", "stopped"):
                 err = ev.get("message", ev.get("stage"))
         reply_match = err is None and reply == want.get("reply")
-        diff = _dials_max_diff(dials or {}, want.get("dials") or {})
+        diff = helpers._dials_max_diff(dials or {}, want.get("dials") or {})
         dials_match = err is None and diff == 0.0
         results.append({"turn": i, "match": bool(reply_match and dials_match),
                         "reply_match": bool(reply_match),
@@ -188,7 +189,7 @@ def chat(req: ChatRequest):
     message = req.message.strip()
     if not message:
         raise HTTPException(400, "The message is empty. Type one first.")
-    sess = _chats.get(req.session_id)
+    sess = STATE.chats.get(req.session_id)
     if sess is None:
         raise HTTPException(404, f"Unknown chat {req.session_id}.")
     if sess["model_id"] != engine._active_model_id:
@@ -207,15 +208,15 @@ def chat(req: ChatRequest):
                 steer.validate_recipe(rows, engine.active_spec())
         except ValueError as e:
             raise HTTPException(400, f"Invalid row: {e}.") from None
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    if get_engine().lock.locked():
+    if helpers.get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     if sess.get("dial_traits"):
-        _need_torch(get_engine(), "dial")
-    _live._cancel.clear()
+        helpers._need_torch(helpers.get_engine(), "dial")
+    STATE.cancel.clear()
     max_new = sess["max_new_tokens"]
     if req.max_new_tokens is not None:
         max_new = min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP)
-    return _ndjson(_chat_stream(req.session_id, message, rows, max_new))
+    return helpers._ndjson(helpers._chat_stream(req.session_id, message, rows, max_new))

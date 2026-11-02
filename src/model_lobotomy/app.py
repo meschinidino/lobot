@@ -21,8 +21,6 @@ from __future__ import annotations
 import difflib
 import html
 import json
-import os
-import threading
 import time
 from pathlib import Path
 
@@ -165,7 +163,7 @@ def build_artifact(prompt: str, rows: list[RecipeRow], calib_id: str,
     preset = active_preset()
     return steer.build_x_artifact(
         prompt=prompt, rows=rows, calib_id=calib_id, base=base,
-        steered=steered, rung_n=_rung_n,
+        steered=steered, rung_n=_ENGINE.rung,
         max_new_tokens=int(preset["decode"]["max_new_tokens"]),
         seed=SEED, calib_prompts=list(preset["calibration_prompts"]),
         model_id=_active_model_id)
@@ -210,7 +208,7 @@ def run_loop(prompt: str, n: int, *row_vals):
         if not DOSE_MIN <= r.dose <= DOSE_MAX:
             return (f"Dose {r.dose:g} out of bounds [{DOSE_MIN:g},{DOSE_MAX:g}]; "
                      "clamp it or move the slider.",) + empty[1:]
-    if not _run_lock.acquire(blocking=False):
+    if not _ENGINE.lock.acquire(blocking=False):
         return ("A run is already in progress; wait for it to finish.",) + empty[1:]
     try:
         model, tok, _ = load_engine()
@@ -248,7 +246,7 @@ def run_loop(prompt: str, n: int, *row_vals):
     except Exception as e:  # noqa: BLE001 — surface engine errors in the UI
         return (f"Run failed: {e}",) + empty[1:]
     finally:
-        _run_lock.release()
+        _ENGINE.lock.release()
 
 
 def copy_artifact() -> str:
@@ -364,6 +362,6 @@ if __name__ == "__main__":
         print("[app] NO_MODEL set: serving layout without weights", flush=True)
     else:
         load_engine()
-        print(f"[app] engine warm ({_model_id} rung {_rung_n}); models: "
+        print(f"[app] engine warm ({_ENGINE.model_id} rung {_ENGINE.rung}); models: "
               f"{sorted(_PRESETS)}", flush=True)
     build_demo().launch(server_name="127.0.0.1", server_port=7860)

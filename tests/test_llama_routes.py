@@ -136,12 +136,12 @@ class SweepTest(unittest.TestCase):
         cls._saved_model = server.engine._active_model_id
         cls.eng = _attach(QWEN)
         cls._patcher = mock.patch.object(
-            server, "get_engine", return_value=cls.eng)
+            server.helpers, "get_engine", return_value=cls.eng)
         cls._patcher.start()
         cls.tmp_installs = tempfile.TemporaryDirectory(
             prefix="sweep-installs-")
         cls._patcher2 = mock.patch.object(
-            server.install_mod, "INSTALLS_ROOT",
+            server.helpers.install_mod, "INSTALLS_ROOT",
             Path(cls.tmp_installs.name))
         cls._patcher2.start()
         cls.saved_cli = os.environ.get("LOBOT_LLAMACPP_CLI")
@@ -159,8 +159,8 @@ class SweepTest(unittest.TestCase):
             ts_mod, "DEFAULT_PATH",
             Path(cls.tmp_store.name) / "traits.json")
         cls._patcher3.start()
-        cls._saved_runner = server._runner
-        server._runner = None  # rebuild against the temp store
+        cls._saved_runner = server.STATE.runner
+        server.STATE.runner = None  # rebuild against the temp store
         cls.made_jobs = []
         cls.made_drafts = []
 
@@ -174,7 +174,7 @@ class SweepTest(unittest.TestCase):
         cls._patcher.stop()
         cls._patcher2.stop()
         cls._patcher3.stop()
-        server._runner = cls._saved_runner
+        server.STATE.runner = cls._saved_runner
         if cls.saved_cli is None:
             os.environ.pop("LOBOT_LLAMACPP_CLI", None)
         else:
@@ -267,7 +267,7 @@ class SweepTest(unittest.TestCase):
         jid = self._job("sweep-create-000", "cheerful", 13)
         r = self.client.get(f"/api/create/{jid}")
         self.assertEqual(r.status_code, 200)
-        runner = server._get_runner()
+        runner = server.STATE.get_runner()
         runner._jobs["sweep-live-000"] = SimpleNamespace(
             status="done",
             to_dict=lambda: {"id": "sweep-live-000",
@@ -429,7 +429,7 @@ class SweepTest(unittest.TestCase):
         # run them with Llama active (L12 SAE exists on disk).
         server.engine._active_model_id = LLAMA
         llama_eng = _attach(LLAMA)
-        with mock.patch.object(server, "get_engine",
+        with mock.patch.object(server.helpers, "get_engine",
                                return_value=llama_eng):
             r = self.client.get("/api/feature/12/0")
             self.assertEqual(r.status_code, 501, r.text[:200])

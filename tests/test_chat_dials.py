@@ -95,14 +95,14 @@ class ChatDialsCase(unittest.TestCase):
     def setUp(self):
         self.eng = FakeChatEngine()
         self.patches = [
-            mock.patch.object(server, "NO_MODEL", False),
-            mock.patch.object(server, "get_engine",
+            mock.patch.object(server.STATE, "no_model", False),
+            mock.patch.object(server.helpers, "get_engine",
                               return_value=self.eng),
-            mock.patch.object(server, "_latest_knob",
+            mock.patch.object(server.helpers, "_latest_knob",
                               return_value=_knob()),
-            mock.patch.object(server, "_dial_spec",
+            mock.patch.object(server.helpers, "_dial_spec",
                               side_effect=lambda eng, t: _spec(t)),
-            mock.patch.object(server, "_verified_guard",
+            mock.patch.object(server.helpers, "_verified_guard",
                               return_value=SimpleNamespace(
                                   blocked=False)),
             mock.patch.object(steer, "calibration_cache_key",
@@ -115,14 +115,14 @@ class ChatDialsCase(unittest.TestCase):
         ]
         for p in self.patches:
             p.start()
-        server._chats.clear()
-        self.addCleanup(server._chats.clear)
+        server.STATE.chats.clear()
+        self.addCleanup(server.STATE.chats.clear)
         self.client = TestClient(server.api)
 
     def tearDown(self):
         for p in reversed(self.patches):
             p.stop()
-        server._cancel.clear()
+        server.STATE.cancel.clear()
 
     def _events(self, body):
         r = self.client.post("/api/chat", json=body)
@@ -198,7 +198,7 @@ class DialEventsTest(ChatDialsCase):
                          [{"text": "t1", "value": 0.2}])
 
     def test_unknown_dial_trait_404(self):
-        with mock.patch.object(server, "_latest_knob",
+        with mock.patch.object(server.helpers, "_latest_knob",
                                return_value=None):
             r = self.client.post("/api/chat/start", json={
                 "dial_traits": ["nope"]})
@@ -214,13 +214,13 @@ class WrapTest(unittest.TestCase):
     def test_single_wrap_equals_run_wrap(self):
         tok = FakeTok()
         spec = SimpleNamespace(thinking_kw=False)
-        chat = server._wrap_chat(
+        chat = server.helpers._wrap_chat(
             tok, [{"role": "user", "content": "hi"}], spec)
         run = steer.wrap_prompt_notk(tok, "hi", spec)
         self.assertEqual(chat, run)
         self.assertEqual(tok.calls[0], tok.calls[1])
         think = SimpleNamespace(thinking_kw=True)
-        chat_t = server._wrap_chat(
+        chat_t = server.helpers._wrap_chat(
             tok, [{"role": "user", "content": "hi"}], think)
         run_t = steer.wrap_prompt_notk(tok, "hi", think)
         self.assertEqual(chat_t, run_t)

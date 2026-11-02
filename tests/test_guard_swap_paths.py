@@ -26,13 +26,13 @@ class NoopSwapTest(unittest.TestCase):
             self.assertFalse(hasattr(guards.NoopGuard, name), name)
 
     def test_run_chat_removal_verify_guard_entry(self):
-        # Run, chat, removal and verify all call server._verified_guard.
-        with mock.patch.object(server.guard_mod, "refusal_judge_fn",
+        # Run, chat, removal and verify all call server.helpers._verified_guard.
+        with mock.patch.object(server.helpers.guard_mod, "refusal_judge_fn",
                                return_value=lambda text: 1.0):
-            gv = server._verified_guard(object(), object(), {}, True)
+            gv = server.helpers._verified_guard(object(), object(), {}, True)
         self.assertFalse(gv.blocked)
         self.assertTrue(gv.verified)
-        event = server._guard_event_dict(gv)
+        event = server.helpers._guard_event_dict(gv)
         self.assertFalse(event["blocked"])
         self.assertTrue(event["enforced"])
         self.assertIn("min_ratio", event)

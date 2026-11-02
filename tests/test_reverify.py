@@ -160,13 +160,13 @@ class RouteTest(unittest.TestCase):
         self.jobs_dir = Path(self.tmp.name) / "jobs"
         self.jobs_dir.mkdir()
         from model_lobotomy import create_job
-        server._runner = create_job.CreateRunner(
+        server.STATE.runner = create_job.CreateRunner(
             jobs_dir=self.jobs_dir)
-        self.addCleanup(setattr, server, "_runner", None)
+        self.addCleanup(setattr, server.STATE, "runner", None)
         self.eng = ScriptedEngine()
         self.patches = [
-            mock.patch.object(server, "NO_MODEL", False),
-            mock.patch.object(server, "get_engine",
+            mock.patch.object(server.STATE, "no_model", False),
+            mock.patch.object(server.helpers, "get_engine",
                               return_value=self.eng),
         ]
         for p in self.patches:
@@ -259,7 +259,7 @@ class RouteTest(unittest.TestCase):
         self.assertIn("pickle", r.text)
 
     def test_upload_cap_413(self):
-        big = b"x" * (server.UPLOAD_BYTES_CAP + 1)
+        big = b"x" * (server.helpers.UPLOAD_BYTES_CAP + 1)
         r = self.client.post(
             "/api/verify/upload",
             files={"file": ("big.lobot", big,

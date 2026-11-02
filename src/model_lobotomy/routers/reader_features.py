@@ -1,18 +1,21 @@
-"""Routes: reader_features. Helpers and state live in server (late import)."""
+"""Routes: reader_features. Helpers live in server_helpers. State lives in server_state.STATE."""
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, Query, Request, UploadFile  # noqa: F401
+from fastapi import APIRouter
+from model_lobotomy.server_state import STATE
+from model_lobotomy import server_helpers as helpers
+from model_lobotomy.engine import EditSet
+from model_lobotomy.server_schemas import (FeatureLiftRequest, LiftRequest, NeuronsRequest)
+from fastapi import HTTPException
+from fastapi import Query
+from model_lobotomy.steer import RecipeRow
+from model_lobotomy import app as engine
+from model_lobotomy import guard as guard_mod
+import json
+from model_lobotomy import sae as sae_mod
+from model_lobotomy import steer
 
 router = APIRouter()
-
-
-class _Live:
-    def __getattr__(self, name):
-        from model_lobotomy import server as _server
-        return getattr(_server, name)
-
-
-_live = _Live()
 
 
 @router.post("/api/neurons")
@@ -33,7 +36,7 @@ def neurons(req: NeuronsRequest):
     knob = None
     dose = 1.0
     if req.trait is not None:
-        knob = _latest_knob(req.trait)
+        knob = helpers._latest_knob(req.trait)
         if knob is None:
             raise HTTPException(404, f"No finished Create job for trait "
                                      f"'{req.trait}' with a saved direction. "
@@ -45,14 +48,14 @@ def neurons(req: NeuronsRequest):
         raise HTTPException(400, "reply_char needs a reply and must fall inside it.")
     top_k = min(max(int(req.top_k), 1), 32)
     window = min(max(int(req.window), 0), 16)
-    if _live.REPLAY:
+    if STATE.replay:
         raise HTTPException(503, "Replay mode loads no weights, and the neurons at a word "
                                  "need the model. Restart without MODEL_LOBOTOMY_REPLAY.")
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    _need_torch(get_engine(), "capture")
-    eng = get_engine()
+    helpers._need_torch(helpers.get_engine(), "capture")
+    eng = helpers.get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     try:
@@ -62,23 +65,23 @@ def neurons(req: NeuronsRequest):
         steer.check_preset_binding(preset, engine._active_model_id)
         layers = sorted({r.layer for r in rows}
                         | ({int(knob["layer"])} if knob else set()))
-        medians, _ = _calibrate(eng, layers)
+        medians, _ = helpers._calibrate(eng, layers)
         vec = ()
         if knob is not None:
-            vec = (_trait_vector(
+            vec = (helpers._trait_vector(
                 knob, dose, float(medians[int(knob["layer"])])),)
         edits = EditSet(neuron=EditSet.from_rows(rows).neuron,
                         vector=vec)
-        gv = _verified_guard(
+        gv = helpers._verified_guard(
             eng, edits, medians,
             guard_mod.should_enforce(req.guard, req.research_mode))
         if gv.blocked:
-            return {"blocked": True, "guard": _guard_event_dict(gv)}
+            return {"blocked": True, "guard": helpers._guard_event_dict(gv)}
         wrapped = steer.wrap_prompt_notk(eng.tokenizer, prompt, spec)
-        ids = _token_ids(eng.tokenizer, wrapped)
+        ids = helpers._token_ids(eng.tokenizer, wrapped)
         reply_start = None
         if req.reply:
-            full = _token_ids(eng.tokenizer, wrapped + req.reply)
+            full = helpers._token_ids(eng.tokenizer, wrapped + req.reply)
             reply_start = len(ids)
             for i, (a, b) in enumerate(zip(full, ids)):
                 if a != b:
@@ -87,12 +90,12 @@ def neurons(req: NeuronsRequest):
             ids = full
         token_index = req.token_index
         if req.reply_char is not None:
-            token_index = _reply_token_at(eng.tokenizer, ids, reply_start, req.reply_char)
+            token_index = helpers._reply_token_at(eng.tokenizer, ids, reply_start, req.reply_char)
         if not 1 <= token_index < len(ids):
             raise HTTPException(400, f"token_index {token_index} out of "
                                      f"bounds [1,{len(ids)}).")
         if req.reply:
-            mats = _capture_reply_mats(eng, edits, medians, ids, spec)
+            mats = helpers._capture_reply_mats(eng, edits, medians, ids, spec)
         else:
             # capture() wraps once itself and drops position 0 (BOS):
             # matrix row r is wrapped token r + 1.
@@ -100,7 +103,7 @@ def neurons(req: NeuronsRequest):
                 [prompt], list(range(spec.layers)), edits, medians,
                 point="mlp_in", reduce="none")
             mats = {L: activ[L][0] for L in range(spec.layers)}
-        neurons = _rank_neurons(
+        neurons = helpers._rank_neurons(
             eng, mats, ids, token_index, top_k, window)
         return {"blocked": False, "model_id": engine._active_model_id,
                 "prompt": prompt,
@@ -120,9 +123,9 @@ def neuron_card(layer: int, neuron: int, k: int = Query(12, ge=1, le=50)):
         raise HTTPException(400, f"Neuron L{layer}N{neuron} is out of "
                                  f"bounds [0,{spec.layers})x"
                                  f"[0,{spec.intermediate}).")
-    cache_dir = _live.ROOT / "store" / "reader" / _model_slug(
+    cache_dir = STATE.root / "store" / "reader" / helpers._model_slug(
         engine._active_model_id)
-    if _live.REPLAY:
+    if STATE.replay:
         cards_path = cache_dir / "cards.json"
         if not cards_path.exists():
             raise HTTPException(
@@ -134,23 +137,23 @@ def neuron_card(layer: int, neuron: int, k: int = Query(12, ge=1, le=50)):
             raise HTTPException(
                 404, f"No recorded card for neuron L{layer}N{neuron}.")
         return card
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    _need_torch(get_engine(), "reader")
-    eng = get_engine()
+    helpers._need_torch(helpers.get_engine(), "reader")
+    eng = helpers.get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     try:
         if eng.model is None or eng.model_id != engine._active_model_id:
             eng.load(engine._active_model_id)
-        pushes = _live.reader.pushes_toward(eng, layer, neuron, k=k)
+        pushes = STATE.reader.pushes_toward(eng, layer, neuron, k=k)
         fires, built, tokens = None, False, 0
         if ((cache_dir / "fires_on.npz").exists()
                 and (cache_dir / "sample.json").exists()):
             sample = json.loads((cache_dir / "sample.json").read_text())
             tokens = len(sample.get("tokens", []))
-            fires = _live.reader.fires_on(cache_dir, layer, neuron, k=k)
+            fires = STATE.reader.fires_on(cache_dir, layer, neuron, k=k)
             built = True
         return {"model_id": engine._active_model_id, "layer": layer,
                 "neuron": neuron, "pushes_toward": pushes,
@@ -164,23 +167,23 @@ def find(word: str = "", layers: str | None = None,
          k: int = Query(20, ge=1, le=50)):
     """Neurons that push one word hardest (R2)."""
     spec = engine.active_spec()
-    layer_list = _parse_layers(layers, spec)
+    layer_list = helpers._parse_layers(layers, spec)
     if not word or not word.strip():
         raise HTTPException(400, "The word is empty. Type a word first.")
-    if _live.REPLAY:
+    if STATE.replay:
         raise HTTPException(503, "Find needs the model. Replay mode has no recordings for it.")
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    _need_torch(get_engine(), "reader")
-    eng = get_engine()
+    helpers._need_torch(helpers.get_engine(), "reader")
+    eng = helpers.get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     try:
         if eng.model is None or eng.model_id != engine._active_model_id:
             eng.load(engine._active_model_id)
         try:
-            return _live.reader.find_neurons(eng, word, layer_list, k=k)
+            return STATE.reader.find_neurons(eng, word, layer_list, k=k)
         except ValueError as e:
             raise HTTPException(400, f"{e}.") from None
     finally:
@@ -196,25 +199,25 @@ def lift(req: LiftRequest):
                                  f"[0,{spec.intermediate}).")
     prompts = req.prompts
     if prompts is None:
-        path = _live.ROOT / "store" / "reader" / "lift_prompts.json"
+        path = STATE.root / "store" / "reader" / "lift_prompts.json"
         if not path.exists():
             raise HTTPException(500, "The lift prompts are missing from the server.")
         prompts = json.loads(path.read_text())
-    if _live.REPLAY:
+    if STATE.replay:
         raise HTTPException(503, "Lift needs the model. Replay mode has no recordings for it.")
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    _need_torch(get_engine(), "reader")
-    eng = get_engine()
+    helpers._need_torch(helpers.get_engine(), "reader")
+    eng = helpers.get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     try:
         if eng.model is None or eng.model_id != engine._active_model_id:
             eng.load(engine._active_model_id)
-        medians, _ = _calibrate(eng, [req.layer])
+        medians, _ = helpers._calibrate(eng, [req.layer])
         try:
-            return _live.reader.steer_lift(eng, req.layer, req.neuron, req.dose,
+            return STATE.reader.steer_lift(eng, req.layer, req.neuron, req.dose,
                                      req.words, prompts, medians)
         except ValueError as e:
             raise HTTPException(400, f"{e}.") from None
@@ -225,7 +228,7 @@ def lift(req: LiftRequest):
 def features():
     """Trained SAEs for the active model (F1). No model needed."""
     saes = []
-    for layer, _dir, cfg in _sae_layers():
+    for layer, _dir, cfg in helpers._sae_layers():
         saes.append({
             "model_id": cfg.get("model_id", engine._active_model_id),
             "layer": layer,
@@ -244,25 +247,25 @@ def feature_card(layer: int, index: int, k: int = Query(12, ge=1, le=50)):
     if not 0 <= layer < spec.layers:
         raise HTTPException(400, f"Layer {layer} is out of bounds "
                                  f"[0,{spec.layers}).")
-    found = next((d for L, d, _c in _sae_layers() if L == layer), None)
+    found = next((d for L, d, _c in helpers._sae_layers() if L == layer), None)
     if found is None:
         raise HTTPException(404, f"No trained SAE for layer {layer} on "
                                  f"{engine._active_model_id}. Train one with "
                                  f"scripts/train_sae.py.")
-    if _live.REPLAY:
+    if STATE.replay:
         raise HTTPException(503, "Feature cards need the model. "
                                  "Replay mode has no recordings for them.")
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    _need_torch(get_engine(), "sae")
-    eng = get_engine()
+    helpers._need_torch(helpers.get_engine(), "sae")
+    eng = helpers.get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     try:
         if eng.model is None or eng.model_id != engine._active_model_id:
             eng.load(engine._active_model_id)
-        sae, _cfg = _load_sae_cached(found)
+        sae, _cfg = helpers._load_sae_cached(found)
         if not 0 <= index < sae.features:
             raise HTTPException(400, f"Feature {index} is out of bounds "
                                      f"[0,{sae.features}).")
@@ -278,44 +281,44 @@ def feature_lift(req: FeatureLiftRequest):
     if not 0 <= req.layer < spec.layers:
         raise HTTPException(400, f"Layer {req.layer} is out of bounds "
                                  f"[0,{spec.layers}).")
-    found = next((d for L, d, _c in _sae_layers() if L == req.layer), None)
+    found = next((d for L, d, _c in helpers._sae_layers() if L == req.layer), None)
     if found is None:
         raise HTTPException(404, f"No trained SAE for layer {req.layer} on "
                                  f"{engine._active_model_id}. Train one with "
                                  f"scripts/train_sae.py.")
     prompts = req.prompts
     if prompts is None:
-        path = _live.ROOT / "store" / "reader" / "lift_prompts.json"
+        path = STATE.root / "store" / "reader" / "lift_prompts.json"
         if not path.exists():
             raise HTTPException(500, "The lift prompts are missing from the server.")
         prompts = json.loads(path.read_text())
-    if _live.REPLAY:
+    if STATE.replay:
         raise HTTPException(503, "Feature lift needs the model. "
                                  "Replay mode has no recordings for it.")
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    _need_torch(get_engine(), "sae")
-    eng = get_engine()
+    helpers._need_torch(helpers.get_engine(), "sae")
+    eng = helpers.get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     try:
         if eng.model is None or eng.model_id != engine._active_model_id:
             eng.load(engine._active_model_id)
-        sae, _cfg = _load_sae_cached(found)
+        sae, _cfg = helpers._load_sae_cached(found)
         if not 0 <= req.index < sae.features:
             raise HTTPException(400, f"Feature {req.index} is out of bounds "
                                      f"[0,{sae.features}).")
         words = req.words
         if words is None:
-            words = sae_mod.top_words(_live.reader.pushes_of_direction(
+            words = sae_mod.top_words(STATE.reader.pushes_of_direction(
                 eng, sae_mod.feature_direction(sae, req.index),
                 layer=req.layer))
         if not words:
             raise HTTPException(422, "Give at least one word.")
-        medians, _ = _calibrate(eng, [req.layer])
+        medians, _ = helpers._calibrate(eng, [req.layer])
         try:
-            return _live.reader.steer_lift_vector(
+            return STATE.reader.steer_lift_vector(
                 eng, req.layer, sae_mod.feature_direction(sae, req.index),
                 req.dose, words, prompts, medians)
         except ValueError as e:
