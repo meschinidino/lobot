@@ -1,8 +1,41 @@
 # Public demo (Hugging Face Space)
 
-The public demo runs lobot in replay mode on a public host. It plays
-recorded runs of Llama 3.2 3B Instruct. It needs no weights, no GPU and
-no API key.
+The public demo plays recorded runs of Llama 3.2 3B Instruct. It needs no
+weights, no GPU and no API key. There are two builds:
+
+| Build | Host | Cost |
+|---|---|---|
+| Static (`deploy/static/`) | A static Space. The browser answers the page's API calls from exported files | Free |
+| Docker (`deploy/space/`) | A Docker Space that runs the server in public mode | Needs Hugging Face PRO |
+
+The live demo uses the static build.
+
+## Static build
+
+1. Go to the repo root.
+2. Build the site:
+
+   ```sh
+   deploy/static/build.sh /tmp/lobot-static
+   ```
+
+   `export.py` runs the server in process with replay mode and the public
+   rules below. It saves every read answer the page uses as a JSON file.
+   `static-api.js` loads before the app and answers `api/` calls from
+   these files. Writes answer 403. Local paths become `<repo>` and `~`.
+3. Test it: `python3 -m http.server 7866 --directory /tmp/lobot-static`,
+   then open `http://127.0.0.1:7866`.
+4. Upload it:
+
+   ```sh
+   uv run hf upload <user>/lobot /tmp/lobot-static . --repo-type space
+   ```
+
+The rest of this guide covers the Docker build.
+
+## Docker build
+
+The Docker build runs lobot in replay mode on a public host.
 
 Warnings first:
 - Never set `META_API_KEY` on the Space. The server refuses to start in
@@ -10,7 +43,7 @@ Warnings first:
 - The demo shows the jobs in your local `jobs/` folder. Check that every
   job in it is one you want to publish.
 
-## What the public mode does
+### What the public mode does
 
 `LOBOT_PUBLIC_DEMO=1` turns on these rules:
 
@@ -24,7 +57,7 @@ Warnings first:
 
 `LOBOT_MODEL=meta-llama/Llama-3.2-3B-Instruct` starts the demo on Llama.
 
-## Build the Space folder
+### Build the Space folder
 
 1. Go to the repo root.
 2. Build the folder from the code at `HEAD` and the jobs in `jobs/`:
@@ -37,7 +70,7 @@ Warnings first:
    the folder. It rewrites local paths in the jobs to `/app`. It stops if a
    local path or your key value is still in the folder.
 
-## Test it locally
+### Test it locally
 
 1. Build the image:
 
@@ -54,7 +87,7 @@ Warnings first:
 3. Open `http://127.0.0.1:7865`. The start log says `REPLAY set` and
    `Meta API: off`.
 
-## Deploy
+### Deploy
 
 1. Sign in once: `uv run hf auth login`.
 2. Create a Docker Space on huggingface.co, for example `<user>/lobot`.
