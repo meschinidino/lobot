@@ -116,3 +116,5 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-11-01 20:17 ET  claude  UX2  meta-llama/Llama-3.2-3B-Instruct  end  live UI check done; install check HOLDS after stdin fix
 2026-11-01 20:20 ET  claude  UX3  meta-llama/Llama-3.2-3B-Instruct  start  live UI: removal view, labeling with Muse suggestions
 2026-11-01 20:33 ET  claude  UX3  meta-llama/Llama-3.2-3B-Instruct  end  removal view (noir) and labeling with Muse suggestions done
+2026-11-02 00:32 ET  muse  MOD  meta-llama/Llama-3.2-3B-Instruct  start  live parity: torch Create pirate seed 0 full schedule vs HEADREF
+2026-11-02 01:28 ET  muse  MOD  meta-llama/Llama-3.2-3B-Instruct  end  live parity pirate seed 0: knob L16@0.5, matches FD ref; HEADREF stale (pre-FD rule)

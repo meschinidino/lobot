@@ -689,7 +689,10 @@ class TorchLane:
     def __init__(self, eng, spec):
         self.eng, self.spec = eng, spec
         from model_lobotomy import judges as _judges
-        self._judge = _judges.get_judge("local", raw=self._judge_raw)
+        from model_lobotomy.config import get_settings as _gs
+        _kind = _gs().judge_kind
+        self._judge = (_judges.get_judge("local", raw=self._judge_raw)
+                       if _kind == "local" else _judges.get_judge(_kind))
         self._judged = self._judge._cache
         self._nlls: dict[tuple, float] = {}
 
@@ -1185,6 +1188,7 @@ def baseline_top1(eng, spec, cfg, label, tuning, final,
 
 def _stage_extract(ctx):
     eng, spec, cfg, ext, out, progress, cancel = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["ext"], ctx["out"], ctx["progress"], ctx["cancel"])
+    model_id, revision, trait_name, seed = ctx["model_id"], ctx["revision"], ctx["trait_name"], ctx["seed"]
     t_stage = time.time()
     from model_lobotomy import prompt_bank as bank_mod
     cc_path = capture_cache_path(ROOT / "store", model_id, trait_name,
@@ -1266,6 +1270,7 @@ def _stage_read_gate(ctx):
 
 def _stage_final(ctx):
     eng, spec, cfg, frozen, med, fin, out, cancel, progress, params, base_cache, lane, timings = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["frozen"], ctx["med"], ctx["fin"], ctx["out"], ctx["cancel"], ctx["progress"], ctx["params"], ctx["base_cache"], ctx["lane"], ctx["timings"])
+    ext = ctx["ext"]
     t_stage = time.time()
     frozen_unit = frozen["unit"]
     frozen_layer = frozen["layer"]
@@ -1396,6 +1401,7 @@ def _stage_guard(ctx):
 def _stage_verdict(ctx):
     eng, spec, trait_name, seed, workdir, out, timings, frozen, med, fin, t0 = (ctx["eng"], ctx["spec"], ctx["trait_name"], ctx["seed"], ctx["workdir"], ctx["out"], ctx["timings"], ctx["frozen"], ctx["med"], ctx["fin"], ctx["t0"])
     cards, gv = ctx["cards"], ctx["gv"]
+    cfg = ctx["cfg"]
     elig = eligible_verbs(out["read_gate"]["pass"], cards)
     if gv.blocked:
         elig = dict(elig)
@@ -1436,6 +1442,13 @@ STAGE_FUNCS = {
 }
 
 
+def _ports() -> dict:
+    from model_lobotomy.config import get_settings
+    s = get_settings()
+    return {"guard": s.guard_kind, "judge": s.judge_kind,
+            "direction": s.direction_kind, "dose_rule": s.dose_rule_kind}
+
+
 def run_trait(eng, spec, trait_name, bank, seed, workdir,
               model_id, revision, cancel=None, progress=None,
               guard=False, research_mode=False, schedule="full",
@@ -1462,13 +1475,15 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
            "judge": judge_info("local", model_id, None),
            "lane": lane.info(),
            "splits": {"extraction": ext, "tuning": tun, "final": fin,
-                      "reserve": splits.reserve}}
+                      "reserve": splits.reserve},
+           "ports": _ports()}
     ctx = {"eng": eng, "spec": spec, "trait_name": trait_name,
            "seed": seed, "workdir": workdir, "cancel": cancel,
            "progress": progress, "guard_flag": guard,
            "research_mode": research_mode, "params": params,
            "lane": lane, "pareto_flag": pareto, "cfg": cfg,
            "ext": ext, "tun": tun, "fin": fin, "med": med,
+           "model_id": model_id, "revision": revision,
            "out": out, "base_cache": BaseCache(), "timings": {},
            "t0": t0, "stop": False}
     from model_lobotomy.create import stages as _stages

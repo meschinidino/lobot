@@ -17,7 +17,8 @@ from pathlib import Path
 from model_lobotomy import patch as patch_mod
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-INSTALLS_ROOT = ROOT / "jobs" / "installs"
+from model_lobotomy import jobs_store as _jobs_store
+INSTALLS_ROOT = _jobs_store.default_jobs_dir() / "installs"
 
 TARGETS = ("llamacpp", "ollama")
 INSTALL_TIMEOUT = 300
