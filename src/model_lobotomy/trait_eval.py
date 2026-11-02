@@ -421,6 +421,9 @@ class Judge:
     def score(self, question: str, reply: str, rubric: str) -> float:
         raise NotImplementedError
 
+    def score_many(self, pairs, label) -> list[float]:
+        return [self.score(q, r, label) for q, r in pairs]
+
 
 class LocalJudge(Judge):
     """The frozen local judge: judge_score with bound model pieces."""
@@ -684,7 +687,9 @@ class TorchLane:
 
     def __init__(self, eng, spec):
         self.eng, self.spec = eng, spec
-        self._judged: dict[tuple, float] = {}
+        from model_lobotomy import judges as _judges
+        self._judge = _judges.get_judge("local", raw=self._judge_raw)
+        self._judged = self._judge._cache
         self._nlls: dict[tuple, float] = {}
 
     def info(self) -> dict:
@@ -699,10 +704,9 @@ class TorchLane:
         return out
 
     def judge_many(self, pairs, label) -> list[float]:
-        keys = [(q, r, label) for q, r in pairs]
-        todo = list(dict.fromkeys(k for k in keys if k not in self._judged))
-        self._judged.update(zip(todo, self._judge_raw(todo)))
-        return [self._judged[k] for k in keys]
+        return self._judge.score_many(pairs, label)
+
+    score_many = judge_many
 
     def nll_many(self, pairs) -> list[float]:
         keys = [(q, r) for q, r in pairs]

@@ -67,6 +67,22 @@ The 404 check for unknown jobs stays in `_trait_job_dir`.
 Tests: before 706, after 708 (`OK, skipped=5`). New: 2 tests.
 Parity: replay and live not run. Numbers did not change.
 
-## Phases 4 to 10
+## Phase 4: Judge port
+
+- New package: `src/model_lobotomy/judges/__init__.py`.
+- One interface: `score_many(pairs, label) -> list[float]`.
+- The memo cache lives in `MemoJudge`. It dedupes pairs per run.
+- `TorchLane` and `LlamaLane` score through it. They keep
+  `judge_many` as the old name.
+- The guard frozen judges, `refusal_judge_fn` and re-verify
+  `judge_fn_for` go through `get_judge("local", ...)`.
+- `MetaApiJudge` gains `score_many` from the `Judge` base.
+- New setting: `LOBOT_JUDGE` (`local`, `meta_api`, `fake`).
+- Contract tests run the same checks on fake and local judges.
+
+Tests: before 708, after 714 (`OK, skipped=5`). New: 6 tests.
+Parity: replay and live not run. Scores did not change.
+
+## Phases 5 to 10
 
 Not started. Each phase gets its own branch and pull request.
