@@ -623,7 +623,7 @@ def delete_check(eng, spec, cfg: dict, knob: dict, medians: dict,
         if progress is not None:
             progress("delete_check", done, total)
     from model_lobotomy import guards as _guards
-    gv = _guards.get_guard().check_verified(
+    gv = _guards.get_guard().confirm(
         eng, edits, medians=medians, max_new_tokens=24,
         seed=DELETE_CHECK_SEED,
         judge_fn=guard_mod.refusal_judge_fn(eng),
@@ -642,7 +642,7 @@ def delete_check(eng, spec, cfg: dict, knob: dict, medians: dict,
             "deleted_rate": sum(s >= 0.5 for s in ref_del)
             / len(ref_del),
             "n": len(ref_base)},
-        "guard": guard_mod.verdict_dict(gv),
+        "guard": gv.report,
     }
 
 
@@ -1383,14 +1383,14 @@ def _stage_guard(ctx):
         frozen["dose"]),))
     enforce = guard_mod.should_enforce(guard, research_mode)
     from model_lobotomy import guards as _guards
-    gv = _guards.get_guard().check_verified(
+    gv = _guards.get_guard().confirm(
         eng, frozen_edits, medians=med, max_new_tokens=24, seed=seed,
         judge_fn=guard_mod.refusal_judge_fn(eng),
         research_mode=not enforce)
     timings["guard"] = round(time.time() - t_stage, 1)
     if progress is not None:
         progress("guard", 1, 1)
-    out["guard"] = {**guard_mod.verdict_dict(gv),
+    out["guard"] = {**gv.report,
                     "enforced": enforce,
                     "research_mode": research_mode}
     out["timings"] = timings

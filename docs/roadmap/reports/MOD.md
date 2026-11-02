@@ -235,3 +235,27 @@ wired in this session.
 - Replay: not run. No route or screen changed.
 - Browser: not run. This PR touches no `web/` or router file.
 - Live weights: not run. Unit tests and fakes only.
+
+## Fix 2: Guard port callers (stacked PR 2)
+
+- Every caller in `server.py`, `combine.py`, `trait_eval.py` and
+  `followups.py` uses `get_guard()` plus `screen()` or `confirm()`.
+- Scripts `gate_guard.py`, `parity_llama.py` and `lobot_registry.py`
+  (file: `scripts/lobot_registry.py`) use the same port.
+- `GuardPortVerdict` carries `report` and `screen_reports`.
+- Those fields hold the old JSON shapes, so files do not change.
+- `confirm(screens=[...])` runs full generation on named screens.
+- `confirm(confirmed=True)` runs the always-full confirmed check.
+- The forwarded `check*` methods on `ScreensV2Guard` are gone.
+- The old-style methods on `NoopGuard` are gone.
+- New tests: `tests/test_guard_swap_paths.py` (6 tests).
+- With `LOBOT_GUARD=noop`, they run run/chat/removal/verify (all
+  through `server._verified_guard`), Create, combine, follow-ups
+  and the delete-check guard entry. No path blocks.
+- Tests: `Ran 743 tests, OK (skipped=5)`.
+- Pyflakes on touched files: clean, except one pre-existing
+  re-export in `followups.py`. Fix 4 removes that alias.
+- Full pyflakes: not clean yet. The routers hold the undefined
+  names. Fix 3 removes them.
+- Browser: not run. This PR touches no `web/` or router file.
+- Live weights: not run. Unit tests and fakes only.

@@ -19,7 +19,6 @@ from model_lobotomy import audit
 from model_lobotomy import engine as engine_mod
 from model_lobotomy import evaluation as E
 from model_lobotomy import guard as guard_mod
-from model_lobotomy import guard_screens as screens_mod
 from model_lobotomy import pareto as pareto_mod
 from model_lobotomy import patch as patch_mod
 from model_lobotomy import repair as repair_mod
@@ -99,26 +98,20 @@ def repair_job(eng, workdir, lane=None, *, method="gradient", cancel=None,
 
     def guard_fn(unit, dose, screens):
         trait_eval._check(cancel)
-        ed, out = edits(unit, dose), {}
-        for name in screens:
-            if name == "refusal":
-                v = guard_mod.refusal_entry(g.check_full(
-                    eng, ed, medians={}, max_new_tokens=GUARD_TOKENS,
-                    seed=seed, judge_fn=judge))[1]
-            else:
-                v = g.check_screen(eng, ed, name, medians={},
-                                   max_new_tokens=GUARD_TOKENS, seed=seed)
-            out[name] = screens_mod.screen_dict(
-                name, v, guard_mod.SCREEN_DISPLAY[name])
+        ed = edits(unit, dose)
+        v = g.confirm(eng, ed, screens=list(screens), medians={},
+                      max_new_tokens=GUARD_TOKENS, seed=seed,
+                      judge_fn=judge)
+        out = v.screen_reports
         log(f"guard dose {dose:g}: {repair_mod.flagged(out) or 'clean'}")
         return out
 
     def confirm_fn(unit, dose):
         trait_eval._check(cancel)
-        v = g.check_confirmed(eng, edits(unit, dose), medians={},
-                              max_new_tokens=GUARD_TOKENS, seed=seed,
-                              judge_fn=judge)
-        verdict = {**guard_mod.verdict_dict(v), "enforced": False,
+        v = g.confirm(eng, edits(unit, dose), medians={},
+                      max_new_tokens=GUARD_TOKENS, seed=seed,
+                      judge_fn=judge, confirmed=True)
+        verdict = {**v.report, "enforced": False,
                    "research_mode": False, "confirmed": True}
         log(f"confirmed dose {dose:g}: would_block={v.would_block}")
         step()

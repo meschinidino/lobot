@@ -239,12 +239,9 @@ class DeleteCheckFnTest(unittest.TestCase):
                     "model_lobotomy.guard.refusal_judge_fn",
                     return_value=lambda text: 1.0), \
                 mock.patch(
-                    "model_lobotomy.guard.Guard") as guard_cls, \
-                mock.patch(
-                    "model_lobotomy.guard.verdict_dict",
-                    return_value={"blocked": False}):
-            guard_cls.return_value.check_verified.return_value = (
-                SimpleNamespace(blocked=False))
+                    "model_lobotomy.guards.get_guard") as get_guard:
+            get_guard.return_value.confirm.return_value = (
+                SimpleNamespace(blocked=False, report={"blocked": False}))
             out = T.delete_check(
                 eng, spec, cfg, knob, {3: 1.0},
                 [f"q{i}" for i in range(120)],
