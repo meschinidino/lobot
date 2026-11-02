@@ -276,6 +276,23 @@ mark.ink { background: transparent; color: inherit; font-weight: 700; text-decor
 .vb { display: inline-flex; gap: 8px; align-items: center; font: 700 14px var(--body); }
 .vb .stroke { display: inline-block; }
 .kv2.tight { margin-top: 0; }
+.ways > li { align-items: start; }
+.ruled.agent > li { align-items: start; }
+.labels > li.lab { align-items: start; }
+.labels .bt, .chat .bt { font: 400 17px/1.45 var(--body); margin: 4px 0 0; max-width: 70ch; overflow-wrap: anywhere; }
+.chat { margin-top: 16px; max-width: 900px; max-height: 60vh; overflow-y: auto; border-top: 1px solid var(--grid); }
+.msg { position: relative; padding: 12px 0; border-bottom: 1px solid var(--grid); }
+.msg .bl { font-size: 13px; color: var(--ink-muted); }
+.msg.user { padding-left: 0; }
+.msg.bot { padding-left: 16px; border-left: 2px solid var(--ink); }
+.msg.dialed .bt { line-height: 2.4; }
+.msg .cstrip { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.legend { margin-top: 24px; max-width: 900px; border-top: 1px solid var(--grid); padding-top: 12px; }
+.legend summary { cursor: pointer; font: 700 14px var(--body); min-height: 32px; }
+.legend summary:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.legend dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 12px 0 0; font-size: 14px; }
+.legend dd { margin: 0; }
+.keyhelp { margin: 4px 0 0; max-width: 72ch; font-size: 14px; color: var(--ink-muted); }
 .shelf h2 > span { display: inline-flex; gap: 8px; }
 @media (max-width: 720px) { .ex { grid-template-columns: minmax(0, 1fr); } .exdial { justify-self: center; text-align: center; } }
 .kv2 { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 24px; margin-top: 16px; max-width: 900px; font-size: 14px; }
@@ -323,6 +340,7 @@ dialog h2 { font: 800 28px/1 var(--display); font-stretch: 75%; margin: 0 0 12px
           <span class="state info" id="guardKey"></span>
           <button class="link meta" type="button" id="researchBtn">Research mode…</button>
           <button class="btn" type="button" id="shareBtn" disabled>Share card</button>
+          <button class="btn" type="button" id="chatBtn">Chat with these edits</button>
           <span class="meta" id="plan"></span>
         </div>
       </div>
@@ -464,7 +482,7 @@ const active = (j) => j.status === "queued" || j.status === "running";
 function behaviors() {
   const mine = S.jobs.filter((j) => j.model_id === S.model);
   const ver = {}, out = [];
-  if (S.traits) for (const t of S.traits) out.push({ id: t.id, name: t.family, version: t.version, verdict: t.verdict, guard: t.guard || {}, cards: t.cards || {}, dose: t.dose, layer: t.layer, patch: t.patch, created: t.created, ev: t.evidence || {} });
+  if (S.traits) for (const t of S.traits) out.push({ id: t.id, name: t.family, version: t.version, verdict: t.verdict, guard: t.guard || {}, cards: t.cards || {}, dose: t.dose, layer: t.layer, patch: t.patch, created: t.created, ev: t.evidence || {}, del: !!t.delete_eligible });
   else for (const j of mine.filter((j) => j.status === "done").sort((a, b) => a.created - b.created)) {
     ver[j.trait] = (ver[j.trait] || 0) + 1;
     out.push({ id: j.id, name: j.trait, version: ver[j.trait], verdict: j.verdict, guard: j.guard || {}, cards: {}, dose: j.frozen?.dose, layer: j.frozen?.layer, patch: null, created: j.created });
@@ -476,8 +494,9 @@ function behaviors() {
     b.newest = newest[b.name] === b;
     [b.kind, b.key, b.usable] = b.verdict === "blocked" || b.guard.blocked
       ? (S.research ? ["warn", "BLOCKED", true] : ["err", "GUARD", false])
-      : b.guard.would_block ? ["warn", "GUARD", true]
       : b.verdict !== "knob" ? ["warn", "NO KNOB", false]
+      : b.guard.would_block ? ["warn", "GUARD", true]
+      : b.cards.update_up && !b.cards.update_up.passed ? ["warn", "INCREASE FAIL", true]
       : b.cards.update_down && !b.cards.update_down.passed ? ["warn", "DECREASE FAIL", true] : ["ok", "PASS", true];
   }
   return { saved: out.filter((b) => b.newest).sort((a, b) => b.created - a.created), all: out, running: mine.filter(active) };
@@ -486,7 +505,7 @@ function renderBehaviors() {
   const B = behaviors(), cur = S.page && S.page.id;
   const run = B.running.map((j) => { const i = STAGES.findIndex(([k]) => k === j.stage) + 1;
     return `<div class="beh"><button class="open" type="button" data-job="${esc(j.id)}" aria-current="${cur === j.id}"><b>${esc(j.trait)}</b><span class="state info">${j.status === "queued" ? "QUEUED" : `CREATING ${i}/${NST}`}</span></button><span></span></div>`; });
-  const saved = B.saved.map((b) => `<div class="beh${b.usable ? "" : " dim"}"><button class="open" type="button" data-beh="${esc(b.id)}" aria-current="${cur === b.id}" aria-label="Evidence for ${esc(b.name)} v${b.version}"><b>${esc(b.name)}</b><span class="meta">v${b.version}</span> <span class="state ${b.kind}">${b.key}</span></button>
+  const saved = B.saved.map((b) => `<div class="beh${b.usable ? "" : " dim"}"><button class="open" type="button" data-beh="${esc(b.id)}" aria-current="${cur === b.id}" aria-label="Evidence for ${esc(b.name)} v${b.version}"><b>${esc(b.name)}</b><span class="meta">v${b.version}</span> <span class="state ${b.kind}" title="${esc(KEY_HELP[b.key] || "")}">${b.key}</span></button>
     <button class="btn btn-sm" type="button" data-use="${esc(b.id)}" ${!b.usable || S.running || S.rows.some((r) => r.trait === b.name) ? "disabled" : ""} aria-label="Use ${esc(b.name)} in the sentence">Use</button></div>`);
   const noCreate = S.state?.replay ? "Replay mode loads no weights, so Create is off." : S.state?.no_model ? "The server runs without weights, so Create is off." : "";
   $("behaviors").innerHTML = run.join("") + saved.join("") || (!S.api ? `<p class="empty">Behaviors load from the server.</p>`
@@ -508,6 +527,9 @@ $("behaviors").addEventListener("click", (e) => {
 });
 $("newBeh").addEventListener("click", () => openPage({ kind: "new" }));
 $("libBtn").addEventListener("click", () => openPage({ kind: "library" }));
+$("chatBtn").addEventListener("click", () => openPage({ kind: "chat" }));
+$("vPage").addEventListener("keydown", (e) => { if (e.target.id === "chatIn" && e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); chatSend(); } });
+new ResizeObserver(() => { if (S.page?.kind === "chat") requestAnimationFrame(drawChatStrips); }).observe($("vPage"));
 $("models").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-model]"); if (!b || b.getAttribute("aria-disabled") === "true" || b.dataset.model === S.model) return;
   b.querySelector(".meta").textContent = "switching";
@@ -923,12 +945,13 @@ async function stream(url, body, onEvent) {
 }
 const setupKey = () => `${S.model}|${rowsKey(S.rows)}`;
 const creating = () => S.jobs.find(active);
-function blockedMsg(g) {
+// what: the words for the edit set the guard checked (default: the sentence's edits).
+function blockedMsg(g, what = editsText(S.rows)) {
   const pct = (x) => Math.round(x * 100) + "%", where = g.display_prompt ? ` on “${g.display_prompt}”` : "";
   // The first-token check passed, so the block came from the full-answer confirm step.
   if (g.min_ratio != null && g.min_ratio >= (g.limit ?? 0.5))
-    return `The refusal guard blocked ${editsText(S.rows)}. The first-token check passed (refusal at ${pct(g.min_ratio)} of its usual level; the limit is ${pct(g.limit ?? 0.5)}), but in the full-answer check ${g.blocked_prompts?.length > 1 ? `${g.blocked_prompts.length} test prompts` : "a test prompt"} no longer got a refusal. Lower the dose, or use Research mode.`;
-  return `The refusal guard blocked ${editsText(S.rows)}. With these edits, the model's chance of refusing fell to ${g.min_ratio != null ? pct(g.min_ratio) : "under half"} of its usual level${where}; the limit is ${pct(g.limit ?? 0.5)}. Lower the dose, or use Research mode.`;
+    return `The refusal guard blocked ${what}. The first-token check passed (refusal at ${pct(g.min_ratio)} of its usual level; the limit is ${pct(g.limit ?? 0.5)}), but in the full-answer check ${g.blocked_prompts?.length > 1 ? `${g.blocked_prompts.length} test prompts` : "a test prompt"} no longer got a refusal. Lower the dose, or use Research mode.`;
+  return `The refusal guard blocked ${what}. With these edits, the model's chance of refusing fell to ${g.min_ratio != null ? pct(g.min_ratio) : "under half"} of its usual level${where}; the limit is ${pct(g.limit ?? 0.5)}. Lower the dose, or use Research mode.`;
 }
 async function run(fan = false) {
   if (S.running) return;
@@ -1292,6 +1315,27 @@ function explainSection(id) {
     : `<div class="row2"><button class="btn" type="button" data-explain="${esc(id)}" ${x?.busy ? "disabled" : ""}>${x?.busy ? "Writing…" : "Explain with Muse"}</button><span class="meta">${x?.err ? esc(x.err) : "Muse Spark reads only this report's numbers and writes a short explanation. It needs META_API_KEY on the server."}</span></div>`}`;
 }
 
+// What each state key means. One sentence each, shown in legends and as hover text.
+const KEY_HELP = {
+  "PASS": "Create found a dose that passed its checks, and no other key applies. Open the evidence for each verb.",
+  "INCREASE FAIL": "Create found a dose, but turning the behavior up did not pass its held-out report card. You can still try it.",
+  "DECREASE FAIL": "Turning the behavior up passed, but turning it down (the negative dose) did not pass its report card.",
+  "GUARD": "A guard check would block this patch: for example, it weakened refusals of harmful requests. It is recorded, not enforced, so you can still use it with care. Red means the guard blocked it, and it cannot be used.",
+  "BLOCKED": "The guard blocked this patch. Research mode lets you use it anyway; every run records that.",
+  "NO KNOB": "Create found no layer and dose that passed its checks. Nothing was saved to use.",
+  "FAIL": "The held-out report card failed. The reason is printed under it.",
+  "NOT TESTED": "This verb was not measured in this run.",
+  "KNOB BETTER": "The patch gives more effect with fewer side effects than a plain prompt.",
+  "PROMPT BETTER": "A plain prompt gives more effect with fewer side effects than the patch at every dose.",
+  "NO CLEAR WINNER": "Neither wins on both: one gives more effect, the other costs less.",
+  "NOT FLUENT": "The judge scores the replies at this dose as not fluent text. A high trait score there can come from broken words.",
+  "FLAGGED": "This guard check would block the patch.",
+  "OK": "This guard check passed.",
+};
+const SHELF_KEYS = ["PASS", "INCREASE FAIL", "DECREASE FAIL", "GUARD", "NO KNOB"];
+function legend(keys, open = false) {
+  return `<details class="legend"${open ? " open" : ""}><summary>What the keys mean</summary><dl>${keys.map((k) => `<dt><span class="state ${k === "PASS" || k === "KNOB BETTER" || k === "OK" ? "ok" : k === "NO CLEAR WINNER" || k === "NOT TESTED" ? "info" : "warn"}">${k}</span></dt><dd>${esc(KEY_HELP[k])}</dd>`).join("")}</dl></details>`;
+}
 // Library: every behavior on this model, newest version first, with where it stands against its own prompt.
 function libraryPage() {
   const all = behaviors().all, fams = [...new Set(all.map((b) => b.name))];
@@ -1312,7 +1356,175 @@ function libraryPage() {
         ${e.repair ? `<span>Repair</span><span>${Object.entries(e.repair).map(([m, s]) => `<span class="state ${s === "repaired" ? "ok" : "warn"}">${m.toUpperCase()} ${String(s).toUpperCase()}</span>`).join(" ")}</span>` : ""}</div>
     </div><span class="state ${b.kind}">${b.key}</span></li>`; }).join("");
   return `<p class="lead">${newest.length} behavior${newest.length === 1 ? "" : "s"} on <span class="mono">${esc(short(S.model))}</span>, newest version of each. Against a plain prompt: ${cnt("vector_dominates")} beat it on effect and side effects, ${cnt("tradeoff")} trade off, ${cnt("prompt_dominates")} lose to it, and ${none} ${none === 1 ? "has" : "have"} no comparison yet.</p>
+    ${legend([...SHELF_KEYS, "KNOB BETTER", "NO CLEAR WINNER", "PROMPT BETTER", "NOT FLUENT", "FLAGGED"], true)}
     <ol class="ruled library">${rows}</ol>`;
+}
+/* ---------- 100X on screen: describe in words, the agent, self-labeling, chat, and evidence actions ---------- */
+const errText = async (r) => { const b = await r.json().catch(() => ({})); return typeof b.detail === "string" ? b.detail : b.detail?.reason || `The server returned HTTP ${r.status}.`; };
+const AG = { list: null, runs: {}, err: "" }; // agent runs (list and per run status)
+const DR = {}; // drafts: id -> { draft, suggest, result, err, busy }
+const AGENT_KEY = { running: ["info", "RUNNING"], done: ["ok", "DONE"], stopped: ["warn", "STOPPED"], out_of_rounds: ["warn", "OUT OF ROUNDS"], refused: ["err", "REFUSED"], failed: ["err", "FAILED"] };
+function describeBox() {
+  const off = noWeights() || (S.state?.no_model ? "This server runs without weights." : "");
+  return `<h2 class="sec" style="margin-top:24px">Describe a behavior</h2>
+    <p class="lead">Write the behavior in plain words. Two ways to build it, and both end in the same held-out report card:</p>
+    <label class="label" for="descIn" style="margin-top:12px">Behavior</label><textarea id="descIn" class="field" rows="2" spellcheck="true" placeholder="for example: talks like a nervous museum tour guide">${esc(S.descDraft || "")}</textarea>
+    <ol class="ruled ways"><li><div><b>Let Muse build it.</b><br><span class="meta">Muse Spark drafts the contrast prompts and the judge question, the model writes 20 replies, Muse labels them, and the local judge must agree on at least 85% before Create runs. If a gate fails, Muse may rewrite the description, up to 3 rounds. Needs META_API_KEY on the server.</span></div><button class="btn" type="button" data-agent-start ${off || creating() ? "disabled" : ""}>Let Muse build it</button></li>
+      <li><div><b>Label it yourself.</b><br><span class="meta">The loaded model drafts the parts and writes 20 replies. You mark each one: does it show the behavior? The judge must agree with you on at least 85%. Then you start Create.</span></div><button class="btn" type="button" data-draft-start ${off ? "disabled" : ""}>Label it yourself</button></li></ol>
+    <label class="meta" style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="laneIn" ${S.agentLane !== "torch" ? "checked" : ""}> Run Create on the llama.cpp lane (about 8 to 13 min instead of about 35)</label>
+    <p class="meta" role="alert" id="descErr" style="color:var(--error)">${esc(off ? `${off} Start the server with weights to build a behavior.` : AG.err || "")}</p>
+    ${agentList()}`;
+}
+function agentList() {
+  if (!AG.list?.length) return "";
+  return `<h3 class="sub">Muse runs</h3><ol class="ruled">${AG.list.map((a) => { const k = AGENT_KEY[a.status] || ["info", String(a.status || "").toUpperCase()];
+    return `<li><div><button class="link" type="button" data-agent="${esc(a.run_id)}">${esc(a.description || a.run_id)}</button><br><span class="meta">${a.family ? `family ${esc(a.family)}` : "no family yet"}${a.job_id ? " · patch on the shelf" : ""}</span></div><span class="state ${k[0]}">${k[1]}</span></li>`; }).join("")}</ol>`;
+}
+async function loadAgents() { try { AG.list = (await getJSON("api/agents")).agents; } catch { AG.list = []; } }
+function stepRow(st) {
+  const rk = st.round ? `<span class="meta">round ${st.round}</span> ` : "";
+  switch (st.step) {
+    case "draft": { const p = st.parts || {};
+      return [`Muse drafted the behavior`, `${rk}“${esc(st.description || "")}”<div class="kv2 tight" style="margin-top:8px"><span>Steered prompt</span><span>${esc(p.pos || "")}</span><span>Neutral prompt</span><span>${esc(p.neg || "")}</span><span>Judge asks</span><span>“${esc(p.judge || "")}”</span><span>Prompt baselines</span><span>${(p.baselines || []).length}</span></div>`, ["ok", "DONE"]]; }
+    case "labels": return [`${st.by === "muse" ? "Muse" : "You"} labeled ${st.n} replies`, `${rk}${st.missing?.length ? `${st.missing.length} not labeled` : "every reply labeled"}`, ["ok", "DONE"]];
+    case "validate": return [`The local judge checked the labels`, `${rk}agreement <span class="mono">${(st.agreement ?? 0).toFixed(2)}</span>, gate <span class="mono">${(st.gate ?? 0.85).toFixed(2)}</span>`, st.passed ? ["ok", "PASS"] : ["warn", "FAIL"]];
+    case "register": return [`Registered the family`, `<span class="mono">${esc(st.family || "")}</span>`, ["ok", "DONE"]];
+    case "create": return [`Create ran`, `${rk}${esc(st.family || "")} · ${st.seconds ? mins(st.seconds) : ""}${st.unavailable ? ` · ${esc(st.unavailable)}` : ""}`, st.verdict === "knob" ? ["ok", "KNOB"] : st.verdict === "blocked" ? ["err", "GUARD"] : ["warn", "NO KNOB"]];
+    case "explain": return [`Muse explained the report`, `<span class="explain-s">${esc(st.text || "").replace(/\n/g, "<br>")}</span>`, ["ok", "DONE"]];
+    case "explain_failed": return [`Muse could not explain the report`, esc(st.error || ""), ["warn", "SKIPPED"]];
+    case "decide": return [st.action === "redraft" ? "Muse rewrote the description" : "The agent stopped", `${rk}${esc(st.reason || st.why || "")}${st.description ? `<br>new description: “${esc(st.description)}”` : ""}`, st.action === "redraft" ? ["info", "REDRAFT"] : ["warn", "STOP"]];
+    case "refused": return [`The description was refused`, esc(st.reason || ""), ["err", "REFUSED"]];
+    default: return [esc(st.step), "", ["info", "STEP"]];
+  }
+}
+function agentPage(id) {
+  const a = AG.runs[id]; if (!a) return `<p class="meta">Loading the run.</p>`;
+  const k = AGENT_KEY[a.status] || ["info", String(a.status).toUpperCase()], live = a.status === "running", res = a.result || {};
+  const rows = (a.steps || []).map((st) => { const [t, d, key] = stepRow(st); return `<li><div><b>${t}</b><br><span class="meta">${d}</span></div><span class="state ${key[0]}">${key[1]}</span></li>`; }).join("");
+  return `<p><span class="state ${k[0]}">${k[1]}</span> <span class="meta">${esc(res.description || a.description || "")}</span></p>
+    ${live ? `<div class="row2"><button class="btn" type="button" data-agent-stop="${esc(id)}">Stop</button><span class="meta">The run stops between steps. The server keeps working if you close this page.</span></div>` : ""}
+    <ol class="ruled stages agent">${rows || `<li><div><b>Starting</b><br><span class="meta">Muse is drafting the behavior.</span></div><span class="state info">NOW</span></li>`}${live && rows ? `<li class="wait"><div><b>Working</b><br><span class="meta">next step in progress</span></div><span class="state info">NOW</span></li>` : ""}</ol>
+    ${a.error ? `<p class="empty" style="color:var(--error)">${esc(a.error)}</p>` : ""}
+    ${a.job_id ? `<div class="row2"><button class="btn" type="button" data-beh="${esc(a.job_id)}">Open evidence</button><span class="meta">The patch is on the shelf.</span></div>` : ""}
+    ${res.muse?.usage ? `<p class="meta">Muse usage: ${res.muse.usage.calls} calls, ${res.muse.usage.input_tokens} input and ${res.muse.usage.output_tokens} output tokens (${esc(res.muse.model || "")}).</p>` : ""}`;
+}
+function draftPage(id) {
+  const x = DR[id]; if (!x?.draft) return `<p class="meta">Loading the draft.</p>`;
+  const d = x.draft, p = d.parts || {}, reps = d.replies || [], n = reps.filter((r) => r.label != null).length, sug = x.suggest || {};
+  const row = (r, i) => { const s = sug[r.reply_id];
+    return `<li class="lab"><div><span class="meta">${i + 1}. “${esc(r.prompt)}”</span><p class="bt">${esc(r.reply)}</p>${s != null && r.label == null ? `<span class="meta">Muse suggests: ${s ? "shows it" : "does not"}</span>` : ""}</div>
+      <div class="row2" role="group" aria-label="Does reply ${i + 1} show the behavior?"><button class="btn btn-sm" type="button" data-lab="${esc(r.reply_id)}" data-v="1" aria-pressed="${r.label === true}">Shows it</button><button class="btn btn-sm" type="button" data-lab="${esc(r.reply_id)}" data-v="0" aria-pressed="${r.label === false}">Does not</button></div></li>`; };
+  const v = x.result;
+  return `<p class="lead">“${esc(d.description)}”</p>
+    <div class="kv2"><span>Steered prompt</span><span>${esc(p.pos || "")}</span><span>Neutral prompt</span><span>${esc(p.neg || "")}</span><span>Judge asks</span><span>“${esc(p.judge || "")}”</span></div>
+    <h2 class="sec">Label the replies</h2><p class="lead">Does each reply show the behavior? Half the replies come from the steered prompt and half from the neutral one; the page does not say which. <span class="mono">${n}</span> of <span class="mono">${reps.length}</span> labeled.</p>
+    <div class="row2"><button class="btn" type="button" data-draft-suggest="${esc(id)}" ${x.busy ? "disabled" : ""}>Ask Muse for suggestions</button>${Object.keys(sug).length ? `<button class="btn" type="button" data-draft-accept="${esc(id)}">Accept the remaining suggestions</button>` : ""}<span class="meta">Suggestions are not saved until you accept them.</span></div>
+    <ol class="ruled labels">${reps.map(row).join("")}</ol>
+    <div class="row2"><button class="btn" type="button" data-draft-validate="${esc(id)}" ${n < reps.length || x.busy ? "disabled" : ""}>Check the judge</button><span class="meta">${n < reps.length ? "Label every reply first." : "The judge scores the same replies. It must agree with you on at least 85%."}</span></div>
+    ${x.err ? `<p class="meta" role="alert" style="color:var(--error)">${esc(x.err)}</p>` : ""}
+    ${v ? v.registered ? `<p><span class="state ok">REGISTERED</span> The judge agreed on <span class="mono">${(v.agreement ?? 0).toFixed(2)}</span>. Family <span class="mono">${esc(v.family)}</span> is ready.</p><div class="row2"><button class="btn" type="button" data-create="${esc(v.family)}">Create it now</button></div>`
+      : `<p><span class="state warn">BELOW THE GATE</span> The judge agreed on <span class="mono">${(v.agreement ?? 0).toFixed(2)}</span> (gate ${(v.gate ?? 0.85).toFixed(2)}). ${v.disagreements?.length ? `It disagreed on ${v.disagreements.length} repl${v.disagreements.length === 1 ? "y" : "ies"}.` : ""} Try a clearer description, or check your labels.</p>` : ""}`;
+}
+
+// Chat: the sentence's edits stay on across turns; a "read" behavior draws its channel strip under every reply.
+const CH = { sid: null, key: null, turns: [], busy: false, err: "" };
+const chatKey = () => `${S.model}|${rowsKey(S.rows)}|${S.read || ""}|${S.research}`;
+function chatPage() {
+  const beh = S.rows.find(isB), neu = S.rows.filter((r) => !isB(r));
+  const edits = S.rows.length ? S.rows.map((r) => `<span class="mono">${esc(eid(r))} ${fd(r.dose)}</span>`).join(", ") : "no edit";
+  const msgs = CH.turns.map((t, i) => t.role === "user" ? `<div class="msg user"><span class="bl mono">you</span><p class="bt">${esc(t.text)}</p></div>`
+    : `<div class="msg bot${t.dial ? " dialed" : ""}" data-i="${i}"><span class="bl mono">model${t.blocked ? " · blocked by the guard" : ""}</span><p class="bt">${t.dial ? t.dial.map((x, j) => `<span class="w" data-v="${x.value}" data-i="${j}">${esc(x.text)}</span>`).join("") : esc(t.text || "")}${t.live ? '<span class="redact" style="width:3ch"></span>' : ""}</p>${t.live && !t.text && i === 1 ? `<p class="meta">Before the first reply, the guard checks these edits with full generation on every screen. That can take a few minutes; the result is kept for these edits.</p>` : ""}<svg class="cstrip" aria-hidden="true"></svg></div>`).join("");
+  return `<p class="lead">On <span class="mono">${esc(short(S.model))}</span> with ${edits}${S.read ? `, reading <span class="mono">${esc(S.read)}</span>` : ""}. The edits stay on for every turn. Change them in the sentence on the tree; a change starts a new chat.${S.research ? " Research mode: the guard is off." : ""}</p>
+    ${neu.length && beh ? `<p class="meta">A chat uses one behavior or neurons, not both.</p>` : ""}
+    ${beh && S.read === beh.trait ? `<p class="note"><span class="state info">SAME DIRECTION</span> You read the behavior you push. The reading includes the push itself, so it sits high from the first word. Read another behavior to see a side effect.</p>` : ""}
+    <div class="chat" id="chatLog" aria-live="polite">${msgs || `<p class="empty">Write a message. The model answers with the edits on${S.read ? `, and the pen line under each reply reads ${esc(S.read)} word by word (band: 0 = neutral, 1 = the behavior's mean)` : ""}.</p>`}</div>
+    ${CH.err ? `<p class="meta" role="alert" style="color:var(--error)">${esc(CH.err)}</p>` : ""}
+    <label class="label" for="chatIn" style="margin-top:16px">Message</label><textarea id="chatIn" class="field" rows="2" spellcheck="true" ${CH.busy ? "disabled" : ""}></textarea>
+    <div class="row2"><button class="btn btn-primary" type="button" id="chatSend" ${CH.busy || noWeights() ? "disabled" : ""}>Send <kbd class="kbd">⌘ Enter</kbd></button><button class="btn" type="button" id="chatNew" ${CH.busy || !CH.turns.length ? "disabled" : ""}>New chat</button><span class="meta">${noWeights() ? `${noWeights()} Chat needs weights.` : ""}</span></div>`;
+}
+function drawChatStrips() {
+  for (const m of document.querySelectorAll(".msg.dialed")) { const svg = m.querySelector(".cstrip"), box = m.getBoundingClientRect(); svg.setAttribute("width", box.width); svg.setAttribute("height", box.height); svg.innerHTML = strip(m.querySelector(".bt"), box, false); }
+}
+async function chatSend() {
+  const msg = $("chatIn").value.trim(); if (!msg || CH.busy) return;
+  if (CH.key !== chatKey()) { CH.sid = null; CH.turns = []; }
+  CH.busy = true; CH.err = ""; CH.turns.push({ role: "user", text: msg }); const bot = { role: "bot", text: "", live: true }; CH.turns.push(bot); renderPage();
+  try {
+    if (!CH.sid) {
+      const beh = S.rows.find(isB), r = await postJSON("api/chat/start", { rows: beh ? [] : S.rows.map((x) => ({ layer: x.layer, neuron: x.neuron, dose: x.dose })), trait: beh ? beh.trait : null, dose: beh ? beh.dose : null,
+        dial_traits: S.read ? [S.read] : [], guard: !S.research, research_mode: S.research, max_new_tokens: 150 });
+      if (!r.ok) throw new Error(await errText(r));
+      CH.sid = (await r.json()).session_id; CH.key = chatKey();
+    }
+    await stream("api/chat", { session_id: CH.sid, message: msg }, (ev) => {
+      if (ev.stage === "token") { bot.text += ev.text; const el = document.querySelector(`.msg[data-i="${CH.turns.length - 1}"] .bt`); if (el) el.textContent = bot.text; }
+      else if (ev.stage === "blocked") { bot.blocked = true; bot.text = blockedMsg(ev.guard); }
+      else if (ev.stage === "done") { const d = ev.result || {}; bot.text = d.reply ?? bot.text; const ds = d.dials && S.read ? d.dials[S.read] : null; if (ds && ds.length) bot.dial = ds; return true; }
+      return false;
+    });
+  } catch (e) { CH.err = e.message; if (!bot.text) CH.turns.splice(-2, 2); }
+  bot.live = false; CH.busy = false; renderPage();
+  if (CH.err && !bot.text && $("chatIn")) $("chatIn").value = msg; // a failed send keeps the message
+  $("chatIn")?.focus();
+}
+
+// Evidence actions: re-check on this machine, remove the behavior on one prompt, install into llama.cpp or Ollama.
+const ACT = {}; // per job: { verify, del, targets, install, iverify }
+function actionsSection(R, id, b) {
+  const a = ACT[id] || (ACT[id] = {}), off = noWeights(), v = a.verify, d = a.del;
+  const vOut = !v ? "" : v.busy ? `<p class="meta">Re-checking: <span class="mono">${v.done ?? 0}</span> of <span class="mono">${v.total ?? "?"}</span> prompts.</p>` : v.err ? `<p class="meta" style="color:var(--error)">${esc(v.err)}</p>`
+    : `<p><span class="state ${v.res.pass ? "ok" : "warn"}">${v.res.pass ? "HOLDS" : "DOES NOT HOLD"}</span> Measured ${num(v.res.measured_mean)} on <span class="mono">${v.res.n}</span> held-out prompts; the patch shipped ${num(v.res.shipped_mean)} ${ci(v.res.shipped_ci)}. ${v.res.pass ? "The measured mean is inside the shipped interval." : "The measured mean is outside the shipped interval."}</p>`;
+  const col = (c, base, cls) => `<div class="br"><div class="bl mono">${c.mode === "on" ? "behavior removed" : "as is"}</div><p class="bt">${base != null && c.mode === "on" ? markSplit(c.text, base, cls) : esc(c.text)}</p></div>`;
+  const dOut = !d ? "" : d.busy ? `<p class="meta">Running. The guard first checks the removal with full generation, which can take a few minutes; then both answers stream.</p>` : d.err ? `<p class="meta" style="color:var(--error)">${esc(d.err)}</p>`
+    : `<div class="fork">${col(d.cols[0], null)}${col(d.cols[1], d.cols[0].text, "ink")}</div><p class="meta">Same prompt, same seed. The direction is removed at layer ${d.layer ?? "?"}; the first changed word is underlined.</p>`;
+  const t = a.targets, ins = a.install, iv = a.iverify;
+  const tOut = !t ? "" : t.err ? `<p class="meta" style="color:var(--error)">${esc(t.err)}</p>` : `<ol class="ruled screens">${t.list.map((x) => `<li><div><b>${x.target === "llamacpp" ? "llama.cpp" : "Ollama"}</b><br><span class="meta">${esc(x.version || x.detail || "")}</span>
+      ${x.available ? `<div class="row2"><label style="flex:1;min-width:220px"><span class="meta">${x.target === "llamacpp" ? "Path to the model GGUF" : "Ollama base model"}</span><input class="num" type="text" spellcheck="false" id="mref-${x.target}" style="font-family:var(--mono)" placeholder="${x.target === "llamacpp" ? "models/llama-3.2-3b-instruct-f16.gguf" : "llama3.2:3b"}"></label><button class="btn btn-sm" type="button" data-install="${x.target}" data-id="${esc(id)}" ${ins?.busy ? "disabled" : ""}>Install</button></div>` : ""}</div>
+      <span class="state ${x.available ? "ok" : "info"}">${x.available ? "FOUND" : "NOT FOUND"}</span></li>`).join("")}</ol>`;
+  const iOut = !ins ? "" : ins.busy ? `<p class="meta">Installing.</p>` : ins.err ? `<p class="meta" style="color:var(--error)">${esc(ins.err)}</p>`
+    : `<p><span class="state ok">INSTALLED</span> ${esc(ins.res.detail || "")}</p>${ins.res.run ? `<div class="copyrow"><div><span class="label">Run it</span><p class="meta v" id="irun-${esc(id)}" style="margin:0">${esc(runLine(ins.res.run))}</p></div><button class="btn btn-sm" type="button" data-copy-el="irun-${esc(id)}">Copy</button></div>` : ""}
+      <div class="row2"><button class="btn btn-sm" type="button" data-iverify="${esc(ins.res.install_id)}" data-id="${esc(id)}" ${iv?.busy ? "disabled" : ""}>Check the installed patch</button><span class="meta">Runs 16 of the patch's own held-out prompts in ${ins.res.target === "llamacpp" ? "llama.cpp" : "Ollama"}, with and without it, and judges them here.</span></div>
+      ${!iv ? "" : iv.busy ? `<p class="meta">Checking the installed patch.</p>` : iv.err ? `<p class="meta" style="color:var(--error)">${esc(iv.err)}</p>` : `<p><span class="state ${iv.res.comparison?.pass ? "ok" : "warn"}">${iv.res.comparison?.pass ? "HOLDS" : "DOES NOT HOLD"}</span> measured ${num(iv.res.comparison?.measured_mean)} on ${iv.res.comparison?.n} prompts; shipped ${ci(iv.res.comparison?.shipped_ci)}.</p>`}`;
+  return `<h2 class="sec">Use it elsewhere</h2>
+    <h3 class="sub">Re-check on this machine</h3><p class="meta">Re-runs 16 of the patch's held-out prompts on the loaded model and compares the effect with the interval the patch shipped with.</p>
+    <div class="row2"><button class="btn" type="button" data-verify="${esc(id)}" ${off || v?.busy || !b?.patch ? "disabled" : ""}>Re-check</button>${off ? `<span class="meta">${off}</span>` : !b?.patch ? `<span class="meta">Only a patch can be re-checked.</span>` : ""}</div>${vOut}
+    ${b?.del && !b.newest ? `<h3 class="sub">Remove it from one answer</h3><p class="meta">Removing runs on the newest version of ${esc(b.name)}. Open the newest version to try it.</p>` : ""}
+    ${b?.del && b.newest ? `<h3 class="sub">Remove it from one answer</h3><p class="meta">Removes the behavior's direction from the model on one prompt, next to the answer as is.</p>
+    <label class="label" for="delIn-${esc(id)}">Prompt</label><textarea class="field" rows="1" id="delIn-${esc(id)}">${esc(a.delPrompt || "Tell me about the ocean.")}</textarea>
+    <div class="row2"><button class="btn" type="button" data-del="${esc(id)}" ${off || d?.busy ? "disabled" : ""}>Run with it removed</button>${off ? `<span class="meta">${off}</span>` : ""}</div>${dOut}` : ""}
+    <h3 class="sub">Install into llama.cpp or Ollama</h3><p class="meta">Exports the patch as a control vector for the tool you run models with. Nothing is sent anywhere.</p>
+    <div class="row2"><button class="btn" type="button" data-targets="${esc(id)}" ${!b?.patch ? "disabled" : ""}>Find install targets</button></div>${tOut}${iOut}`;
+}
+// The install's run line: llama.cpp gives {base_cmd, steer_flags}; Ollama gives a string or a list.
+const quoteArg = (x) => (/[\s"'$]/.test(x) ? `'${String(x).replace(/'/g, "'\\''")}'` : String(x));
+function runLine(run) {
+  if (!run) return "";
+  if (typeof run === "string") return run;
+  if (Array.isArray(run)) return run.map(quoteArg).join(" ");
+  if (run.base_cmd) return [...run.base_cmd, ...(run.steer_flags || []), "-p", "Tell me about the ocean."].map(quoteArg).join(" ");
+  return JSON.stringify(run);
+}
+async function actVerify(id) {
+  const a = ACT[id]; a.verify = { busy: true }; renderPage();
+  try { await stream("api/verify", { trait_id: id, quick: true }, (ev) => {
+      if (ev.stage === "progress") { a.verify.done = ev.done; a.verify.total = ev.total; renderPage(); }
+      else if (ev.stage === "done") { a.verify = ev.result && ev.result.measured_mean != null ? { res: ev.result } : { err: ev.result?.error || "The check returned no result." }; return true; }
+      return false; });
+  } catch (e) { a.verify = { err: e.message }; }
+  if (a.verify.busy) a.verify = { err: "The check stopped before it finished." };
+  renderPage();
+}
+async function actDelete(id, name) {
+  const a = ACT[id]; a.delPrompt = $(`delIn-${id}`)?.value.trim() || "Tell me about the ocean."; a.del = { busy: true }; renderPage();
+  const cols = [{ mode: "off", text: "" }, { mode: "on", text: "" }];
+  try { await stream("api/delete", { prompt: a.delPrompt, trait: name, guard: !S.research, research_mode: S.research, max_new_tokens: 120 }, (ev) => {
+      if (ev.stage === "token") cols[ev.col].text += ev.text;
+      else if (ev.stage === "blocked") throw new Error(blockedMsg(ev.guard, `removing ${name}`).replace(" Lower the dose, or use Research mode.", " Removing a direction can also remove part of the model's refusals. Research mode runs it anyway and records that."));
+      else if (ev.stage === "done") { const r = ev.result || {}; a.del = { cols: r.columns || cols, layer: r.layer }; return true; }
+      return false; });
+  } catch (e) { a.del = { err: e.message }; }
+  if (a.del.busy) a.del = { err: "The run stopped before it finished." };
+  renderPage();
 }
 // Every version of this behavior on this model, newest first; the open one is marked.
 function versionsSection(name, id) {
@@ -1348,7 +1560,8 @@ async function renderPage(first = false) {
   if (p.kind === "new") {
     if (!S.families) { el.innerHTML = top("New behavior") + `<p class="meta">Loading the families.</p>`; try { S.families = (await getJSON("api/families")).families; } catch (e) { el.innerHTML = top("New behavior") + `<p class="empty">The families did not load (${esc(e.message)}).</p>`; return; } }
     const job = creating(), llama = /llama-3\.2-3b/i.test(S.model || "");
-    el.innerHTML = top("New behavior") + `<p class="lead">Create builds a behavior on <span class="mono">${esc(short(S.model))}</span> from a validated family: contrast prompts, a direction, a layer and dose, a held-out final check, and a report card. Only families with a hand-validated judge can pass.</p>
+    if (!AG.list) await loadAgents();
+    el.innerHTML = top("New behavior") + describeBox() + `<h2 class="sec">Or start from a validated family</h2><p class="lead">Create builds a behavior on <span class="mono">${esc(short(S.model))}</span> from a validated family: contrast prompts, a direction, a layer and dose, a held-out final check, and a report card. Only families with a hand-validated judge can pass.</p>
       <p class="meta">${llama ? "About 50 min on Llama 3.2 3B, measured on one run." : "Not measured on this model yet."} The server keeps working if you close this page. Run is off while Create works.${job ? ` One Create at a time: ${esc(job.trait)} is running.` : ""}</p>
       <ol class="ruled">${S.families.map((f) => { const ok = f.hand_validated, v = f.validation || {};
         return `<li class="${ok ? "" : "off"}"><div><b class="name">${esc(f.name)}</b>${f.aliases?.length ? ` <span class="meta">also ${esc(f.aliases.join(", "))}</span>` : ""}<br>
@@ -1400,16 +1613,26 @@ async function renderPage(first = false) {
         ${guardSection(R)}
         ${repairSection(R, p.id)}
         ${versionsSection(name, p.id)}
+        ${actionsSection(R, p.id, b)}
         ${explainSection(p.id)}
         <h2 class="sec">Record</h2>
         <div class="kv2"><span>Judge</span><span>${fam ? `“${esc(fam.judge)}” · agreement <span class="mono">${fam.validation?.agreement?.toFixed(2) ?? "n/a"}</span> on ${fam.validation?.hand_labels ?? "?"} hand labels` : "unknown"}</span>
           <span>Model fingerprint</span><span class="mono">${esc(!R.fingerprint ? "not recorded" : typeof R.fingerprint === "string" ? R.fingerprint : Object.entries(R.fingerprint).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join("; "))}</span>
           <span>Create time</span><span class="mono">${R.seconds ? mins(R.seconds) : "n/a"}</span></div>`;
     }
-    el.innerHTML = top(esc(name) + (b ? ` <span class="meta">v${b.version}</span>` : "")) + (b ? `<p><span class="state ${b.kind}">${b.key}</span> <span class="meta"><span class="mono">${esc(short(S.model))}</span>${b.created ? `, created ${new Date(b.created * 1000).toLocaleDateString()}` : ""}</span></p>` : "") + actions + body;
+    el.innerHTML = top(esc(name) + (b ? ` <span class="meta">v${b.version}</span>` : "")) + (b ? `<p><span class="state ${b.kind}">${b.key}</span> <span class="meta"><span class="mono">${esc(short(S.model))}</span>${b.created ? `, created ${new Date(b.created * 1000).toLocaleDateString()}` : ""}</span></p><p class="keyhelp">${esc(KEY_HELP[b.key] || "")}</p>` : "") + actions + body + legend([...SHELF_KEYS, "FAIL", "NOT TESTED", "KNOB BETTER", "NO CLEAR WINNER", "PROMPT BETTER", "NOT FLUENT"]);
     wireExplorer(p.id);
   } else if (p.kind === "library") {
     el.innerHTML = top("Library") + libraryPage();
+  } else if (p.kind === "agent") {
+    if (!AG.runs[p.id] || AG.runs[p.id].status === "running") { try { AG.runs[p.id] = await getJSON(`api/agent/${encodeURIComponent(p.id)}`); } catch (e) { AG.runs[p.id] = AG.runs[p.id] || { status: "failed", error: e.message, steps: [] }; } if (S.page !== p) return; }
+    el.innerHTML = top("Muse builds a behavior") + agentPage(p.id);
+  } else if (p.kind === "draft") {
+    el.innerHTML = top("Label it yourself") + draftPage(p.id);
+  } else if (p.kind === "chat") {
+    el.innerHTML = top("Chat") + chatPage();
+    const log = $("chatLog"); if (log) log.scrollTop = log.scrollHeight;
+    requestAnimationFrame(drawChatStrips);
   }
   if (first) $("pageH")?.focus(); else if (keep && $(keep)) $(keep).focus();
 }
@@ -1425,6 +1648,63 @@ $("vPage").addEventListener("click", async (e) => {
       if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : `HTTP ${r.status}`);
       S.jobs.push(body); openPage({ kind: "create", id: body.job_id }); update();
     } catch (err) { b.disabled = false; $("newErr").textContent = `Create did not start: ${err.message}`; }
+  } else if (t.closest("[data-agent-start]")) {
+    const desc = $("descIn").value.trim(); S.descDraft = desc; S.agentLane = $("laneIn").checked ? "llama" : "torch";
+    if (!desc) { AG.err = "Write a behavior first."; return renderPage(); }
+    const btn = t.closest("[data-agent-start]"); btn.disabled = true; AG.err = "";
+    try { const r = await postJSON("api/agent", { description: desc, lane: S.agentLane, max_rounds: 3 }); if (!r.ok) throw new Error(await errText(r));
+      const body = await r.json(); AG.runs[body.run_id] = { status: "running", steps: [], description: desc }; AG.list = null; openPage({ kind: "agent", id: body.run_id });
+    } catch (err) { AG.err = err.message; renderPage(); }
+  } else if (t.closest("[data-agent]")) { openPage({ kind: "agent", id: t.closest("[data-agent]").dataset.agent });
+  } else if (t.closest("[data-agent-stop]")) { t.closest("[data-agent-stop]").disabled = true; try { await postJSON(`api/agent/${encodeURIComponent(S.page.id)}/stop`, {}); } catch { /* the next poll shows it */ }
+  } else if (t.closest("[data-draft-start]")) {
+    const desc = $("descIn").value.trim(); S.descDraft = desc;
+    if (!desc) { AG.err = "Write a behavior first."; return renderPage(); }
+    const btn = t.closest("[data-draft-start]"); btn.disabled = true; btn.textContent = "Drafting…"; AG.err = "";
+    try { const r = await postJSON("api/drafts", { description: desc, drafter: "local" }); if (!r.ok) throw new Error(await errText(r));
+      const d = await r.json(); DR[d.id] = { draft: { ...d, replies: d.replies.map((x) => ({ ...x, label: null })) } }; openPage({ kind: "draft", id: d.id });
+    } catch (err) { AG.err = err.message; renderPage(); }
+  } else if (t.closest("[data-lab]")) {
+    const b2 = t.closest("[data-lab]"), x = DR[S.page.id], rid = b2.dataset.lab, val = b2.dataset.v === "1";
+    try { const r = await postJSON(`api/drafts/${encodeURIComponent(S.page.id)}/labels`, { labels: [{ reply_id: rid, label: val }] }); if (!r.ok) throw new Error(await errText(r));
+      const rep_ = x.draft.replies.find((y) => y.reply_id === rid); if (rep_) rep_.label = val; x.err = ""; x.result = null;
+    } catch (err) { x.err = err.message; }
+    renderPage(); document.querySelector(`[data-lab="${rid}"][data-v="${val ? 1 : 0}"]`)?.focus();
+  } else if (t.closest("[data-draft-suggest]")) {
+    const x = DR[S.page.id]; x.busy = true; renderPage();
+    try { const r = await postJSON(`api/drafts/${encodeURIComponent(S.page.id)}/prelabel`, {}); if (!r.ok) throw new Error(await errText(r)); x.suggest = (await r.json()).suggestions || {}; x.err = ""; } catch (err) { x.err = err.message; }
+    x.busy = false; renderPage();
+  } else if (t.closest("[data-draft-accept]")) {
+    const x = DR[S.page.id], rows = x.draft.replies.filter((y) => y.label == null && x.suggest?.[y.reply_id] != null).map((y) => ({ reply_id: y.reply_id, label: !!x.suggest[y.reply_id] }));
+    try { const r = await postJSON(`api/drafts/${encodeURIComponent(S.page.id)}/labels`, { labels: rows }); if (!r.ok) throw new Error(await errText(r)); for (const y of rows) x.draft.replies.find((z) => z.reply_id === y.reply_id).label = y.label; } catch (err) { x.err = err.message; }
+    renderPage();
+  } else if (t.closest("[data-draft-validate]")) {
+    const x = DR[S.page.id]; x.busy = true; renderPage();
+    try { const r = await postJSON(`api/drafts/${encodeURIComponent(S.page.id)}/validate`, {}), body = await r.json().catch(() => ({}));
+      if (r.ok) { x.result = body; S.families = null; } else if (body.registered === false) x.result = body; else if (body.detail && typeof body.detail === "object") x.result = body.detail; else throw new Error(typeof body.detail === "string" ? body.detail : `HTTP ${r.status}`);
+      x.err = "";
+    } catch (err) { x.err = err.message; }
+    x.busy = false; renderPage();
+  } else if (t.closest("[data-verify]")) { actVerify(t.closest("[data-verify]").dataset.verify);
+  } else if (t.closest("[data-del]")) { const id = t.closest("[data-del]").dataset.del; actDelete(id, behaviors().all.find((x) => x.id === id)?.name);
+  } else if (t.closest("[data-targets]")) {
+    const id = t.closest("[data-targets]").dataset.targets, a = ACT[id];
+    try { a.targets = { list: (await getJSON("api/install/targets")).targets }; } catch (err) { a.targets = { err: `The targets did not load (${err.message}).` }; }
+    renderPage();
+  } else if (t.closest("[data-install]")) {
+    const btn = t.closest("[data-install]"), id = btn.dataset.id, target = btn.dataset.install, a = ACT[id], ref = $(`mref-${target}`)?.value.trim();
+    if (!ref) { a.install = { err: "Give the model reference first." }; return renderPage(); }
+    a.install = { busy: true }; renderPage();
+    try { const r = await postJSON("api/install", { trait_id: id, target, model_ref: ref }); if (!r.ok) throw new Error(await errText(r)); a.install = { res: await r.json() }; } catch (err) { a.install = { err: err.message }; }
+    renderPage();
+  } else if (t.closest("[data-iverify]")) {
+    const btn = t.closest("[data-iverify]"), id = btn.dataset.id, a = ACT[id]; a.iverify = { busy: true }; renderPage();
+    try { const r = await postJSON(`api/install/${encodeURIComponent(btn.dataset.iverify)}/verify`, { prompt: "", judge: "local", judged_n: 16 }); if (!r.ok) throw new Error(await errText(r)); a.iverify = { res: await r.json() }; } catch (err) { a.iverify = { err: err.message }; }
+    renderPage();
+  } else if (t.closest("[data-copy-el]")) {
+    try { await navigator.clipboard.writeText($(t.closest("[data-copy-el]").dataset.copyEl).textContent); $("live").textContent = "Copied."; } catch { $("live").textContent = "Copy failed. Select the text and copy it by hand."; }
+  } else if (t.closest("#chatSend")) { chatSend();
+  } else if (t.closest("#chatNew")) { CH.sid = null; CH.turns = []; CH.err = ""; renderPage();
   } else if (t.closest("[data-exq]")) {
     const id = S.page.id, R = reports[id]; if (!R?.pareto) return;
     exState(R, id).qi = Number(t.closest("[data-exq]").dataset.exq); setExDose(id, exState(R, id).d);
@@ -1459,6 +1739,11 @@ async function loadBehaviors() {
   try { S.jobs = (await getJSON("api/jobs")).jobs; } catch { S.jobs = []; }
   try { S.traits = (await getJSON(`api/traits?model_id=${encodeURIComponent(S.model)}`)).traits; } catch { S.traits = null; }
 }
+setInterval(async () => {
+  if (!S.api || S.page?.kind !== "agent" || AG.runs[S.page.id]?.status !== "running") return;
+  await renderPage();
+  if (AG.runs[S.page.id]?.status !== "running") { AG.list = null; await loadBehaviors(); renderShelf(); }
+}, 2000);
 // A follow-up (prompt comparison, repair) for the open evidence page is queued or running.
 const fuLive = () => { const R = S.page?.kind === "behavior" && reports[S.page.id]; return !!R && Object.values(R.followups || {}).some((st) => st && (st.status === "running" || st.status === "queued")); };
 const alertMsg = (btn, msg) => { const p = document.createElement("p"); p.className = "meta"; p.setAttribute("role", "alert"); p.style.color = "var(--error)"; p.textContent = `It did not start: ${msg}`; btn.closest(".row2")?.after(p); btn.disabled = false; };

@@ -444,3 +444,15 @@ class InstallCompareTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SubprocessStdinTest(unittest.TestCase):
+    def test_run_closes_stdin(self):
+        # llama-cli waits for the next chat turn on an open stdin; the
+        # server's stdin stays open, so every call must close it.
+        import subprocess
+        from unittest import mock
+        with mock.patch.object(subprocess, "run") as run:
+            I._run(["llama-cli", "--version"], 5)
+        self.assertIs(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
+        self.assertEqual(run.call_args.kwargs["timeout"], 5)
