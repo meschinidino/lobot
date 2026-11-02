@@ -11,7 +11,6 @@ The log path is LOBOT_AUDIT_LOG, else ~/.lobot/audit.jsonl.
 from __future__ import annotations
 
 import json
-import os
 import time
 from pathlib import Path
 
@@ -23,11 +22,11 @@ GENESIS = "0" * 64
 def log_path(log=None) -> Path:
     if log is not None:
         return Path(log)
-    env = os.environ.get("LOBOT_AUDIT_LOG")
-    if env:
-        return Path(env)
-    return Path(os.environ.get("LOBOT_HOME", Path.home() / ".lobot")) \
-        / "audit.jsonl"
+    from model_lobotomy.config import get_settings
+    s = get_settings()
+    if s.audit_log:
+        return Path(s.audit_log)
+    return s.lobot_home / "audit.jsonl"
 
 
 def _line_hash(entry: dict) -> str:

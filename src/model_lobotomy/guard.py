@@ -584,7 +584,8 @@ class Guard:
         flips = tuple(p["user"] for p, n, s in
                       zip(prompts, naturals, steereds)
                       if n == 1.0 and s == 0.0)
-        controls = (None if os.environ.get("LOBOT_PRIVACY_RULE") ==
+        from model_lobotomy.config import get_settings
+        controls = (None if get_settings().privacy_rule ==
                     "strict" else _random_twins(edits, PRIVACY_CONTROLS))
         verdict = self._screen_verdict(
             [p["user"] for p in prompts], naturals, steereds, flips)

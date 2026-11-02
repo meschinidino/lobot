@@ -91,11 +91,13 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 WEB = ROOT / "web"
-NO_MODEL = bool(os.environ.get("MODEL_LOBOTOMY_NO_MODEL"))
+from model_lobotomy.config import get_settings as _get_settings
+_SETTINGS = _get_settings()
+NO_MODEL = _SETTINGS.no_model
 # Replay mode loads no weights: /api/run answers only setups that were
 # recorded (web/example.json, web/sweep*.json) and refuses everything else.
-REPLAY = bool(os.environ.get("MODEL_LOBOTOMY_REPLAY"))
-REPLAY_STAGE_S = float(os.environ.get("MODEL_LOBOTOMY_REPLAY_STAGE_S", "0.4"))
+REPLAY = _SETTINGS.replay
+REPLAY_STAGE_S = _SETTINGS.replay_stage_s
 MAX_DOSES = 8  # Update filmstrip columns per request
 # Set by /api/stop; cleared by /api/run and /api/update before the stream
 # starts, so a Stop that lands before the stream takes the lock still
@@ -221,7 +223,8 @@ api.add_middleware(SameOriginOnly)
 
 def _guard_default() -> bool:
     """Default for "guard" in run/update/create (S1 demo default)."""
-    return os.environ.get("LOBOT_GUARD_DEFAULT") == "1"
+    from model_lobotomy.config import get_settings
+    return get_settings().guard_default
 
 
 class Row(BaseModel):
@@ -3125,4 +3128,5 @@ if __name__ == "__main__":
         engine.load_engine()
         print(f"[server] engine warm ({engine._model_id}); models: "
               f"{sorted(engine._PRESETS)}", flush=True)
-    uvicorn.run(api, host="127.0.0.1", port=int(os.environ.get("PORT", 7860)))
+    from model_lobotomy.config import get_settings
+    uvicorn.run(api, host="127.0.0.1", port=get_settings().port)

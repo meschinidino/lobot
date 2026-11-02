@@ -33,15 +33,13 @@ class GpuBusy(RuntimeError):
 
 
 def slots() -> int:
-    try:
-        return max(0, int(os.environ.get("LOBOT_GPU_SLOTS", "1")))
-    except ValueError:
-        return 1
+    from model_lobotomy.config import get_settings
+    return get_settings().gpu_slots
 
 
 def _dir() -> Path:
-    home = Path(os.environ.get("LOBOT_HOME", Path.home() / ".lobot"))
-    return home / "gpu"
+    from model_lobotomy.config import get_settings
+    return get_settings().lobot_home / "gpu"
 
 
 def _holder(path: Path) -> str:
@@ -65,7 +63,8 @@ def acquire(what: str) -> bool:
         return True
     d = _dir()
     d.mkdir(parents=True, exist_ok=True)
-    wait = os.environ.get("LOBOT_GPU_WAIT") == "1"
+    from model_lobotomy.config import get_settings
+    wait = get_settings().gpu_wait
     while True:
         for i in range(n):
             path = d / f"slot-{i}.lock"

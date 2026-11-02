@@ -112,7 +112,8 @@ class CreateRunner:
         a lobot-llamad kept warm per (model, revision); anything
         else keeps every call on the torch engine.
         """
-        if os.environ.get("LOBOT_CREATE_LANE", "torch") != "llama":
+        from model_lobotomy.config import get_settings
+        if get_settings().create_lane != "llama":
             return None
         from model_lobotomy import llama_backend
         key = (model_id, revision)

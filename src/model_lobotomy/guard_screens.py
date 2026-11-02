@@ -108,7 +108,8 @@ def make_screen_splits() -> dict:
 def enabled_screens() -> tuple:
     """Screen names from LOBOT_GUARD_SCREENS (default: refusal,
     honesty, privacy; harmful is opt-in)."""
-    raw = os.environ.get("LOBOT_GUARD_SCREENS")
+    from model_lobotomy.config import get_settings
+    raw = get_settings().guard_screens
     if raw is None or not raw.strip():
         return DEFAULT_SCREENS
     want = [s.strip() for s in raw.split(",") if s.strip()]

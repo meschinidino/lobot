@@ -465,12 +465,13 @@ class MetaApiJudge(Judge):
     def __init__(self, key=None, model=None, n_samples=10,
                  temperature=1.0, reasoning_effort="low",
                  timeout=180, max_retries=3, backoff=1.0):
-        key = key if key is not None else os.environ.get("META_API_KEY", "")
+        from model_lobotomy.config import get_settings
+        _s = get_settings()
+        key = key if key is not None else _s.meta_api_key
         if not key.strip():
             raise MetaApiError("META_API_KEY is not set")
         self._key = key.strip()
-        model = model if model is not None else os.environ.get(
-            "LOBOT_JUDGE_MODEL", "")
+        model = model if model is not None else _s.judge_model
         self.model = model.strip() or META_JUDGE_MODEL_DEFAULT
         self.n_samples = n_samples
         self.temperature = temperature

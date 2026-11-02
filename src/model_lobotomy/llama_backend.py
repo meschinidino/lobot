@@ -259,7 +259,7 @@ def torch_vocab_size(model_id: str, tok) -> int:
 
 
 def resolve_gguf(model_id: str, revision: str,
-                 ) -> tuple[Path, dict]:
+                 quant: str | None = None) -> tuple[Path, dict]:
     """(GGUF path, sidecar) for one model + revision + quant.
 
     Layout: models/<slug>/<rev12>-<quant>.gguf plus a .json sidecar
@@ -267,7 +267,8 @@ def resolve_gguf(model_id: str, revision: str,
     from LOBOT_LLAMA_QUANT (default f16). Missing files fail with
     the exact convert command; nothing converts inside load().
     """
-    quant = os.environ.get("LOBOT_LLAMA_QUANT", "f16")
+    from model_lobotomy.config import get_settings
+    quant = quant or get_settings().llama_quant
     gguf = (ROOT / "models" / model_slug(model_id)
             / f"{revision[:12]}-{quant}.gguf")
     if not gguf.is_file():
@@ -316,7 +317,8 @@ class DaemonProc:
         args = [binary, "-m", str(gguf), *(extra_args or [])]
         # KV prefix reuse across requests with the same cvec (daemon
         # default). LOBOT_LLAMA_PREFIX_CACHE=0 makes every request cold.
-        if os.environ.get("LOBOT_LLAMA_PREFIX_CACHE", "1") == "0":
+        from model_lobotomy.config import get_settings
+        if not get_settings().llama_prefix_cache:
             args.append("--no-prefix-cache")
         self._proc = subprocess.Popen(
             args,
@@ -655,8 +657,8 @@ class LlamaEngine:
         sha = revision or HfApi().model_info(model_id).sha
         gguf, sidecar = resolve_gguf(model_id, sha)
         tok = steer.load_tokenizer(model_id)
-        binary = os.environ.get("LOBOT_LLAMAD_BIN",
-                                str(DAEMON_BIN))
+        from model_lobotomy.config import get_settings
+        binary = get_settings().llamad_bin or str(DAEMON_BIN)
         proc = self._proc_factory(binary, gguf)
         spec = steer.get_spec(model_id)
         info = proc.info
@@ -1014,20 +1016,15 @@ class CreateDaemon:
 
     def __init__(self, model_id: str, revision: str, tokenizer,
                  quant: str | None = None, proc_factory=None):
-        self.quant = quant or os.environ.get("LOBOT_CREATE_QUANT", "f16")
+        from model_lobotomy.config import get_settings
+        _s = get_settings()
+        self.quant = quant or _s.create_quant
         self.model_id, self.revision = model_id, revision
         self.tokenizer = tokenizer
         self.spec = steer.get_spec(model_id)
-        prev = os.environ.get("LOBOT_LLAMA_QUANT")
-        os.environ["LOBOT_LLAMA_QUANT"] = self.quant
-        try:
-            gguf, self.sidecar = resolve_gguf(model_id, revision)
-        finally:
-            if prev is None:
-                os.environ.pop("LOBOT_LLAMA_QUANT", None)
-            else:
-                os.environ["LOBOT_LLAMA_QUANT"] = prev
-        binary = os.environ.get("LOBOT_LLAMAD_BIN", str(DAEMON_BIN))
+        gguf, self.sidecar = resolve_gguf(model_id, revision,
+                                          quant=self.quant)
+        binary = _s.llamad_bin or str(DAEMON_BIN)
         factory = proc_factory or DaemonProc
         self.proc = factory(binary, gguf, [
             "--parallel", str(self.PARALLEL), "--ctx-size", str(self.CTX),
