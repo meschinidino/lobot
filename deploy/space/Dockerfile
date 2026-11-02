@@ -18,6 +18,7 @@ RUN uv venv --python 3.12 /app/.venv \
 USER user
 ENV MODEL_LOBOTOMY_REPLAY=1 \
     LOBOT_PUBLIC_DEMO=1 \
+    LOBOT_MODEL=meta-llama/Llama-3.2-3B-Instruct \
     LOBOT_HOST=0.0.0.0 \
     PORT=7860 \
     LOBOT_HOME=/tmp/lobot \

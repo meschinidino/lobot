@@ -57,6 +57,11 @@ def _need_torch(eng, feature: str) -> None:
 INSTALL_JUDGED_MAX = 30
 
 
+def _public_demo() -> bool:
+    from model_lobotomy.config import get_settings
+    return get_settings().public_demo
+
+
 def _state() -> dict:
     spec = engine.active_spec()
     preset = engine.active_preset()
@@ -68,6 +73,7 @@ def _state() -> dict:
         "torch_only": sorted(f for f in FEATURES if not eng.supports(f)),
         "no_model": STATE.no_model,
         "replay": STATE.replay,
+        "public_demo": _public_demo(),
         "models": [{"id": mid, "short": steer.model_short_name(mid),
                     "gated": "meta-llama" in mid} for mid in sorted(engine._PRESETS)],
         "layers": spec.layers,
@@ -357,6 +363,10 @@ def _draft_or_404(draft_id: str):
 def _muse():
     """A Muse Spark client, or 503 naming what is missing."""
     from model_lobotomy import muse as muse_mod
+    from model_lobotomy.config import get_settings
+    if get_settings().public_demo:
+        raise HTTPException(503, "This public demo shows only saved Muse Spark "
+                                 "answers, and this report has none.")
     try:
         return muse_mod.Muse()
     except muse_mod.MuseError as e:

@@ -366,7 +366,17 @@ class PublicDemoTest(unittest.TestCase):
             self.assertNotIn("Cross-origin", r.text)
 
     def test_gets_pass(self):
-        self.assertEqual(self.client.get("/api/state").status_code, 200)
+        r = self.client.get("/api/state")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["public_demo"])
+
+    def test_muse_never_called(self):
+        # Even with a key in the environment, the demo serves saved answers only.
+        with mock.patch.dict(os.environ, {"META_API_KEY": "k"}):
+            with self.assertRaises(server.helpers.HTTPException) as cm:
+                server.helpers._muse()
+        self.assertEqual(cm.exception.status_code, 503)
+        self.assertIn("saved Muse Spark", cm.exception.detail)
 
     def test_cross_origin_still_rejected(self):
         r = self.client.post("/api/run", json={}, headers={"Origin": "https://evil.test"})

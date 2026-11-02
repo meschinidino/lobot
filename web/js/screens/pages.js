@@ -167,7 +167,7 @@ async function renderPage(first = false) {
     if (!(p.id in reports)) { el.innerHTML = top(esc(name)) + `<p class="meta">Loading the evidence.</p>`; try { reports[p.id] = await getJSON(`api/traits/${encodeURIComponent(p.id)}/report`); } catch (e) { reports[p.id] = { missing: e.status || e.message }; } if (S.page !== p) return; }
     if (!S.families) S.families = await getJSON("api/families").then((x) => x.families).catch(() => []);
     // With a Meta API key on the server, Muse Spark writes the plain-words summary as the page opens.
-    if (S.state?.meta_api?.key && !explains[p.id] && !reports[p.id].missing) explain(p.id);
+    if ((S.state?.meta_api?.key || S.state?.public_demo) && !explains[p.id] && !reports[p.id].missing) explain(p.id);
     const R = reports[p.id], fam = (S.families || []).find((f) => f.name === name), fr = R.frozen || (b && { layer: b.layer, dose: b.dose }) || {};
     const actions = `<div class="row2">${b && b.usable ? `<button class="btn" type="button" data-use="${esc(b.id)}">Use in the sentence</button>` : ""}${b && b.patch ? `<a class="btn" href="${esc(b.patch)}" download>Download patch</a>` : `<button class="btn" type="button" disabled>Download patch</button><span class="meta">${b && b.verdict === "knob" ? "Patch download needs the evidence API." : "Only a passing knob has a patch."}</span>`}</div>`;
     let body;
