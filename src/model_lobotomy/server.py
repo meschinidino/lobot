@@ -62,12 +62,14 @@ from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StrictBool
+from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 from starlette.responses import FileResponse, JSONResponse
 
 from model_lobotomy import app as engine
 from model_lobotomy import create_job
 from model_lobotomy import drafts as drafts_mod
 from model_lobotomy import followups as followups_mod
+from model_lobotomy import job_import
 from model_lobotomy import guard as guard_mod
 from model_lobotomy import guard_screens as guard_screens_mod
 from model_lobotomy import combine as combine_mod
@@ -124,6 +126,39 @@ def _get_followups() -> followups_mod.FollowupRunner:
     return _followups
 
 api = FastAPI(title="lobot", docs_url=None, redoc_url=None)
+
+
+def _close_when_done(gen) -> None:
+    """Close a sync generator; wait while a step of it still runs."""
+    for _ in range(2400):  # up to 2 minutes; a step stops at its next cancel check
+        try:
+            gen.close()
+            return
+        except ValueError:  # generator already executing
+            time.sleep(0.05)
+
+
+def _ndjson(gen) -> StreamingResponse:
+    """NDJSON response that closes its generator when the client leaves.
+
+    Starlette does not close a sync generator when the client
+    disconnects. A run paused at a yield then never reached its
+    finally, so it kept the engine lock until a restart. On a
+    disconnect this sets the cancel event and closes the generator,
+    which runs its finally (the lock release). A stream that ends
+    normally is left alone, so it cannot cancel the next run.
+    """
+    async def body():
+        finished = False
+        try:
+            async for chunk in iterate_in_threadpool(gen):
+                yield chunk
+            finished = True
+        finally:
+            if not finished:
+                _cancel.set()
+                await run_in_threadpool(_close_when_done, gen)
+    return StreamingResponse(body(), media_type="application/x-ndjson")
 
 
 def _need_torch(eng, feature: str) -> None:
@@ -486,7 +521,7 @@ def run(req: RunRequest):
         if get_engine().lock.locked():
             raise HTTPException(409, "A run is in progress. Wait for it to finish.")
         _cancel.clear()
-        return StreamingResponse(_replay_stream(rec), media_type="application/x-ndjson")
+        return _ndjson(_replay_stream(rec))
     if NO_MODEL:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
@@ -495,11 +530,9 @@ def run(req: RunRequest):
     if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     _cancel.clear()
-    return StreamingResponse(
-        _run_stream(prompt, rows, spec, guard=req.guard,
+    return _ndjson(_run_stream(prompt, rows, spec, guard=req.guard,
                     research_mode=req.research_mode,
-                    dial_trait=req.dial_trait),
-        media_type="application/x-ndjson")
+                    dial_trait=req.dial_trait))
 
 
 @api.post("/api/stop")
@@ -857,7 +890,9 @@ def agent_start(req: AgentRequest):
     from model_lobotomy import agent as agent_mod
     cancel = threading.Event()
     state = {"status": "running", "steps": [], "result": None,
-             "error": None, "cancel": cancel}
+             "error": None, "cancel": cancel,
+             "description": req.description, "started": time.time(),
+             "job_id": None}
 
     def progress(_kind, row):
         state["steps"].append(row)
@@ -880,6 +915,7 @@ def agent_start(req: AgentRequest):
             state["id"] = ag.id
             state["result"] = ag.run(req.description)
             state["status"] = state["result"]["status"]
+            state["job_id"] = _register_agent_job(state["result"])
         except agent_mod.AgentStopped:
             state["status"] = "stopped"
         except Exception as e:  # noqa: BLE001 - reported to the client
@@ -895,11 +931,84 @@ def agent_start(req: AgentRequest):
     return {"run_id": run_id, "status": "running"}
 
 
+_AGENT_ID_RE = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
+
+
+def _agents_dir() -> Path:
+    return _get_runner().jobs_dir / "agents"
+
+
+def _agent_job_id(result: dict) -> str:
+    return f"{result.get('family') or 'agent'}-agent-{result['agent_id']}"
+
+
+def _register_agent_job(result: dict | None) -> str | None:
+    """Make the agent's Create run a job the app lists (shelf, evidence).
+
+    The agent writes its run to jobs/agents/<id>/round-<n>; the app
+    lists jobs/<id>/job.json only. Returns the job id, or None when the
+    agent made no report.
+    """
+    workdir = Path((result or {}).get("workdir") or "")
+    if not result or not (workdir / "report.json").is_file():
+        return None
+    job_id = _agent_job_id(result)
+    jobs_dir = _get_runner().jobs_dir
+    if not (jobs_dir / job_id / "job.json").is_file():
+        job_import.import_run(workdir, jobs_dir, job_id)
+    return job_id
+
+
+def _disk_agent(agent_id: str) -> dict | None:
+    if not _AGENT_ID_RE.fullmatch(agent_id or ""):
+        return None
+    rec = _read_json(_agents_dir() / agent_id / "agent.json")
+    if rec is None:
+        return None
+    job_id = _agent_job_id(rec)
+    return {"id": agent_id, "status": rec.get("status"),
+            "steps": rec.get("steps", []), "result": rec, "error": None,
+            "job_id": job_id if (_get_runner().jobs_dir / job_id
+                                 / "job.json").is_file() else None}
+
+
+@api.get("/api/agents")
+def agents_list():
+    """Agent runs: live ones in memory, finished ones from disk."""
+    out, seen = [], set()
+    for run_id, st in _agents.items():
+        seen.add(st.get("id"))
+        out.append({"run_id": run_id, "id": st.get("id"),
+                    "status": st["status"],
+                    "description": (st.get("result") or {}).get(
+                        "description") or st.get("description"),
+                    "family": (st.get("result") or {}).get("family"),
+                    "job_id": st.get("job_id"),
+                    "started": st.get("started")})
+    root = _agents_dir()
+    if root.is_dir():
+        for d in sorted(root.iterdir(), reverse=True):
+            if d.name in seen:
+                continue
+            st = _disk_agent(d.name)
+            if st is None:
+                continue
+            out.append({"run_id": d.name, "id": d.name,
+                        "status": st["status"],
+                        "description": st["result"].get("description"),
+                        "family": st["result"].get("family"),
+                        "job_id": st["job_id"], "started": None})
+    return {"agents": out}
+
+
 @api.get("/api/agent/{run_id}")
 def agent_status(run_id: str):
     state = _agents.get(run_id)
     if state is None:
-        raise HTTPException(404, f"Unknown agent run {run_id}.")
+        disk = _disk_agent(run_id)
+        if disk is None:
+            raise HTTPException(404, f"Unknown agent run {run_id}.")
+        return disk
     return {k: v for k, v in state.items() if k != "cancel"}
 
 
@@ -1171,12 +1280,10 @@ def update(req: UpdateRequest):
     if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     _cancel.clear()
-    return StreamingResponse(
-        _update_stream(prompt, layer, direction, scale, list(req.doses),
+    return _ndjson(_update_stream(prompt, layer, direction, scale, list(req.doses),
                        min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
                        spec, guard=req.guard,
-                       research_mode=req.research_mode),
-        media_type="application/x-ndjson")
+                       research_mode=req.research_mode))
 
 
 def _delete_edits(knob: dict):
@@ -1203,12 +1310,10 @@ def delete(req: DeleteRequest):
     if get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     _cancel.clear()
-    return StreamingResponse(
-        _delete_stream(prompt, req.trait, knob,
+    return _ndjson(_delete_stream(prompt, req.trait, knob,
                        min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
                        guard=req.guard,
-                       research_mode=req.research_mode),
-        media_type="application/x-ndjson")
+                       research_mode=req.research_mode))
 
 
 def _delete_stream(prompt: str, trait: str, knob: dict, max_new: int,
@@ -1583,8 +1688,7 @@ def verify(req: VerifyRequest):
     _need_torch(get_engine(), "verify")
     _verify_pin(patch_path)
     _cancel.clear()
-    return StreamingResponse(_verify_stream(patch_path, req.quick),
-                             media_type="application/x-ndjson")
+    return _ndjson(_verify_stream(patch_path, req.quick))
 
 
 @api.post("/api/verify/upload")
@@ -1612,8 +1716,7 @@ async def verify_upload(file: UploadFile = File(...)):
         probe.write_bytes(data)
         _verify_pin(probe)
     _cancel.clear()
-    return StreamingResponse(_verify_stream(data, True),
-                             media_type="application/x-ndjson")
+    return _ndjson(_verify_stream(data, True))
 
 
 def _verify_stream(patch, quick: bool):
@@ -2546,9 +2649,7 @@ def chat(req: ChatRequest):
     max_new = sess["max_new_tokens"]
     if req.max_new_tokens is not None:
         max_new = min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP)
-    return StreamingResponse(
-        _chat_stream(req.session_id, message, rows, max_new),
-        media_type="application/x-ndjson")
+    return _ndjson(_chat_stream(req.session_id, message, rows, max_new))
 
 
 def _chat_stream(session_id: str, message: str, rows, max_new: int):

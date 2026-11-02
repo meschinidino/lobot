@@ -295,3 +295,77 @@ class CreateParetoOptionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AgentJobsTest(unittest.TestCase):
+    def test_finished_agent_is_listed_and_registered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            jobs = Path(tmp) / "jobs"
+            aid = "20261031-205730-463f37"
+            round_dir = jobs / "agents" / aid / "round-1"
+            write_run(round_dir)
+            result = {"agent_id": aid, "status": "done",
+                      "description": "talks like a pirate",
+                      "family": "pirate", "workdir": str(round_dir),
+                      "steps": [{"step": "draft"}]}
+            (jobs / "agents" / aid / "agent.json").write_text(
+                json.dumps(result))
+            server._runner = create_job.CreateRunner(jobs_dir=jobs)
+            self.addCleanup(setattr, server, "_runner", None)
+            client = TestClient(server.api)
+            (row,) = client.get("/api/agents").json()["agents"]
+            self.assertEqual((row["id"], row["status"], row["job_id"]),
+                             (aid, "done", None))
+            job_id = server._register_agent_job(result)
+            self.assertEqual(job_id, f"pirate-agent-{aid}")
+            self.assertEqual(server._register_agent_job(result), job_id)
+            st = client.get(f"/api/agent/{aid}").json()
+            self.assertEqual((st["job_id"], len(st["steps"])), (job_id, 1))
+            ids = [t["id"] for t in client.get("/api/traits").json()["traits"]]
+            self.assertIn(job_id, ids)
+            self.assertEqual(client.get("/api/agent/../x").status_code, 404)
+            self.assertIsNone(server._register_agent_job(
+                {"agent_id": aid, "workdir": str(Path(tmp) / "none")}))
+
+
+class StreamCloseTest(unittest.TestCase):
+    """A client that leaves mid-stream must not keep the engine lock."""
+
+    def _gen(self, lock, log):
+        lock.acquire()
+        try:
+            yield '{"stage": "token"}\n'
+            yield '{"stage": "done"}\n'
+        finally:
+            log.append("closed")
+            lock.release()
+
+    def test_disconnect_closes_generator_and_releases_lock(self):
+        import asyncio
+        lock, log = threading.Lock(), []
+        server._cancel.clear()
+        resp = server._ndjson(self._gen(lock, log))
+
+        async def leave_early():
+            it = resp.body_iterator
+            await it.__anext__()
+            await it.aclose()  # what a client disconnect does
+
+        asyncio.run(leave_early())
+        self.assertEqual(log, ["closed"])
+        self.assertFalse(lock.locked())
+        self.assertTrue(server._cancel.is_set())
+        server._cancel.clear()
+
+    def test_normal_end_does_not_cancel(self):
+        import asyncio
+        lock, log = threading.Lock(), []
+        server._cancel.clear()
+        resp = server._ndjson(self._gen(lock, log))
+
+        async def read_all():
+            return [c async for c in resp.body_iterator]
+
+        self.assertEqual(len(asyncio.run(read_all())), 2)
+        self.assertFalse(lock.locked())
+        self.assertFalse(server._cancel.is_set())
