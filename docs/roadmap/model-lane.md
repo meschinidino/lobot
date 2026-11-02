@@ -114,3 +114,5 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-11-01 10:17 ET  claude  FD  meta-llama/Llama-3.2-3B-Instruct  end  fluency-aware dose pirate+cowboy
 2026-11-01 19:07 ET  claude  UX2  meta-llama/Llama-3.2-3B-Instruct  start  live UI check: chat, delete, re-check, Muse agent (server, llama lane)
 2026-11-01 20:17 ET  claude  UX2  meta-llama/Llama-3.2-3B-Instruct  end  live UI check done; install check HOLDS after stdin fix
+2026-11-01 20:20 ET  claude  UX3  meta-llama/Llama-3.2-3B-Instruct  start  live UI: removal view, labeling with Muse suggestions
+2026-11-01 20:33 ET  claude  UX3  meta-llama/Llama-3.2-3B-Instruct  end  removal view (noir) and labeling with Muse suggestions done
