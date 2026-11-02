@@ -145,6 +145,7 @@ own prompt, predicts its side effects, and repairs them.**
 |---|---|---|---|---|---|---|---|
 | 1 | U4 | UI: evidence page v2 (prompt chart, fluency, all screens, repair button) | `specs/U4-ui-evidence-v2.md` | PP, FD, GR | UI + no-model | 2 | **Done** (`reports/U4.md`); checked in replay mode, follow-up buttons tested with fakes |
 | 1b | UX | Frontend 100x: dose dial with recorded replies, tuning grid, Library, Muse explanation | `reports/UX-100x.md` | U4 | UI | 1 | **Done**; checked in replay mode |
+| 1c | UX2 | 100X features on screen: describe in words (Muse agent, self-labeling), chat with dials, re-check, removal, install; key legend; stream-disconnect lock fix | `reports/UX2.md` | UX | UI + model | 1 | **Done**; see the report for what ran on real weights |
 | 2 | JS | Judged scores: dose rule without NLL; unrequested-change search | `specs/JS-judged-scores.md` | FD, PP | Both | 3 | AxBench (Stanford), VibeCheck (Berkeley) |
 | 3 | GH | Fresh guard test set; repair v3 (iterated gradient projection) | `specs/GH-guard-holdout-repair-v3.md` | GR, FD | Both | 2 | "Safety cost of steering vectors is separable and reducible" (2026) |
 | 4 | UD | "What it thinks of you" dashboard in chat | `specs/UD-user-model-dashboard.md` | CH | Both + UI | 3 | TalkTuner (Harvard) |

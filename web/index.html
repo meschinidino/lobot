@@ -1482,7 +1482,7 @@ function actionsSection(R, id, b) {
       ${x.available ? `<div class="row2"><label style="flex:1;min-width:220px"><span class="meta">${x.target === "llamacpp" ? "Path to the model GGUF" : "Ollama base model"}</span><input class="num" type="text" spellcheck="false" id="mref-${x.target}" style="font-family:var(--mono)" placeholder="${x.target === "llamacpp" ? "models/llama-3.2-3b-instruct-f16.gguf" : "llama3.2:3b"}"></label><button class="btn btn-sm" type="button" data-install="${x.target}" data-id="${esc(id)}" ${ins?.busy ? "disabled" : ""}>Install</button></div>` : ""}</div>
       <span class="state ${x.available ? "ok" : "info"}">${x.available ? "FOUND" : "NOT FOUND"}</span></li>`).join("")}</ol>`;
   const iOut = !ins ? "" : ins.busy ? `<p class="meta">Installing.</p>` : ins.err ? `<p class="meta" style="color:var(--error)">${esc(ins.err)}</p>`
-    : `<p><span class="state ok">INSTALLED</span> ${esc(ins.res.detail || "")}</p>${ins.res.run ? `<div class="copyrow"><div><span class="label">Run it</span><p class="meta v" id="irun-${esc(id)}" style="margin:0">${esc(Array.isArray(ins.res.run) ? ins.res.run.join(" ") : ins.res.run)}</p></div><button class="btn btn-sm" type="button" data-copy-el="irun-${esc(id)}">Copy</button></div>` : ""}
+    : `<p><span class="state ok">INSTALLED</span> ${esc(ins.res.detail || "")}</p>${ins.res.run ? `<div class="copyrow"><div><span class="label">Run it</span><p class="meta v" id="irun-${esc(id)}" style="margin:0">${esc(runLine(ins.res.run))}</p></div><button class="btn btn-sm" type="button" data-copy-el="irun-${esc(id)}">Copy</button></div>` : ""}
       <div class="row2"><button class="btn btn-sm" type="button" data-iverify="${esc(ins.res.install_id)}" data-id="${esc(id)}" ${iv?.busy ? "disabled" : ""}>Check the installed patch</button><span class="meta">Runs 16 of the patch's own held-out prompts in ${ins.res.target === "llamacpp" ? "llama.cpp" : "Ollama"}, with and without it, and judges them here.</span></div>
       ${!iv ? "" : iv.busy ? `<p class="meta">Checking the installed patch.</p>` : iv.err ? `<p class="meta" style="color:var(--error)">${esc(iv.err)}</p>` : `<p><span class="state ${iv.res.comparison?.pass ? "ok" : "warn"}">${iv.res.comparison?.pass ? "HOLDS" : "DOES NOT HOLD"}</span> measured ${num(iv.res.comparison?.measured_mean)} on ${iv.res.comparison?.n} prompts; shipped ${ci(iv.res.comparison?.shipped_ci)}.</p>`}`;
   return `<h2 class="sec">Use it elsewhere</h2>
@@ -1494,6 +1494,15 @@ function actionsSection(R, id, b) {
     <div class="row2"><button class="btn" type="button" data-del="${esc(id)}" ${off || d?.busy ? "disabled" : ""}>Run with it removed</button>${off ? `<span class="meta">${off}</span>` : ""}</div>${dOut}` : ""}
     <h3 class="sub">Install into llama.cpp or Ollama</h3><p class="meta">Exports the patch as a control vector for the tool you run models with. Nothing is sent anywhere.</p>
     <div class="row2"><button class="btn" type="button" data-targets="${esc(id)}" ${!b?.patch ? "disabled" : ""}>Find install targets</button></div>${tOut}${iOut}`;
+}
+// The install's run line: llama.cpp gives {base_cmd, steer_flags}; Ollama gives a string or a list.
+const quoteArg = (x) => (/[\s"'$]/.test(x) ? `'${String(x).replace(/'/g, "'\\''")}'` : String(x));
+function runLine(run) {
+  if (!run) return "";
+  if (typeof run === "string") return run;
+  if (Array.isArray(run)) return run.map(quoteArg).join(" ");
+  if (run.base_cmd) return [...run.base_cmd, ...(run.steer_flags || []), "-p", "Tell me about the ocean."].map(quoteArg).join(" ");
+  return JSON.stringify(run);
 }
 async function actVerify(id) {
   const a = ACT[id]; a.verify = { busy: true }; renderPage();
