@@ -50,7 +50,8 @@ Events (one JSON object per line):
 | stage | fields |
 |---|---|
 | `weights` | — (model loads here) |
-| `guard` | — (refusal check passed; see `blocked`) |
+| `guard` | — (first-token refusal check running; see `blocked`) |
+| `guard_full` | `guard`: the first-token verdict (the first-token check passed; the full-answer check is running) |
 | `baseline` | — (clean generation running) |
 | `steered` | — (steered generation running) |
 | `stopped` | `after`: stage the Stop landed after |

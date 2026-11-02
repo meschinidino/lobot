@@ -29,7 +29,7 @@ KINDS = ("pareto", "repair")
 REPAIR_METHODS = ("gradient", "project")
 
 
-from model_lobotomy.jobs_store import WorkPaths, repair_stem  # noqa: F401
+from model_lobotomy.jobs_store import WorkPaths
 
 
 def _no_progress(stage, done, total):

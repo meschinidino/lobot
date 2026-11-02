@@ -26,13 +26,13 @@ class NoopSwapTest(unittest.TestCase):
             self.assertFalse(hasattr(guards.NoopGuard, name), name)
 
     def test_run_chat_removal_verify_guard_entry(self):
-        # Run, chat, removal and verify all call server._verified_guard.
-        with mock.patch.object(server.guard_mod, "refusal_judge_fn",
+        # Run, chat, removal and verify all call server.helpers._verified_guard.
+        with mock.patch.object(server.helpers.guard_mod, "refusal_judge_fn",
                                return_value=lambda text: 1.0):
-            gv = server._verified_guard(object(), object(), {}, True)
+            gv = server.helpers._verified_guard(object(), object(), {}, True)
         self.assertFalse(gv.blocked)
         self.assertTrue(gv.verified)
-        event = server._guard_event_dict(gv)
+        event = server.helpers._guard_event_dict(gv)
         self.assertFalse(event["blocked"])
         self.assertTrue(event["enforced"])
         self.assertIn("min_ratio", event)
@@ -101,6 +101,16 @@ class NoopSwapTest(unittest.TestCase):
         self.assertFalse(seen["guard"]["refusal"]["blocked"])
         self.assertFalse(seen["confirm"]["verdict"]["blocked"])
         self.assertTrue(seen["confirm"]["verdict"]["confirmed"])
+
+    def test_stream_guard_two_steps(self):
+        from model_lobotomy import server_helpers as helpers
+        with mock.patch.object(helpers.guard_mod, "refusal_judge_fn",
+                               return_value=lambda text: 1.0):
+            events = list(helpers._verified_guard_stream(
+                object(), object(), {}, True))
+        stages = [e.decode() if isinstance(e, bytes) else str(e)
+                  for e in events]
+        self.assertTrue(any("guard_full" in s for s in stages), stages)
 
     def test_delete_check_guard_entry(self):
         # trait_eval.delete_check reads the port verdict report.

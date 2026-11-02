@@ -94,8 +94,8 @@ class TorchLaneTest(unittest.TestCase):
                                return_value=0.7) as js, \
                 mock.patch.object(T.spike, "nll",
                                   return_value=1.5) as nll:
-            a = lane.judge_many([("q", "r"), ("q", "r")], "j")
-            b = lane.judge_many([("q", "r")], "j")
+            a = lane.score_many([("q", "r"), ("q", "r")], "j")
+            b = lane.score_many([("q", "r")], "j")
             c = lane.nll_many([("q", "r"), ("q", "r")])
         self.assertEqual(a + b, [0.7, 0.7, 0.7])
         self.assertEqual(js.call_count, 1)
@@ -106,7 +106,7 @@ class TorchLaneTest(unittest.TestCase):
         lane = T.TorchLane(FakeEng(), None)
         with mock.patch.object(T, "judge_score",
                                side_effect=[0.1, 0.9]) as js:
-            out = lane.judge_many([("q", "r")], "a") + lane.judge_many(
+            out = lane.score_many([("q", "r")], "a") + lane.score_many(
                 [("q", "r")], "b")
         self.assertEqual(out, [0.1, 0.9])
         self.assertEqual(js.call_count, 2)
@@ -146,7 +146,7 @@ class LlamaLaneTest(unittest.TestCase):
     def test_judge_formula_and_refusal_gate(self):
         with mock.patch.object(T, "refusal_gate",
                                side_effect=lambda r: r == "no"):
-            out = self.lane.judge_many([("q", "yes"), ("q", "no")], "j")
+            out = self.lane.score_many([("q", "yes"), ("q", "no")], "j")
         self.assertAlmostEqual(out[0], 1 / (1 + math.exp(0.0 - 2.0)))
         self.assertEqual(out[1], 0.0)
         (items,) = self.daemon.scores

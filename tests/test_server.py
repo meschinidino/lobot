@@ -27,6 +27,7 @@ from model_lobotomy import app  # noqa: E402
 from model_lobotomy import create_job  # noqa: E402
 from model_lobotomy import guard as guard_mod  # noqa: E402
 from model_lobotomy import server  # noqa: E402
+from model_lobotomy import server_schemas  # noqa: E402
 from model_lobotomy import steer  # noqa: E402
 from model_lobotomy.trait_store import TraitFamily, TraitStore  # noqa: E402
 
@@ -159,8 +160,8 @@ class ServerStreamTest(unittest.TestCase):
     def setUp(self):
         self.eng = FakeEngine([_gen(BASE_WORDS), _gen(STEER_WORDS)])
         self.patches = [
-            mock.patch.object(server, "NO_MODEL", False),
-            mock.patch.object(server, "get_engine", return_value=self.eng),
+            mock.patch.object(server.STATE, "no_model", False),
+            mock.patch.object(server.helpers, "get_engine", return_value=self.eng),
             mock.patch.object(steer, "calibration_cache_key", return_value={}),
             mock.patch.object(steer, "calibrate_layer_medians",
                               return_value=({}, {"cache_hit": True,
@@ -173,7 +174,7 @@ class ServerStreamTest(unittest.TestCase):
     def tearDown(self):
         for p in reversed(self.patches):
             p.stop()
-        server._cancel.clear()
+        server.STATE.cancel.clear()
 
     def _events(self, body):
         r = self.client.post("/api/run", json=body)
@@ -183,7 +184,7 @@ class ServerStreamTest(unittest.TestCase):
     def test_stage_order_and_split_offsets(self):
         ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "baseline", "steered", "complete"])
+                         ["weights", "guard", "guard_full", "baseline", "steered", "complete"])
         res = ev[-1]["result"]
         self.assertEqual(res["split"]["token"], 2)
         # The offset is the start of the divergent token, leading space included
@@ -235,8 +236,8 @@ class ServerStreamTest(unittest.TestCase):
 
         def gen(prompt, edits, **k):
             if prompt not in guard_mod.REFUSAL_SET:
-                self.assertIs(k["cancel"], server._cancel)
-                server._cancel.set()  # the user presses Stop mid-baseline
+                self.assertIs(k["cancel"], server.STATE.cancel)
+                server.STATE.cancel.set()  # the user presses Stop mid-baseline
             return real_run(prompt, edits, **k)
 
         with mock.patch.object(self.eng, "run", side_effect=gen) as g:
@@ -248,7 +249,7 @@ class ServerStreamTest(unittest.TestCase):
         self.assertFalse(self.eng.lock.locked())
 
     def test_new_run_clears_an_old_stop(self):
-        server._cancel.set()  # stale Stop from an earlier, finished run
+        server.STATE.cancel.set()  # stale Stop from an earlier, finished run
         ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
         self.assertEqual(ev[-1]["stage"], "complete")
 
@@ -256,18 +257,18 @@ class ServerStreamTest(unittest.TestCase):
         # A Stop can land after /api/run returns but before the stream runs.
         r = self.client.post("/api/run", json={"prompt": "x", "rows": [ROW]})
         self.assertEqual(r.status_code, 200)
-        server._cancel.set()
-        gen = server._run_stream("x", [steer.RecipeRow(**ROW)], app.active_spec())
+        server.STATE.cancel.set()
+        gen = server.helpers._run_stream("x", [steer.RecipeRow(**ROW)], app.active_spec())
         events = [json.loads(b) for b in gen]
         self.assertEqual(events[-1], {"stage": "stopped", "after": "weights"})
         self.assertFalse(self.eng.lock.locked())
 
     def test_stop_when_idle_reports_not_stopping(self):
         self.assertEqual(self.client.post("/api/stop").json(), {"stopping": False})
-        server._cancel.clear()
+        server.STATE.cancel.clear()
 
     def test_no_model_mode_returns_503(self):
-        with mock.patch.object(server, "NO_MODEL", True):
+        with mock.patch.object(server.STATE, "no_model", True):
             r = self.client.post("/api/run", json={"prompt": "x", "rows": [ROW]})
         self.assertEqual(r.status_code, 503)
 
@@ -339,9 +340,9 @@ class ReplayModeTest(unittest.TestCase):
 
     def setUp(self):
         self.ex = json.loads((ROOT / "web" / "example.json").read_text())
-        self.patches = [mock.patch.object(server, "REPLAY", True),
-                        mock.patch.object(server, "REPLAY_STAGE_S", 0.0),
-                        mock.patch.object(server, "_run_stream", side_effect=AssertionError("model path used")),
+        self.patches = [mock.patch.object(server.STATE, "replay", True),
+                        mock.patch.object(server.STATE, "replay_stage_s", 0.0),
+                        mock.patch.object(server.helpers, "_run_stream", side_effect=AssertionError("model path used")),
                         mock.patch.object(app, "_active_model_id", self.ex["model_id"])]
         for p in self.patches:
             p.start()
@@ -350,7 +351,7 @@ class ReplayModeTest(unittest.TestCase):
     def tearDown(self):
         for p in reversed(self.patches):
             p.stop()
-        server._cancel.clear()
+        server.STATE.cancel.clear()
 
     def test_recorded_setup_replays_with_the_run_contract(self):
         rows = list(reversed(self.ex["rows"]))  # row order does not matter
@@ -362,7 +363,7 @@ class ReplayModeTest(unittest.TestCase):
         self.assertTrue(res["replay"])
         self.assertEqual(res["steered"]["text"], self.ex["steered"]["text"])
         self.assertEqual(res["split"], self.ex["split"])
-        self.assertFalse(server.get_engine().lock.locked())
+        self.assertFalse(server.helpers.get_engine().lock.locked())
 
     def test_dose_zero_replays_the_baseline(self):
         rows = [{**self.ex["rows"][0], "dose": 0}]
@@ -380,10 +381,10 @@ class ReplayModeTest(unittest.TestCase):
         self.assertIn("not recorded", r.json()["detail"])
 
     def test_stop_during_replay_stops_and_releases_lock(self):
-        server._cancel.set()
-        events = [json.loads(b) for b in server._replay_stream(server._recordings()[0])]
+        server.STATE.cancel.set()
+        events = [json.loads(b) for b in server.helpers._replay_stream(server.helpers._recordings()[0])]
         self.assertEqual(events[-1], {"stage": "stopped", "after": "weights"})
-        self.assertFalse(server.get_engine().lock.locked())
+        self.assertFalse(server.helpers.get_engine().lock.locked())
 
     def test_every_sweep_file_is_replayable(self):
         import tempfile
@@ -394,9 +395,9 @@ class ReplayModeTest(unittest.TestCase):
             sweep = {"model_id": "meta-llama/Llama-3.2-3B-Instruct", "prompt": "p", "baseline": {"text": "a b", "tokens": 2},
                      "runs": [{"rows": [row], "text": "a c", "tokens": 2, "split": None, "seconds": 1.0}]}
             (web / "sweep.llama-32-3b-instruct.json").write_text(json.dumps(sweep))
-            with mock.patch.object(server, "WEB", web):
-                self.assertEqual(len(server._recordings()), 2)
-                rec = server._find_recording("meta-llama/Llama-3.2-3B-Instruct", "p", [row])
+            with mock.patch.object(server.STATE, "web", web):
+                self.assertEqual(len(server.helpers._recordings()), 2)
+                rec = server.helpers._find_recording("meta-llama/Llama-3.2-3B-Instruct", "p", [row])
         self.assertEqual(rec["steered"]["text"], "a c")
 
     def test_state_reports_replay(self):
@@ -419,9 +420,9 @@ class DialReplayTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.web = Path(self.tmp.name)
         self.prompt = "Who are you?"
-        self.patches = [mock.patch.object(server, "REPLAY", True),
-                        mock.patch.object(server, "REPLAY_STAGE_S", 0.0),
-                        mock.patch.object(server, "WEB", self.web),
+        self.patches = [mock.patch.object(server.STATE, "replay", True),
+                        mock.patch.object(server.STATE, "replay_stage_s", 0.0),
+                        mock.patch.object(server.STATE, "web", self.web),
                         mock.patch.object(app, "_active_model_id",
                                           "Qwen/Qwen3.5-4B")]
         for p in self.patches:
@@ -431,7 +432,7 @@ class DialReplayTest(unittest.TestCase):
     def tearDown(self):
         for p in reversed(self.patches):
             p.stop()
-        server._cancel.clear()
+        server.STATE.cancel.clear()
 
     def _write_example(self, dial):
         ex = {"model_id": "Qwen/Qwen3.5-4B", "prompt": self.prompt,
@@ -483,24 +484,24 @@ def _validated_store(tmp):
 class GuardDefaultTest(unittest.TestCase):
     def test_guard_default_env_on_and_off(self):
         with mock.patch.dict(os.environ, {"LOBOT_GUARD_DEFAULT": "1"}):
-            self.assertTrue(server.RunRequest(prompt="x", rows=[]).guard)
+            self.assertTrue(server_schemas.RunRequest(prompt="x", rows=[]).guard)
             self.assertTrue(
-                server.UpdateRequest(prompt="x", doses=[0.5]).guard)
+                server_schemas.UpdateRequest(prompt="x", doses=[0.5]).guard)
             self.assertTrue(
-                server.CreateRequest(description="blunt").guard)
-            self.assertTrue(server._state()["guard_default"])
+                server_schemas.CreateRequest(description="blunt").guard)
+            self.assertTrue(server.helpers._state()["guard_default"])
         with mock.patch.dict(os.environ, {"LOBOT_GUARD_DEFAULT": "0"}):
-            self.assertFalse(server.RunRequest(prompt="x", rows=[]).guard)
-            self.assertFalse(server._state()["guard_default"])
+            self.assertFalse(server_schemas.RunRequest(prompt="x", rows=[]).guard)
+            self.assertFalse(server.helpers._state()["guard_default"])
         env = dict(os.environ)
         env.pop("LOBOT_GUARD_DEFAULT", None)
         with mock.patch.dict(os.environ, env, clear=True):
-            self.assertFalse(server.RunRequest(prompt="x", rows=[]).guard)
+            self.assertFalse(server_schemas.RunRequest(prompt="x", rows=[]).guard)
             self.assertFalse(
-                server.UpdateRequest(prompt="x", doses=[0.5]).guard)
+                server_schemas.UpdateRequest(prompt="x", doses=[0.5]).guard)
             self.assertFalse(
-                server.CreateRequest(description="blunt").guard)
-            self.assertFalse(server._state()["guard_default"])
+                server_schemas.CreateRequest(description="blunt").guard)
+            self.assertFalse(server.helpers._state()["guard_default"])
 
 
 def _scripted_trait(out=None):
@@ -521,8 +522,8 @@ class GuardStageTest(unittest.TestCase):
     def setUp(self):
         self.eng = FakeEngine([_gen(BASE_WORDS), _gen(STEER_WORDS)])
         self.patches = [
-            mock.patch.object(server, "NO_MODEL", False),
-            mock.patch.object(server, "get_engine", return_value=self.eng),
+            mock.patch.object(server.STATE, "no_model", False),
+            mock.patch.object(server.helpers, "get_engine", return_value=self.eng),
             mock.patch.object(steer, "calibration_cache_key", return_value={}),
             mock.patch.object(steer, "calibrate_layer_medians",
                               return_value=({}, {"cache_hit": True,
@@ -535,7 +536,7 @@ class GuardStageTest(unittest.TestCase):
     def tearDown(self):
         for p in reversed(self.patches):
             p.stop()
-        server._cancel.clear()
+        server.STATE.cancel.clear()
 
     def _events(self, body):
         r = self.client.post("/api/run", json=body)
@@ -573,11 +574,11 @@ class FamiliesApiTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        server._runner = create_job.CreateRunner(
+        server.STATE.runner = create_job.CreateRunner(
             jobs_dir=Path(self.tmp.name) / "jobs",
             store=_validated_store(self.tmp.name),
             engine=FakeEngine([]))
-        self.addCleanup(setattr, server, "_runner", None)
+        self.addCleanup(setattr, server.STATE, "runner", None)
         self.client = TestClient(server.api)
 
     def test_list_families(self):
@@ -595,9 +596,9 @@ class CreateApiTest(unittest.TestCase):
             store=_validated_store(self.tmp.name),
             engine=FakeEngine([]),
             run_trait_fn=_scripted_trait())
-        server._runner = self.runner
-        self.addCleanup(setattr, server, "_runner", None)
-        self.no_model = mock.patch.object(server, "NO_MODEL", False)
+        server.STATE.runner = self.runner
+        self.addCleanup(setattr, server.STATE, "runner", None)
+        self.no_model = mock.patch.object(server.STATE, "no_model", False)
         self.no_model.start()
         self.addCleanup(self.no_model.stop)
         self.client = TestClient(server.api)
@@ -671,14 +672,14 @@ class UpdateApiTest(unittest.TestCase):
                 "fallback_used": False, "hook_calls": 2,
                 "reads": {}}},
         ]
-        server._runner = create_job.CreateRunner(
+        server.STATE.runner = create_job.CreateRunner(
             jobs_dir=Path(self.tmp.name) / "jobs",
             store=_validated_store(self.tmp.name),
             engine=self.eng)
-        self.addCleanup(setattr, server, "_runner", None)
+        self.addCleanup(setattr, server.STATE, "runner", None)
         self.patches = [
-            mock.patch.object(server, "NO_MODEL", False),
-            mock.patch.object(server, "get_engine", return_value=self.eng),
+            mock.patch.object(server.STATE, "no_model", False),
+            mock.patch.object(server.helpers, "get_engine", return_value=self.eng),
             mock.patch.object(steer, "calibration_cache_key", return_value={}),
             mock.patch.object(steer, "calibrate_layer_medians",
                               return_value=({5: 2.5}, {"cache_hit": True,
@@ -692,7 +693,7 @@ class UpdateApiTest(unittest.TestCase):
     def tearDown(self):
         for p in reversed(self.patches):
             p.stop()
-        server._cancel.clear()
+        server.STATE.cancel.clear()
 
     def _events(self, body):
         r = self.client.post("/api/update", json=body)
@@ -711,7 +712,7 @@ class UpdateApiTest(unittest.TestCase):
     def test_explicit_streams_columns(self):
         ev = self._events(self._explicit())
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "columns", "token",
+                         ["weights", "guard", "guard_full", "columns", "token",
                           "token", "complete"])
         toks = [e for e in ev if e["stage"] == "token"]
         self.assertEqual([(t["col"], t["text"]) for t in toks],
@@ -779,9 +780,9 @@ class _Wave2Base(unittest.TestCase):
     def setUp(self):
         self.eng = FakeEngine([_gen(BASE_WORDS), _gen(STEER_WORDS)])
         self.patches = [
-            mock.patch.object(server, "NO_MODEL", False),
-            mock.patch.object(server, "reader", None),
-            mock.patch.object(server, "get_engine", return_value=self.eng),
+            mock.patch.object(server.STATE, "no_model", False),
+            mock.patch.object(server.STATE, "reader", None),
+            mock.patch.object(server.helpers, "get_engine", return_value=self.eng),
             mock.patch.object(steer, "calibration_cache_key", return_value={}),
             mock.patch.object(steer, "calibrate_layer_medians",
                               return_value=({}, {"cache_hit": True,
@@ -794,7 +795,7 @@ class _Wave2Base(unittest.TestCase):
     def tearDown(self):
         for p in reversed(self.patches):
             p.stop()
-        server._cancel.clear()
+        server.STATE.cancel.clear()
 
 
 class DialStreamTest(_Wave2Base):
@@ -813,17 +814,17 @@ class DialStreamTest(_Wave2Base):
         self._script()
         spec = {"trait": "blunt", "layer": 5, "unit": [1.0],
                 "b0": 0.0, "b1": 2.0, "job_id": "j"}
-        with mock.patch.object(server, "_dial_spec", return_value=spec):
+        with mock.patch.object(server.helpers, "_dial_spec", return_value=spec):
             r = self.client.post("/api/run", json={
                 "prompt": "Who are you?", "rows": [ROW],
                 "dial_trait": "blunt"})
         self.assertEqual(r.status_code, 200, r.text)
         ev = [json.loads(line) for line in r.text.splitlines() if line]
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "baseline", "steered",
-                          "token", "token", "complete"])
-        self.assertEqual(ev[4]["dial"], {"blunt": 0.7})
-        self.assertNotIn("dial", ev[5])
+                         ["weights", "guard", "guard_full", "baseline",
+                          "steered", "token", "token", "complete"])
+        self.assertEqual(ev[5]["dial"], {"blunt": 0.7})
+        self.assertNotIn("dial", ev[6])
         res = ev[-1]["result"]
         self.assertEqual(res["dial"], {"trait": "blunt", "layer": 5,
                                       "neutral": 0.0, "trait_mean": 2.0,
@@ -843,7 +844,7 @@ class DialStreamTest(_Wave2Base):
         self.assertEqual([r.layer for r in base_edits.read], [5])
 
     def test_unknown_dial_trait_is_error_event(self):
-        with mock.patch.object(server, "_dial_spec",
+        with mock.patch.object(server.helpers, "_dial_spec",
                                side_effect=KeyError("ghost")):
             r = self.client.post("/api/run", json={
                 "prompt": "Who are you?", "rows": [ROW],
@@ -857,8 +858,8 @@ class DialStreamTest(_Wave2Base):
             "/api/run", json={"prompt": "Who are you?", "rows": [ROW]}
         ).text.splitlines() if line]
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "baseline", "steered",
-                          "complete"])
+                         ["weights", "guard", "guard_full", "baseline",
+                          "steered", "complete"])
         self.assertIsNone(ev[-1]["result"]["dial"])
 
 
@@ -887,7 +888,7 @@ class DialListsTest(_Wave2Base):
         ]
 
     def _run(self, body):
-        with mock.patch.object(server, "_dial_spec",
+        with mock.patch.object(server.helpers, "_dial_spec",
                                return_value=dict(self.SPEC)):
             r = self.client.post("/api/run", json=body)
         self.assertEqual(r.status_code, 200, r.text)
@@ -946,8 +947,8 @@ class DialListsTest(_Wave2Base):
                                                "rows": [ROW]})
         ev = [json.loads(line) for line in r.text.splitlines() if line]
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "baseline", "steered",
-                          "complete"])
+                         ["weights", "guard", "guard_full", "baseline",
+                          "steered", "complete"])
         self.assertIsNone(ev[-1]["result"]["dial"])
         for _, edits, kw in self.eng.runs:
             self.assertNotIn("dial", kw)
@@ -1011,7 +1012,7 @@ class NeuronsApiTest(_Wave2Base):
         self.assertEqual(r.status_code, 409)
 
     def test_unknown_trait_is_404(self):
-        with mock.patch.object(server, "_latest_knob", return_value=None):
+        with mock.patch.object(server.helpers, "_latest_knob", return_value=None):
             r = self.client.post("/api/neurons", json={
                 "prompt": "Say hi.", "trait": "ghost", "token_index": 0})
         self.assertEqual(r.status_code, 404)
@@ -1020,8 +1021,8 @@ class NeuronsApiTest(_Wave2Base):
 class ChatApiTest(_Wave2Base):
     def setUp(self):
         super().setUp()
-        server._chats.clear()
-        self.addCleanup(server._chats.clear)
+        server.STATE.chats.clear()
+        self.addCleanup(server.STATE.chats.clear)
         self.eng.stream_script_single = [
             {"type": "token", "text": "Hi"},
             {"type": "done", "result": {"text": "Hi", "token_ids": [1],
@@ -1123,14 +1124,14 @@ class ReaderApiTest(_Wave2Base):
         from model_lobotomy import app as engine_mod
         stub = self._stub()
         root = self._tmp_root()
-        slug = server._model_slug(engine_mod._active_model_id)
+        slug = server.helpers._model_slug(engine_mod._active_model_id)
         cache = root / "store" / "reader" / slug
         cache.mkdir(parents=True)
         (cache / "fires_on.npz").write_bytes(b"stub")
         (cache / "sample.json").write_text(
             json.dumps({"tokens": ["t"] * 100}))
-        with mock.patch.object(server, "ROOT", root), \
-                mock.patch.object(server, "reader", stub):
+        with mock.patch.object(server.STATE, "root", root), \
+                mock.patch.object(server.STATE, "reader", stub):
             r = self.client.get("/api/neuron/11/1343?k=5")
         self.assertEqual(r.status_code, 200, r.text)
         d = r.json()
@@ -1151,8 +1152,8 @@ class ReaderApiTest(_Wave2Base):
     def test_neuron_card_without_cache_has_null_fires_on(self):
         stub = self._stub()
         root = self._tmp_root()
-        with mock.patch.object(server, "ROOT", root), \
-                mock.patch.object(server, "reader", stub):
+        with mock.patch.object(server.STATE, "root", root), \
+                mock.patch.object(server.STATE, "reader", stub):
             r = self.client.get("/api/neuron/11/1343")
         self.assertEqual(r.status_code, 200, r.text)
         d = r.json()
@@ -1163,7 +1164,7 @@ class ReaderApiTest(_Wave2Base):
 
     def test_find_parses_layer_range(self):
         stub = self._stub()
-        with mock.patch.object(server, "reader", stub):
+        with mock.patch.object(server.STATE, "reader", stub):
             r = self.client.get(
                 "/api/find?word=pirate&layers=8-27&k=5")
         self.assertEqual(r.status_code, 200, r.text)
@@ -1184,7 +1185,7 @@ class ReaderApiTest(_Wave2Base):
         self.assertEqual(r.status_code, 400)
         stub = self._stub()
         stub.find_neurons.side_effect = ValueError("no tokens")
-        with mock.patch.object(server, "reader", stub):
+        with mock.patch.object(server.STATE, "reader", stub):
             r = self.client.get("/api/find?word=zzz")
         self.assertEqual(r.status_code, 400)
 
@@ -1194,7 +1195,7 @@ class ReaderApiTest(_Wave2Base):
         self.eng.tokenizer = _ReplyTok()
         script = {L: torch.zeros(2, 8) for L in range(n_layers)}
         script[2][1, 3] = 9.0
-        with mock.patch.object(server, "_capture_reply_mats",
+        with mock.patch.object(server.helpers, "_capture_reply_mats",
                                return_value=script) as cap:
             r = self.client.post("/api/neurons", json={
                 "prompt": "Say hi.", "rows": [ROW], "token_index": 2,
@@ -1217,11 +1218,11 @@ class ReaderApiTest(_Wave2Base):
                 return "".join(self.pieces[i] for i in ids)
         ids = [0, 1, 2, 3, 4]
         # reply "Hello there friend" starts at token 2
-        self.assertEqual(server._reply_token_at(Tok(), ids, 2, 0), 2)
-        self.assertEqual(server._reply_token_at(Tok(), ids, 2, 4), 2)
-        self.assertEqual(server._reply_token_at(Tok(), ids, 2, 5), 3)  # the space joins " there"
-        self.assertEqual(server._reply_token_at(Tok(), ids, 2, 7), 3)
-        self.assertEqual(server._reply_token_at(Tok(), ids, 2, 13), 4)
+        self.assertEqual(server.helpers._reply_token_at(Tok(), ids, 2, 0), 2)
+        self.assertEqual(server.helpers._reply_token_at(Tok(), ids, 2, 4), 2)
+        self.assertEqual(server.helpers._reply_token_at(Tok(), ids, 2, 5), 3)  # the space joins " there"
+        self.assertEqual(server.helpers._reply_token_at(Tok(), ids, 2, 7), 3)
+        self.assertEqual(server.helpers._reply_token_at(Tok(), ids, 2, 13), 4)
 
     def test_neurons_needs_exactly_one_index(self):
         for body in ({}, {"token_index": 1, "reply_char": 0, "reply": "hi"},
@@ -1265,7 +1266,7 @@ class ReaderApiTest(_Wave2Base):
         from model_lobotomy import app as engine_mod
         n_layers = engine_mod.active_spec().layers
         self.eng.capture_script = self._script(n_layers)
-        with mock.patch.object(server, "reader", self._stub()):
+        with mock.patch.object(server.STATE, "reader", self._stub()):
             r = self.client.post("/api/neurons", json={
                 "prompt": "Say hi.", "token_index": 1, "top_k": 1})
         self.assertEqual(r.status_code, 200, r.text)
@@ -1274,7 +1275,7 @@ class ReaderApiTest(_Wave2Base):
 
     def test_lift_shape(self):
         stub = self._stub()
-        with mock.patch.object(server, "reader", stub):
+        with mock.patch.object(server.STATE, "reader", stub):
             r = self.client.post("/api/lift", json={
                 "layer": 14, "neuron": 100, "dose": 1.5,
                 "words": ["pirate"], "prompts": None})
@@ -1292,7 +1293,7 @@ class ReaderApiTest(_Wave2Base):
         self.assertEqual(r.status_code, 422)
 
     def test_model_routes_503_without_weights(self):
-        with mock.patch.object(server, "NO_MODEL", True):
+        with mock.patch.object(server.STATE, "no_model", True):
             paths = [("/api/neuron/11/1343", "get"),
                      ("/api/find?word=pirate", "get")]
             for path, _ in paths:
@@ -1326,7 +1327,7 @@ class ReaderApiTest(_Wave2Base):
     def test_neuron_card_replay_from_cards_json(self):
         from model_lobotomy import app as engine_mod
         root = self._tmp_root()
-        slug = server._model_slug(engine_mod._active_model_id)
+        slug = server.helpers._model_slug(engine_mod._active_model_id)
         cards = root / "store" / "reader" / slug
         cards.mkdir(parents=True)
         card = {"model_id": engine_mod._active_model_id, "layer": 11,
@@ -1334,16 +1335,16 @@ class ReaderApiTest(_Wave2Base):
                 "fires_on": None,
                 "fires_on_cache": {"built": False, "tokens": 0}}
         (cards / "cards.json").write_text(json.dumps({"11:1343": card}))
-        with mock.patch.object(server, "REPLAY", True), \
-                mock.patch.object(server, "ROOT", root):
+        with mock.patch.object(server.STATE, "replay", True), \
+                mock.patch.object(server.STATE, "root", root):
             r = self.client.get("/api/neuron/11/1343")
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json(), card)
 
     def test_neuron_card_replay_without_cards_503(self):
         root = self._tmp_root()
-        with mock.patch.object(server, "REPLAY", True), \
-                mock.patch.object(server, "ROOT", root):
+        with mock.patch.object(server.STATE, "replay", True), \
+                mock.patch.object(server.STATE, "root", root):
             r = self.client.get("/api/neuron/11/1343")
         self.assertEqual(r.status_code, 503)
         self.assertEqual(

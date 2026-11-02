@@ -70,24 +70,32 @@ class FakeDeleteEngine:
                                          "cancelled": False}}
 
 
+
+def _fake_guard_stream(blocked=False):
+    def fake(eng, edits, medians, enforce):
+        if False:
+            yield None
+        return SimpleNamespace(blocked=blocked)
+    return fake
+
+
 class DeleteCase(unittest.TestCase):
     def setUp(self):
         self.eng = FakeDeleteEngine()
         self.patches = [
-            mock.patch.object(server, "NO_MODEL", False),
-            mock.patch.object(server, "get_engine",
+            mock.patch.object(server.STATE, "no_model", False),
+            mock.patch.object(server.helpers, "get_engine",
                               return_value=self.eng),
-            mock.patch.object(server, "_latest_knob",
+            mock.patch.object(server.helpers, "_latest_knob",
                               return_value=dict(KNOB)),
-            mock.patch.object(server, "_verified_guard",
-                              return_value=SimpleNamespace(
-                                  blocked=False)),
-            mock.patch.object(server, "_dial_spec",
+            mock.patch.object(server.helpers, "_verified_guard_stream",
+                              side_effect=_fake_guard_stream(False)),
+            mock.patch.object(server.helpers, "_dial_spec",
                               side_effect=KeyError("pirate")),
-            mock.patch.object(server, "_calibrate",
+            mock.patch.object(server.helpers, "_calibrate",
                               return_value=({17: 2.0},
                                             {"cache_hit": True})),
-            mock.patch.object(server, "_guard_event_dict",
+            mock.patch.object(server.helpers, "_guard_event_dict",
                               return_value={"blocked": False}),
         ]
         for p in self.patches:
@@ -97,7 +105,7 @@ class DeleteCase(unittest.TestCase):
     def tearDown(self):
         for p in reversed(self.patches):
             p.stop()
-        server._cancel.clear()
+        server.STATE.cancel.clear()
 
     def _events(self, body):
         r = self.client.post("/api/delete", json=body)
@@ -138,8 +146,8 @@ class DeleteStreamTest(DeleteCase):
 
     def test_delete_guard_block_first(self):
         with mock.patch.object(
-                server, "_verified_guard",
-                return_value=SimpleNamespace(blocked=True)):
+                server.helpers, "_verified_guard_stream",
+                side_effect=_fake_guard_stream(True)):
             evs = self._events({"prompt": "Say hi.",
                                 "trait": "pirate"})
         self.assertEqual(
@@ -148,7 +156,7 @@ class DeleteStreamTest(DeleteCase):
         self.assertEqual(self.eng.calls, [])
 
     def test_ineligible_trait_422(self):
-        with mock.patch.object(server, "_latest_knob",
+        with mock.patch.object(server.helpers, "_latest_knob",
                                return_value=None):
             r = self.client.post("/api/delete", json={
                 "prompt": "Say hi.", "trait": "nope"})
@@ -156,7 +164,7 @@ class DeleteStreamTest(DeleteCase):
         self.assertIn("not eligible", r.text)
 
     def test_delete_503_and_409(self):
-        with mock.patch.object(server, "NO_MODEL", True):
+        with mock.patch.object(server.STATE, "no_model", True):
             r = self.client.post("/api/delete", json={
                 "prompt": "Say hi.", "trait": "pirate"})
             self.assertEqual(r.status_code, 503)
@@ -208,7 +216,7 @@ class DeleteCheckTest(DeleteCase):
             self.assertEqual(r.status_code, 400)
 
     def test_check_ineligible_422(self):
-        with mock.patch.object(server, "_latest_knob",
+        with mock.patch.object(server.helpers, "_latest_knob",
                                return_value=None):
             r = self.client.post("/api/delete/check", json={
                 "trait": "nope"})

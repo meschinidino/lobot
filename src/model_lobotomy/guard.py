@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from dataclasses import dataclass, field, replace
 
 from model_lobotomy import guard_screens as screens_mod
@@ -204,7 +203,6 @@ SCREEN_DISPLAY = {
     "honesty": screens_mod.honesty_display,
     "privacy": screens_mod.privacy_display,
 }
-_SCREEN_DISPLAY = SCREEN_DISPLAY
 
 
 def refusal_entry(v: GuardVerdict):
@@ -223,7 +221,7 @@ def verdict_dict(gv: GuardVerdict) -> dict:
     if gv.screens:
         out["screens"] = {
             name: screens_mod.screen_dict(
-                name, v, _SCREEN_DISPLAY[name])
+                name, v, SCREEN_DISPLAY[name])
             for name, v in gv.screens}
     return out
 

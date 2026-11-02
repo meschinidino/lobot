@@ -221,9 +221,9 @@ class InstallRoutesTest(unittest.TestCase):
         self.jobs_dir = Path(self.tmp.name) / "jobs"
         self.jobs_dir.mkdir()
         from model_lobotomy import create_job
-        server._runner = create_job.CreateRunner(
+        server.STATE.runner = create_job.CreateRunner(
             jobs_dir=self.jobs_dir)
-        self.addCleanup(setattr, server, "_runner", None)
+        self.addCleanup(setattr, server.STATE, "runner", None)
         self.roots = mock.patch.object(
             I, "INSTALLS_ROOT", Path(self.tmp.name) / "installs")
         self.roots.start()
@@ -278,13 +278,13 @@ class InstallRoutesTest(unittest.TestCase):
         self.assertEqual(rec["run"]["base_cmd"], ["cli"])
 
     def test_install_busy_409(self):
-        server._install_lock.acquire()
+        server.STATE.install_lock.acquire()
         try:
             r = self.client.post("/api/install", json={
                 "trait_id": self.job, "target": "llamacpp",
                 "model_ref": "m.gguf"})
         finally:
-            server._install_lock.release()
+            server.STATE.install_lock.release()
         self.assertEqual(r.status_code, 409)
 
     def test_verify_compares_texts(self):
@@ -345,9 +345,9 @@ class InstallCompareTest(unittest.TestCase):
         self.jobs_dir = Path(self.tmp.name) / "jobs"
         self.jobs_dir.mkdir()
         from model_lobotomy import create_job
-        server._runner = create_job.CreateRunner(
+        server.STATE.runner = create_job.CreateRunner(
             jobs_dir=self.jobs_dir)
-        self.addCleanup(setattr, server, "_runner", None)
+        self.addCleanup(setattr, server.STATE, "runner", None)
         self.job = "pirate-0-20260101-000000-000"
         job_dir = _write_job(self.jobs_dir, self.job, trait="pirate")
         patch_mod.save_patch(
@@ -365,14 +365,14 @@ class InstallCompareTest(unittest.TestCase):
 
     def test_compare_inside_interval(self):
         record = {"trait_id": self.job}
-        with mock.patch.object(server, "NO_MODEL", False), \
-                mock.patch.object(server, "get_engine",
+        with mock.patch.object(server.STATE, "no_model", False), \
+                mock.patch.object(server.helpers, "get_engine",
                                   return_value=self.eng), \
                 mock.patch.object(T, "family_cfg",
                                   return_value={"judge": "J"}), \
                 mock.patch.object(T, "judge_score",
                                   side_effect=[0.1, 0.45]):
-            got = server._install_compare(record, "q", "base",
+            got = server.helpers._install_compare(record, "q", "base",
                                           "patched")
         self.assertTrue(got["pass"])
         self.assertAlmostEqual(got["measured_mean"], 0.35)
@@ -397,8 +397,8 @@ class InstallCompareTest(unittest.TestCase):
                     "text": f"{'P' if patched else 'B'}:{prompt}"}
 
         scores = {"B": 0.1, "P": 0.4}
-        with mock.patch.object(server, "NO_MODEL", False), \
-                mock.patch.object(server, "get_engine",
+        with mock.patch.object(server.STATE, "no_model", False), \
+                mock.patch.object(server.helpers, "get_engine",
                                   return_value=self.eng), \
                 mock.patch.object(T, "family_cfg",
                                   return_value={"judge": "J"}), \
@@ -435,8 +435,8 @@ class InstallCompareTest(unittest.TestCase):
             direction=torch.ones(8), layer=14, dose=0.5,
             trait="pirate", recipe={}, report_card={},
             guard={}, fingerprint={}, scale=2.0)
-        with mock.patch.object(server, "NO_MODEL", False):
-            got = server._install_compare({"trait_id": self.job},
+        with mock.patch.object(server.STATE, "no_model", False):
+            got = server.helpers._install_compare({"trait_id": self.job},
                                           "q", "b", "p")
         self.assertIsNone(got["pass"])
         self.assertIn("no shipped numbers", got["reason"])

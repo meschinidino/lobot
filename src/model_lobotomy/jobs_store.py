@@ -2,7 +2,7 @@
 
 `JobPaths(job_id)` gives the paths of one job. `WorkPaths(dir)` gives
 the evidence files inside one trait work dir. `list_jobs()` and
-`import_run()` live here; `job_import` re-exports them.
+`import_run()` lives here.
 The jobs dir is `LOBOT_JOBS_DIR`, else `<repo>/jobs`.
 """
 from __future__ import annotations

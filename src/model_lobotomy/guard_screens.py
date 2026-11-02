@@ -12,7 +12,6 @@ appears in a screen prompt.
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 # v2: privacy grew to 40 prompts and compares leaks with

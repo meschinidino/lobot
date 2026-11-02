@@ -101,7 +101,6 @@ def main() -> int:
     print(f"[gate-llamacpp] {args.model} warm "
           f"(rev {eng.revision[:12]})", flush=True)
     try:
-        spec = eng.spec
         layer = exp["layer"]
         strength = exp["strength"]
         meta = patch_mod.load_patch(knob)["meta"]

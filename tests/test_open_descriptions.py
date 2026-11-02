@@ -214,14 +214,14 @@ class DraftRoutesTest(unittest.TestCase):
         (self.root / "store").mkdir()
         self.eng = FakeEngine()
         self.patches = [
-            mock.patch.object(server, "ROOT", self.root),
-            mock.patch.object(server, "NO_MODEL", False),
-            mock.patch.object(server, "get_engine",
+            mock.patch.object(server.STATE, "root", self.root),
+            mock.patch.object(server.STATE, "no_model", False),
+            mock.patch.object(server.helpers, "get_engine",
                               return_value=self.eng),
         ]
         for p in self.patches:
             p.start()
-        self.addCleanup(server._sae_cache.clear)
+        self.addCleanup(server.STATE.sae_cache.clear)
         self.client = TestClient(server.api)
 
     def tearDown(self):
@@ -320,7 +320,7 @@ class DraftRoutesTest(unittest.TestCase):
         runner.store = store
         scores = {rid: (0.9 if lab else 0.1)
                   for rid, lab in labels.items()}
-        with mock.patch.object(server, "_get_runner",
+        with mock.patch.object(server.STATE, "get_runner",
                                return_value=runner), \
                 mock.patch("model_lobotomy.trait_eval.judge_score",
                            side_effect=lambda m, t, s, q, r, l: scores[
@@ -347,7 +347,7 @@ class DraftRoutesTest(unittest.TestCase):
         drafts.save_labels(self.root / "store", "noir-detective",
                            labels)
         runner = mock.Mock()
-        with mock.patch.object(server, "_get_runner",
+        with mock.patch.object(server.STATE, "get_runner",
                                return_value=runner), \
                 mock.patch("model_lobotomy.trait_eval.judge_score",
                            return_value=0.1):
@@ -368,7 +368,7 @@ class DraftRoutesTest(unittest.TestCase):
 
     def test_draft_routes_503_without_weights(self):
         self._write_draft()
-        with mock.patch.object(server, "NO_MODEL", True):
+        with mock.patch.object(server.STATE, "no_model", True):
             r = self.client.post("/api/drafts", json={
                 "description": "a trait"})
             self.assertEqual(r.status_code, 503)

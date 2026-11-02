@@ -23,7 +23,7 @@ const S = {
   limits: { layers: 32, neurons: 9216, dose_min: -3, dose_max: 3, max_rows: 4 },
   model: null, rows: [], example: false,
   // Guard: on unless research mode (session only, confirmed in a dialog). guardSeen: last guard result per setup.
-  guard: true, research: false, guardSeen: {}, checking: false,
+  guard: true, research: false, guardSeen: {}, checking: false, guardStep: null,
   jobs: [], traits: null, families: null, live: null, page: null, read: null,
   drawN: null, // run whose curve draws in on the next layout
   blockMsg: null, // {key, text}: the guard's reason for the last blocked setup

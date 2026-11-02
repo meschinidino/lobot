@@ -706,10 +706,8 @@ class TorchLane:
                             cancel=cancel))
         return out
 
-    def judge_many(self, pairs, label) -> list[float]:
+    def score_many(self, pairs, label) -> list[float]:
         return self._judge.score_many(pairs, label)
-
-    score_many = judge_many
 
     def nll_many(self, pairs) -> list[float]:
         keys = [(q, r) for q, r in pairs]
@@ -876,8 +874,8 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
             done += len(tuning)
             if progress is not None:
                 progress("tune", done, total)
-            js = lane.judge_many(list(zip(tuning, rs)), cfg["judge"])
-            fl = lane.judge_many(list(zip(tuning, rs)),
+            js = lane.score_many(list(zip(tuning, rs)), cfg["judge"])
+            fl = lane.score_many(list(zip(tuning, rs)),
                                  pareto_mod.FLUENCY_LABEL)
             nl = lane.nll_many(
                 list(zip(tuning, rs))
@@ -945,8 +943,8 @@ def _loop_gains(eng, spec, cfg, final, edits, sign, params,
     _check(cancel)
     if progress is not None:
         progress(stage, len(final), len(final))
-    jbs = lane.judge_many(list(zip(final, bases)), cfg["judge"])
-    jss = lane.judge_many(list(zip(final, sts)), cfg["judge"])
+    jbs = lane.score_many(list(zip(final, bases)), cfg["judge"])
+    jss = lane.score_many(list(zip(final, sts)), cfg["judge"])
     gains, pairs = [], []
     for q, base, st, jb, js in zip(final, bases, sts, jbs, jss):
         gains.append(js - jb if sign > 0 else jb - js)
@@ -970,9 +968,9 @@ def _gain_steps(eng, spec, cfg, label, qs, t_prompts, t_edits,
     _check(cancel)
     cts = lane.gen_many(c_prompts, c_edits, max_new, cancel=cancel)
     _check(cancel)
-    jbs = lane.judge_many(list(zip(qs, bases)), label)
-    jss = lane.judge_many(list(zip(qs, sts)), label)
-    jcs = lane.judge_many(list(zip(qs, cts)), label)
+    jbs = lane.score_many(list(zip(qs, bases)), label)
+    jss = lane.score_many(list(zip(qs, sts)), label)
+    jcs = lane.score_many(list(zip(qs, cts)), label)
     out = []
     for q, base, st, jb, js, jc in zip(qs, bases, sts, jbs, jss, jcs):
         tg = js - jb if tsign > 0 else jb - js
@@ -1122,7 +1120,7 @@ def read_gate(eng, spec, cfg, frozen, med, agree_qs,
     bases = _base_texts(eng, spec, lane, base_cache, rest, max_new, cancel)
     if progress is not None:
         progress("read_gate", len(rest), len(rest))
-    jss = lane.judge_many(list(zip(rest, bases)), cfg["judge"])
+    jss = lane.score_many(list(zip(rest, bases)), cfg["judge"])
     for i, (q, base, js) in enumerate(zip(rest, bases, jss)):
         pl, rl = bool((H[i] @ u).item() > thr), bool(js >= 0.5)
         probe_labels.append(pl)
@@ -1159,8 +1157,8 @@ def baseline_top1(eng, spec, cfg, label, tuning, final,
         sts = lane.gen_many([f"{ins}\n\n{q}" for q in tuning],
                             engine_mod.EMPTY_EDITS, max_new, cancel=cancel)
         _check(cancel)
-        jbs = lane.judge_many(list(zip(tuning, bases)), label)
-        jss = lane.judge_many(list(zip(tuning, sts)), label)
+        jbs = lane.score_many(list(zip(tuning, bases)), label)
+        jss = lane.score_many(list(zip(tuning, sts)), label)
         gains = [js - jb for jb, js in zip(jbs, jss)]
         done += len(tuning)
         if progress is not None:
@@ -1458,7 +1456,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     """One complete trait end to end. Writes report.json + report.md.
 
     Stages run in create.stages.STAGE_NAMES order through a shared
-    ctx dict. See the pre-MOD version for the stage-by-stage notes.
+    ctx dict. Each stage function holds its own notes.
     """
     _check(cancel)
     params = schedule_params(schedule)

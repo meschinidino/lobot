@@ -1,18 +1,20 @@
-"""Routes: install_verify. Helpers and state live in server (late import)."""
+"""Routes: install_verify. Helpers live in server_helpers. State lives in server_state.STATE."""
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, Query, Request, UploadFile  # noqa: F401
+from fastapi import APIRouter
+from model_lobotomy.server_state import STATE
+from model_lobotomy import server_helpers as helpers
+from model_lobotomy.server_schemas import (CombineCheckRequest, InstallRequest, InstallVerifyRequest, VerifyRequest)
+from fastapi import File
+from fastapi import HTTPException
+from pathlib import Path
+from fastapi import UploadFile
+from model_lobotomy import installers as install_mod
+from model_lobotomy import jobs_store
+import json
+import time
 
 router = APIRouter()
-
-
-class _Live:
-    def __getattr__(self, name):
-        from model_lobotomy import server as _server
-        return getattr(_server, name)
-
-
-_live = _Live()
 
 
 @router.get("/api/install/targets")
@@ -29,11 +31,11 @@ def install_patch(req: InstallRequest):
                                  f"use one of {install_mod.TARGETS}.")
     if not req.model_ref.strip():
         raise HTTPException(400, "Give a model_ref.")
-    job_dir = _trait_job_dir(req.trait_id)
+    job_dir = helpers._trait_job_dir(req.trait_id)
     patch_path = jobs_store.WorkPaths(job_dir / "trait").patch
     if not patch_path.is_file():
         raise HTTPException(404, f"Unknown trait {req.trait_id}.")
-    if not _install_lock.acquire(blocking=False):
+    if not STATE.install_lock.acquire(blocking=False):
         raise HTTPException(409, "An install or verify is running. "
                                  "Wait for it to finish.")
     try:
@@ -54,12 +56,12 @@ def install_patch(req: InstallRequest):
         install_mod.save_install(record)
         return record
     finally:
-        _install_lock.release()
+        STATE.install_lock.release()
 
 @router.post("/api/install/{install_id}/verify")
 def install_verify(install_id: str, req: InstallVerifyRequest):
     """Run with and without the installed patch; compare (IN)."""
-    if not _INSTALL_ID_RE.fullmatch(install_id or ""):
+    if not helpers._INSTALL_ID_RE.fullmatch(install_id or ""):
         raise HTTPException(404, f"Unknown install {install_id}.")
     prompt = req.prompt.strip()
     if req.judge not in (None, "local"):
@@ -67,9 +69,9 @@ def install_verify(install_id: str, req: InstallVerifyRequest):
     if req.judged_n:
         if req.judge != "local":
             raise HTTPException(400, "judged_n needs judge 'local'.")
-        if not 1 <= req.judged_n <= INSTALL_JUDGED_MAX:
+        if not 1 <= req.judged_n <= helpers.INSTALL_JUDGED_MAX:
             raise HTTPException(400, f"judged_n must be 1 to "
-                                     f"{INSTALL_JUDGED_MAX}.")
+                                     f"{helpers.INSTALL_JUDGED_MAX}.")
     elif not prompt:
         raise HTTPException(400, "The prompt is empty. "
                                  "Type a prompt first.")
@@ -77,8 +79,8 @@ def install_verify(install_id: str, req: InstallVerifyRequest):
     if record is None:
         raise HTTPException(404, f"Unknown install {install_id}.")
     if req.judged_n:
-        return _install_verify_judged(install_id, record, req)
-    if not _install_lock.acquire(blocking=False):
+        return helpers._install_verify_judged(install_id, record, req)
+    if not STATE.install_lock.acquire(blocking=False):
         raise HTTPException(409, "An install or verify is running. "
                                  "Wait for it to finish.")
     try:
@@ -103,7 +105,7 @@ def install_verify(install_id: str, req: InstallVerifyRequest):
                "comparison": None,
                "seconds": round(time.perf_counter() - t_all, 1)}
         if req.judge == "local":
-            out["comparison"] = _install_compare(record, prompt,
+            out["comparison"] = helpers._install_compare(record, prompt,
                                                  base["text"],
                                                  patched["text"])
             out["seconds"] = round(time.perf_counter() - t_all, 1)
@@ -112,69 +114,69 @@ def install_verify(install_id: str, req: InstallVerifyRequest):
          f"verify-{stamp}.json").write_text(json.dumps(out, indent=2))
         return out
     finally:
-        _install_lock.release()
+        STATE.install_lock.release()
 
 @router.post("/api/verify")
 def verify(req: VerifyRequest):
     """Re-run a trait patch's shipped evidence (RV)."""
-    job_dir = _trait_job_dir(req.trait_id)
+    job_dir = helpers._trait_job_dir(req.trait_id)
     patch_path = jobs_store.WorkPaths(job_dir / "trait").patch
     if not patch_path.is_file():
         raise HTTPException(422, f"Trait {req.trait_id} has no saved "
                                  f"patch to verify.")
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded "
                                  "(MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to verify.")
-    if get_engine().lock.locked():
+    if helpers.get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. "
                                  "Wait for it to finish.")
-    _need_torch(get_engine(), "verify")
-    _verify_pin(patch_path)
-    _live._cancel.clear()
-    return _ndjson(_verify_stream(patch_path, req.quick))
+    helpers._need_torch(helpers.get_engine(), "verify")
+    helpers._verify_pin(patch_path)
+    STATE.cancel.clear()
+    return helpers._ndjson(helpers._verify_stream(patch_path, req.quick))
 
 @router.post("/api/verify/upload")
 async def verify_upload(file: UploadFile = File(...)):
     """Verify an uploaded .lobot file (RV). Never unpickles."""
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded "
                                  "(MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to verify.")
-    if get_engine().lock.locked():
+    if helpers.get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. "
                                  "Wait for it to finish.")
-    _need_torch(get_engine(), "verify")
+    helpers._need_torch(helpers.get_engine(), "verify")
     data = b""
     while True:
         chunk = await file.read(1024 * 1024)
         if not chunk:
             break
         data += chunk
-        if len(data) > UPLOAD_BYTES_CAP:
+        if len(data) > helpers.UPLOAD_BYTES_CAP:
             raise HTTPException(413, "Patch file is over 64 MB.")
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         probe = Path(tmp) / "probe.lobot"
         probe.write_bytes(data)
-        _verify_pin(probe)
-    _live._cancel.clear()
-    return _ndjson(_verify_stream(data, True))
+        helpers._verify_pin(probe)
+    STATE.cancel.clear()
+    return helpers._ndjson(helpers._verify_stream(data, True))
 
 @router.post("/api/combine/check")
 def combine_check(req: CombineCheckRequest):
     """Pair matrix + install order for saved patches (CB)."""
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded "
                                  "(MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to combine.")
-    names, patches = _combine_patches(req.patch_ids)
+    names, patches = helpers._combine_patches(req.patch_ids)
     if any(p["meta"].get("edit_kind") == "ablate" for p in patches):
-        _need_torch(get_engine(), "ablate")
-    if get_engine().lock.locked():
+        helpers._need_torch(helpers.get_engine(), "ablate")
+    if helpers.get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. "
                                  "Wait for it to finish.")
-    return _combine_matrix(names, patches, req.max_new_tokens,
+    return helpers._combine_matrix(names, patches, req.max_new_tokens,
                            req.seed)
 
 @router.get("/api/combine/installed")
@@ -193,15 +195,15 @@ def combine_installed():
                 found[tid] = rec.stat().st_mtime
     if not found:
         return {"installed": [], "matrix": None}
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded "
                                  "(MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to combine.")
-    names, patches = _combine_patches(list(found))
+    names, patches = helpers._combine_patches(list(found))
     if any(p["meta"].get("edit_kind") == "ablate" for p in patches):
-        _need_torch(get_engine(), "ablate")
-    if get_engine().lock.locked():
+        helpers._need_torch(helpers.get_engine(), "ablate")
+    if helpers.get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. "
                                  "Wait for it to finish.")
     return {"installed": list(found),
-            "matrix": _combine_matrix(names, patches, 24, 0)}
+            "matrix": helpers._combine_matrix(names, patches, 24, 0)}
