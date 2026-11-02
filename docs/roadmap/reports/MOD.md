@@ -219,3 +219,19 @@ reference run after FD. That rerun is out of MOD scope.
 Replay parity (phase 9): static JS parity plus replay HTTP
 checks. Browser DOM parity was not run. No browser tool is
 wired in this session.
+
+## Fix 1: Pareto stage (stacked PR 1)
+
+- `_stage_pareto` now runs `pareto_mod.run_pareto`.
+- It reads `ctx["base"]` from the baseline stage.
+- It emits `pareto` progress and writes `timings["pareto"]`.
+- `_stage_baseline` no longer runs the prompt comparison.
+- The stage comment that called it a placeholder is gone.
+- `pyflakes` is a dev dependency (`pyproject.toml`, `uv.lock`).
+- The pyflakes unit test lands with Fix 3.
+- Fix 3 removes the router undefined names (more than 500 today).
+- A clean full pyflakes run is not possible before Fix 3.
+- Tests: `Ran 737 tests, OK (skipped=5)`. Before: 736 plus this PR's 1 new test in `tests/test_create_stages.py` (the count also reflects PR #31 tests already on develop).
+- Replay: not run. No route or screen changed.
+- Browser: not run. This PR touches no `web/` or router file.
+- Live weights: not run. Unit tests and fakes only.
