@@ -135,6 +135,21 @@ Parity: replay and live not run. Stage order did not change.
 Known gap: the `pareto` stage still runs inside `baseline`,
 as before. Its stage entry is a no-op placeholder in the loop.
 
-## Phases 8 to 10
+## Phase 8: Server routers
+
+- `server.py` drops from 3,133 to 1,940 lines.
+- Routes move to `routers/`: run, create, evidence, drafts_agent,
+  chat, install_verify, reader_features. 51 routes, same paths.
+- Shared state moves into one `AppState` on `api.state`.
+  Its properties delegate to the module globals, so tests that
+  set `server._runner` keep working.
+- `_ndjson` moves to `streaming.py`. Every stream still uses it.
+- Router helpers read patched state live. Types are injected
+  once so FastAPI resolves the same annotations.
+
+Tests: before 726, after 729 (`OK, skipped=5`). New: 3 tests.
+Parity: replay and live not run in this phase. Same routes.
+
+## Phases 9 to 10
 
 Not started. Each phase gets its own branch and pull request.
