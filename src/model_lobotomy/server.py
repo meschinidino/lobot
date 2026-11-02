@@ -781,7 +781,7 @@ def _followup_start(job_id: str, kind: str, opts: dict) -> dict:
            for j in runner.list_jobs()):
         raise HTTPException(409, "A Create job is running. "
                                  "Wait for it to finish.")
-    job = _read_json(_trait_job_dir(job_id) / "job.json") or {}
+    job = _read_json(jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).job_json) or {}
     try:
         return _get_followups().start(
             job_id, kind, trait_dir, job.get("model_id"),

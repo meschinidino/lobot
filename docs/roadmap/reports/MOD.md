@@ -169,6 +169,53 @@ Live parity: not run. Browser DOM parity was not run: no
 browser tool is wired in this session. Static parity and the
 replay HTTP check stand in for it. They are not a browser test.
 
-## Phase 10
+## Phase 10: Docs and swap demo
 
-Not started.
+- `AGENTS.md` gains a "How to swap a part" section.
+  It gives one worked example per port.
+- `docs/guides/app.md` notes where each screen's code lives.
+- Swap demo (unit, fake engine, no weights):
+  `tests/test_swap_demo.py` runs Create end to end with
+  `LOBOT_GUARD=noop`, `LOBOT_JUDGE=fake` and
+  `LOBOT_DOSE_RULE=fake`. The report names the swapped parts
+  in `ports` and `tuning.rule`.
+- The same file checks acceptance 4: no `Guard(` build, no
+  environment read and no hand-built jobs path in `src/`
+  outside the port modules.
+- The demo found three latent stage bugs from phase 7
+  (missing `model_id`, `seed` and `ext`/`cfg` in stage ctx).
+  They are fixed in this phase. The full suite had missed
+  them: no fake-engine Create ran end to end before.
+
+Tests: before 732, after 734 (`OK, skipped=5`). New: 2 tests.
+
+## Live parity (once, at the end, model slot)
+
+One full-schedule torch Create for pirate, seed 0.
+Run: `logs/mod_live_pirate` (3,343.9 s, exit 0).
+
+| Field | MOD live | HEADREF (Oct 31) | FD llama (Nov 1) |
+|---|---|---|---|
+| verdict | knob | knob | knob |
+| frozen | L16 @ 0.5, gain 0.241 | L17 @ 1.5, gain 0.821 | L16 @ 0.5, gain 0.239 |
+| eligibility | read + update_up, knob | read, knob | read + update_up, knob |
+| read gate | 1.0, margin 0.5 | - | 1.0, margin 0.5 |
+| guard blocked | False | - | False |
+
+The HEADREF row does not match on layer, dose or eligibility.
+Cause: HEADREF predates the FD dose rule (commit `0195717`).
+FD changed the dose rule to `nll+fluency-v1` after HEADREF ran.
+MOD did not change that rule. It only moved it behind a port.
+Against the FD reference, the live run matches: same verdict,
+layer, dose and eligibility. Tuning gain differs by 0.002.
+Report cards pass and fail on the same verbs. Each trait mean
+lies inside the other run's interval (update_up: MOD 0.371,
+FD 0.333; intervals overlap on [0.223, 0.484]).
+
+So: live parity holds against the current reference.
+The spec's HEADREF pointer is stale. It needs a new torch
+reference run after FD. That rerun is out of MOD scope.
+
+Replay parity (phase 9): static JS parity plus replay HTTP
+checks. Browser DOM parity was not run. No browser tool is
+wired in this session.

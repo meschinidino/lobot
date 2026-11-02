@@ -146,6 +146,30 @@ To run or show the app to the user, follow
 | Deferred work with its reason | `docs/TODOS.md` |
 | Something no longer current | `docs/archive/` (do not delete history) |
 
+## How to swap a part (MOD)
+
+Each part has one port, one setting and contract tests.
+Write one new module. Change one setting. Do not search for call sites.
+
+| Part | Port | Setting | Worked example |
+|---|---|---|---|
+| Settings | `config.py` (`Settings`, `ENV_VARS`) | (all) | Add the variable to `ENV_VARS`, `Settings` and configuration.md. The doc test fails if they differ. |
+| Job storage | `jobs_store.py` (`JobPaths`, `WorkPaths`) | `LOBOT_JOBS_DIR` | Use `JobPaths(job_id).report`. Do not build `jobs/...` strings. |
+| Judge | `judges/` (`score_many`) | `LOBOT_JUDGE` | Copy `FakeJudge`. Set `LOBOT_JUDGE=<your name>`. The report records it in `ports.judge`. |
+| Guard | `guards/` (`screen`, `confirm`) | `LOBOT_GUARD` | Copy `NoopGuard`. Set `LOBOT_GUARD=<your name>`. Callers use `get_guard()`. |
+| Direction | `directions/` (`derive`, `seps`) | `LOBOT_DIRECTION` | Copy `DiffMeanDirection`. Set `LOBOT_DIRECTION=<your name>`. |
+| Dose rule | `dose_rules.py` (`choose_gen`, `name`, `params`) | `LOBOT_DOSE_RULE` | Copy `FakeDoseRule`. Set `LOBOT_DOSE_RULE=<your name>`. The report writes `tuning.rule`. |
+| Create stage | `create/stages.py` (`STAGE_NAMES`) | (request fields) | Add a stage function in `trait_eval.STAGE_FUNCS`. Add its name and label in one place. |
+| Server route | `routers/<area>.py` | (none) | Add the route in its area file. Shared state lives in `AppState`. Streams use `streaming.ndjson`. |
+| Screen | `web/js/screens/<screen>.js` | (none) | Add one module per screen. Shared helpers live in `web/js/state.js`, `api.js` and `components/`. |
+
+Contract tests run per port: `tests/test_config.py`,
+`test_jobs_store.py`, `test_judges.py`, `test_guards.py`,
+`test_direction_dose.py`, `test_create_stages.py`,
+`test_server_routers.py`, `test_frontend_modules.py` and
+`test_swap_demo.py` (Create with swapped ports, fake engine).
+
+
 ## Environment
 
 Every variable, with its default:

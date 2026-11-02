@@ -52,7 +52,8 @@ class CreateAgent:
         self.store = store or TraitStore()
         root = Path(__file__).resolve().parent.parent.parent
         self.store_root = Path(store_root or root / "store")
-        self.workdir_root = Path(workdir_root or root / "jobs" / "agents")
+        from model_lobotomy import jobs_store as _js
+        self.workdir_root = Path(workdir_root or _js.default_jobs_dir() / "agents")
         self.lane = lane
         self.run_trait = run_trait_fn or trait_eval.run_trait
         self.confirm_labels = confirm_labels

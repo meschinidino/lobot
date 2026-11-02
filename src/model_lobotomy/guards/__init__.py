@@ -81,6 +81,12 @@ class NoopGuard:
         return GuardPortVerdict()
     def confirm(self, engine, edits, screens=None, **kw):
         return GuardPortVerdict(verified=True)
+    def check_verified(self, engine, edits, **kw):
+        from model_lobotomy.guard import GuardVerdict
+        return GuardVerdict(blocked=False, min_ratio=1.0,
+                            worst_prompt=None, full_generation=True)
+    def check_confirmed(self, engine, edits, **kw):
+        return self.check_verified(engine, edits, **kw)
 
 
 def get_guard(name=None):
