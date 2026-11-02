@@ -295,3 +295,34 @@ class CreateParetoOptionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AgentJobsTest(unittest.TestCase):
+    def test_finished_agent_is_listed_and_registered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            jobs = Path(tmp) / "jobs"
+            aid = "20261031-205730-463f37"
+            round_dir = jobs / "agents" / aid / "round-1"
+            write_run(round_dir)
+            result = {"agent_id": aid, "status": "done",
+                      "description": "talks like a pirate",
+                      "family": "pirate", "workdir": str(round_dir),
+                      "steps": [{"step": "draft"}]}
+            (jobs / "agents" / aid / "agent.json").write_text(
+                json.dumps(result))
+            server._runner = create_job.CreateRunner(jobs_dir=jobs)
+            self.addCleanup(setattr, server, "_runner", None)
+            client = TestClient(server.api)
+            (row,) = client.get("/api/agents").json()["agents"]
+            self.assertEqual((row["id"], row["status"], row["job_id"]),
+                             (aid, "done", None))
+            job_id = server._register_agent_job(result)
+            self.assertEqual(job_id, f"pirate-agent-{aid}")
+            self.assertEqual(server._register_agent_job(result), job_id)
+            st = client.get(f"/api/agent/{aid}").json()
+            self.assertEqual((st["job_id"], len(st["steps"])), (job_id, 1))
+            ids = [t["id"] for t in client.get("/api/traits").json()["traits"]]
+            self.assertIn(job_id, ids)
+            self.assertEqual(client.get("/api/agent/../x").status_code, 404)
+            self.assertIsNone(server._register_agent_job(
+                {"agent_id": aid, "workdir": str(Path(tmp) / "none")}))
