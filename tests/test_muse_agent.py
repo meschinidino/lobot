@@ -369,6 +369,83 @@ class RoutesTest(unittest.TestCase):
         self.assertEqual(r.status_code, 502, r.text)
         self.assertIn("0.99", r.json()["detail"])
 
+    def _add_pairs(self):
+        trait_dir = self.jobs / self.job / "trait"
+        report = json.loads((trait_dir / "report.json").read_text())
+        report["final"]["update_up"]["pairs"] = [
+            {"q": "q1", "base": "plain one", "steered": "pirate one",
+             "jb": 0.1, "js": 0.8},
+            {"q": "q2", "base": "pirate two", "steered": "plain two",
+             "jb": 0.9, "js": 0.2},
+            {"q": "q3", "base": "plain three",
+             "steered": "plain three too", "jb": 0.4, "js": 0.4}]
+        (trait_dir / "report.json").write_text(json.dumps(report))
+        return trait_dir, report
+
+    def test_second_opinion_numbers_cache_and_no_gate_change(self):
+        from model_lobotomy import second_opinion as so_mod
+        from tests.test_second_opinion import FakeJudge
+        trait_dir, before = self._add_pairs()
+        report_before = (trait_dir / "report.json").read_text()
+        with mock.patch.object(trait_eval, "MetaApiJudge", FakeJudge):
+            a = self.client.post(
+                f"/api/traits/{self.job}/second-opinion")
+            b = self.client.post(
+                f"/api/traits/{self.job}/second-opinion")
+        self.assertEqual(a.status_code, 200, a.text)
+        body = a.json()
+        self.assertEqual(body["muse_mean_gain"], 0.0)
+        self.assertEqual(body["local_mean_gain"], 0.0)
+        self.assertEqual(body["agree"], 3)
+        self.assertEqual(body["correlation"], 1.0)
+        self.assertEqual(body["total"], 3)
+        self.assertEqual(body["calls"], 6)
+        self.assertEqual(body["tokens"], 90)
+        self.assertEqual(body["model"], "fake-judge")
+        self.assertNotIn("META_API_KEY", a.text)
+        self.assertFalse(body["cached"])
+        self.assertTrue(b.json()["cached"])
+        self.assertEqual(FakeJudge.total_calls, 6)
+        cached = json.loads(
+            (trait_dir / "second_opinion.json").read_text())
+        self.assertEqual(cached["pairs_hash"],
+                         so_mod.pairs_hash(before["final"]["update_up"]
+                                           ["pairs"]))
+        self.assertEqual((trait_dir / "report.json").read_text(),
+                         report_before)
+        self.assertEqual(before["verdict"], "knob")
+
+    def test_second_opinion_recomputes_from_cached_scores(self):
+        from model_lobotomy import second_opinion as so_mod
+        from tests.test_second_opinion import FakeJudge
+        trait_dir, before = self._add_pairs()
+        pairs = before["final"]["update_up"]["pairs"]
+        result = {"muse_mean_gain": 0.0, "muse_ci95": [-0.5, 0.5],
+                  "local_mean_gain": 0.0, "agree": 0, "total": 3,
+                  "calls": 6, "tokens": 90, "model": "fake-judge",
+                  "muse_scores": [{"jb": 0.1, "js": 0.9},
+                                   {"jb": 0.9, "js": 0.1},
+                                   {"jb": 0.1, "js": 0.1}]}
+        (trait_dir / "second_opinion.json").write_text(json.dumps(
+            {"pairs_hash": so_mod.pairs_hash(pairs), "result": result}))
+        FakeJudge.total_calls = 0
+        with mock.patch.object(trait_eval, "MetaApiJudge", FakeJudge):
+            r = self.client.post(
+                f"/api/traits/{self.job}/second-opinion")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertTrue(r.json()["cached"])
+        self.assertEqual(r.json()["agree"], 3)
+        self.assertIn("correlation", r.json())
+        self.assertEqual(FakeJudge.total_calls, 0)
+
+    def test_second_opinion_no_key_is_503(self):
+        self._add_pairs()
+        with mock.patch.dict("os.environ", {"META_API_KEY": ""}):
+            r = self.client.post(
+                f"/api/traits/{self.job}/second-opinion")
+        self.assertEqual(r.status_code, 503, r.text)
+        self.assertIn("META_API_KEY", r.json()["detail"])
+
     def test_no_key_is_503_with_hint(self):
         with mock.patch.dict("os.environ", {"META_API_KEY": ""}):
             r = self.client.post(f"/api/traits/{self.job}/explain")

@@ -103,6 +103,68 @@ def trait_explain(job_id: str):
     key_path.write_text(key + "\n")
     return {"id": job_id, "explanation": text, "cached": False}
 
+@router.post("/api/traits/{job_id}/second-opinion")
+def trait_second_opinion(job_id: str):
+    """Muse Spark re-scores the turn-up pairs (second opinion).
+
+    The local judge still gates Create. This route changes no gate
+    and no verdict. It caches by a hash of the pairs.
+    """
+    from model_lobotomy import second_opinion as so_mod
+    trait_dir = jobs_store.JobPaths(job_id, helpers._trait_job_dir(job_id).parent).trait.workdir
+    paths = jobs_store.WorkPaths(trait_dir)
+    if not paths.report.is_file():
+        raise HTTPException(404, f"No report for {job_id} yet.")
+    rep = json.loads(paths.report.read_text())
+    pairs = (((rep.get("final") or {}).get("update_up") or {})
+             .get("pairs") or [])
+    if not pairs:
+        raise HTTPException(422, "This report has no turn-up pairs "
+                                 "to re-score.")
+    key = so_mod.pairs_hash(pairs)
+    cached = helpers._read_json(paths.second_opinion)
+    if cached and cached.get("pairs_hash") == key:
+        result = dict(cached["result"])
+        if "correlation" not in result and result.get("muse_scores"):
+            # Old cache with stored scores: recompute, no API call.
+            muse_gains = [s["js"] - s["jb"]
+                          for s in result["muse_scores"]]
+            local_gains = [p["js"] - p["jb"] for p in pairs]
+            result.update(so_mod.recompute(muse_gains, local_gains))
+            paths.second_opinion.write_text(json.dumps(
+                {"pairs_hash": key, "result": result}, indent=1))
+        if "correlation" in result:
+            out = {k: v for k, v in result.items()
+                   if k != "muse_scores"}
+            return {"id": job_id, **out, "cached": True}
+        # A cache with no stored scores cannot recompute. Fall
+        # through and score again; the new cache stores the scores.
+    try:
+        label = trait_eval.family_cfg(rep.get("trait"))["judge"]
+    except KeyError:
+        raise HTTPException(422, f"No judge label for "
+                                 f"{rep.get('trait')!r}.") from None
+
+    def factory():
+        try:
+            return trait_eval.MetaApiJudge()
+        except trait_eval.MetaApiError as e:
+            raise HTTPException(503, f"Muse Spark is not available: "
+                                     f"{e}. Set META_API_KEY.") from None
+
+    try:
+        factory().model  # fail fast with 503 before any scoring
+    except HTTPException:
+        raise
+    try:
+        result = so_mod.run_second_opinion(pairs, label, factory)
+    except trait_eval.MetaApiError as e:
+        raise HTTPException(502, f"Muse Spark failed: {e}") from None
+    paths.second_opinion.write_text(json.dumps(
+        {"pairs_hash": key, "result": result}, indent=1))
+    out = {k: v for k, v in result.items() if k != "muse_scores"}
+    return {"id": job_id, **out, "cached": False}
+
 @router.post("/api/agent")
 def agent_start(req: AgentRequest):
     """Start the Create agent (Muse Spark + local gates) in the background."""

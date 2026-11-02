@@ -319,6 +319,22 @@ a final summary. The summary must pass the number check. Events:
 without a patch. The request has no guard switch and no Research
 mode switch. The guard stays on.
 
+## POST /api/traits/{id}/second-opinion
+
+`{"id", "muse_mean_gain", "muse_ci95", "local_mean_gain", "agree",
+"total", "correlation", "calls", "tokens", "model", "cached"}`:
+Muse Spark re-scores the base and steered replies in
+`final.update_up.pairs`. At most 8 replies score at one time.
+`agree` counts pairs where both judges put the gain in the same
+bin: up (gain over 0.1), down (gain under -0.1), or flat (the
+rest). `correlation` is the Pearson correlation of the two gain
+lists. The cache holds the per-pair Muse scores. A cache with
+scores but no correlation field recomputes with no API call.
+The local judge still gates Create. This route changes no gate
+and no verdict. Cached in the job's `trait/second_opinion.json`,
+keyed by a hash of the pairs. 404 without a report; 422 without
+turn-up pairs; 503 without `META_API_KEY`; 502 when the API fails.
+The response never holds the key.
 ## GET /api/traits/{id}/patch (E1 evidence)
 
 The job's `knob.lobot` patch as `application/zip`, download name

@@ -394,8 +394,45 @@ def report_summary(report: dict) -> dict:
             "dose_rule": ((report.get("tuning") or {}).get("rule")
                           or {}).get("name"),
             "prompt_comparison": _pareto_summary(report),
+            "second_opinion": _second_opinion_summary(report),
             "seconds": {"value": _r(report.get("seconds")),
                         "meaning": "how long the run took, in seconds"}}
+
+
+def _second_opinion_summary(report: dict) -> dict | None:
+    """Second-opinion numbers for the explanation. No bar.
+
+    The local judge gates the verdict. These numbers gate nothing.
+    """
+    so = report.get("second_opinion")
+    if not so:
+        return None
+    return {
+        "muse_mean_gain": _r(so.get("muse_mean_gain")),
+        "muse_mean_gain_meaning": "average rise of the Muse Spark "
+                                  "judge score on the turn-up pairs",
+        "muse_ci95": [_r(x) for x in (so.get("muse_ci95") or [])],
+        "muse_ci95_meaning": "95% range for the Muse Spark mean gain",
+        "local_mean_gain": _r(so.get("local_mean_gain")),
+        "local_mean_gain_meaning": "average rise of the local judge "
+                                   "score on the same pairs",
+        "agree": so.get("agree"),
+        "agree_meaning": "pairs where both judges put the gain in "
+                         "the same bin: up over 0.1, down under "
+                         "-0.1, flat between them",
+        "correlation": _r(so.get("correlation")),
+        "correlation_meaning": "Pearson correlation of the two "
+                               "judges' gain lists, from -1 to 1",
+        "total": so.get("total"),
+        "total_meaning": "pairs re-scored",
+        "calls": so.get("calls"),
+        "calls_meaning": "Meta API calls the re-score used",
+        "tokens": so.get("tokens"),
+        "tokens_meaning": "Meta API tokens the re-score used",
+        "model": so.get("model"),
+        "meaning": "Muse Spark re-scored the turn-up pairs. The "
+                   "local judge gates the verdict. This opinion "
+                   "gates nothing and has no bar."}
 
 
 def _pareto_summary(report: dict) -> dict | None:
