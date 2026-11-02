@@ -817,36 +817,34 @@ class LlamaLane(TorchLane):
 
 def derive_direction(eng, spec, cfg, prompts):
     """Mean-diff unit + threshold per layer on contrast prefixes."""
-    A = eng.capture([f"{cfg['pos']}\n\n{q}" for q in prompts],
-                    list(range(spec.layers)), point="block_out", reduce="last")
-    B = eng.capture([f"{cfg['neg']}\n\n{q}" for q in prompts],
-                    list(range(spec.layers)), point="block_out", reduce="last")
-    return A, B
+    from model_lobotomy import directions as _dirs
+    return _dirs.get_direction().derive(eng, spec, cfg, prompts)
+
+
+def _default_rule():
+    from model_lobotomy import dose_rules as _dr
+    return _dr.NllFluencyRule(NLL_MAX_RISE, FLUENCY_FLOOR)
 
 
 def coherent_doses(gen: dict) -> list[float]:
     """Doses > 0 that pass the FD rule. gen: dose -> {judge, nll, fluency}."""
-    base = gen[0.0]["nll"]
-    return [d for d in gen if d > 0
-            and gen[d]["nll"] - base <= NLL_MAX_RISE
-            and gen[d]["fluency"] >= FLUENCY_FLOOR]
+    return _default_rule().coherent(gen)
 
 
 def best_dose(gen: dict) -> float | None:
     """Coherent dose with the highest trait judge score, or None."""
-    return max(coherent_doses(gen), key=lambda d: gen[d]["judge"],
-               default=None)
+    return _default_rule().choose_gen(gen)
 
 
 def _seps(A, B, layers):
     """Separability, fit on 40, measured on held-out 20 (no tuning leak)."""
-    return {L: spike.separability(A[L][:40], B[L][:40], A[L][40:], B[L][40:])
-            for L in layers}
+    from model_lobotomy import directions as _dirs
+    return _dirs.get_direction().seps(A, B, layers)
 
 
 def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
                     cancel=None, progress=None, params=None,
-                    base_cache=None, lane=None):
+                    base_cache=None, lane=None, dose_rule=None):
     """Pick (layer, dose) on the tuning split; returns frozen choice + table."""
     _check(cancel)
     params = dict(SCHEDULES["full"]) if params is None else params
@@ -886,7 +884,8 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
             gen[d] = {"judge": sum(js) / len(js), "nll": sum(ns) / len(ns),
                       "fluency": sum(fl) / len(fl)}
         table[L] = gen
-        bd = best_dose(gen)
+        bd = (dose_rule.choose_gen(gen) if dose_rule is not None
+              else best_dose(gen))
         if bd is not None:
             gain = gen[bd]["judge"] - gen[0.0]["judge"]
             if frozen is None or gain > frozen["gain"]:
@@ -1248,14 +1247,14 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         for L in range(spec.layers)}
 
     t_stage = time.time()
+    from model_lobotomy import dose_rules as _dose_rules
+    _rule = _dose_rules.get_dose_rule()
     frozen, table, cand_stats = tune_layer_dose(
         eng, spec, cfg, med, A, B, tun, cfg["judge"],
         cancel=cancel, progress=progress, params=params,
-        base_cache=base_cache, lane=lane)
+        base_cache=base_cache, lane=lane, dose_rule=_rule)
     timings["tune"] = round(time.time() - t_stage, 1)
-    out["tuning"] = {"rule": {"name": DOSE_RULE,
-                              "nll_max_rise": NLL_MAX_RISE,
-                              "fluency_floor": FLUENCY_FLOOR},
+    out["tuning"] = {"rule": {"name": _rule.name, **_rule.params},
                      "candidates": cand_stats,
                      "table": {str(L): {str(d): v for d, v in g.items()}
                                for L, g in table.items()}}

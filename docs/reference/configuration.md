@@ -56,3 +56,5 @@ lobot reads its settings from environment variables. All are optional.
 | `LOBOT_JOBS_DIR` | `<repo>/jobs` | Job storage dir (jobs/<id>/job.json) |
 | `LOBOT_JUDGE` | `local` | Judge port: `local`, `meta_api` or `fake` (tests) |
 | `LOBOT_GUARD` | `screens-v2` | Guard port: `screens-v2` or `noop` (tests) |
+| `LOBOT_DIRECTION` | `diffmean` | Direction method port |
+| `LOBOT_DOSE_RULE` | `nll+fluency-v1` | Dose rule port: `nll+fluency-v1` or `fake` (tests) |

@@ -102,6 +102,22 @@ Parity: replay and live not run. Scores did not change.
 Tests: before 715, after 719 (`OK, skipped=5`). New: 4 tests.
 Parity: replay and live not run. Verdict numbers did not change.
 
-## Phases 6 to 10
+## Phase 6: Direction and dose-rule ports
+
+- New modules: `directions/__init__.py` and `dose_rules.py`.
+- `DiffMeanDirection` is the default direction method.
+- `NllFluencyRule` is the default dose rule.
+- It holds `name` and `params`. The report writes both into
+  `tuning.rule`, with the same keys as before.
+- `tune_layer_dose` takes a rule object. With no rule it uses
+  the default, so old calls keep their numbers.
+- `trait_eval.coherent_doses` and `best_dose` delegate to it.
+- New settings: `LOBOT_DIRECTION`, `LOBOT_DOSE_RULE`.
+- A `fake` dose rule exists for tests.
+
+Tests: before 719, after 724 (`OK, skipped=5`). New: 5 tests.
+Parity: replay and live not run. Numbers did not change.
+
+## Phases 7 to 10
 
 Not started. Each phase gets its own branch and pull request.
