@@ -101,7 +101,8 @@ def check_set(names, patches, engine, *, medians: dict,
     """
     judge_fn = judge_fn or guard_mod.refusal_judge_fn(engine)
     edits = edits_for(patches)
-    gv = (guard or guard_mod.Guard()).check_verified(
+    from model_lobotomy import guards as _guards
+    gv = (guard or _guards.get_guard()).check_verified(
         engine, edits, medians=medians,
         max_new_tokens=max_new_tokens, seed=seed,
         judge_fn=judge_fn, cancel=cancel)
@@ -120,7 +121,7 @@ def pair_matrix(names, patches, engine, *, medians: dict,
     t_all = time.perf_counter()
     kw = dict(medians=medians, max_new_tokens=max_new_tokens,
               seed=seed, judge_fn=judge_fn, cancel=cancel,
-              guard=guard or guard_mod.Guard())
+              guard=guard or _guards.get_guard())
     singles = [check_set([n], [p], engine, **kw)
                for n, p in zip(names, patches)]
     pairs = [check_set([names[i], names[j]],

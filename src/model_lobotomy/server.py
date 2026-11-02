@@ -1821,7 +1821,8 @@ def _combine_matrix(names, patches, max_new: int, seed: int) -> dict:
             eng.load(engine._active_model_id)
         layers = sorted({int(p["meta"]["layer"]) for p in patches})
         medians, _ = _calibrate(eng, layers)
-        guard = guard_mod.Guard()
+        from model_lobotomy import guards as _guards
+        guard = _guards.get_guard()
         kw = dict(medians=medians,
                   max_new_tokens=min(max(int(max_new), 1), 64),
                   seed=seed, guard=guard)
@@ -2870,7 +2871,8 @@ def _dial_entry(ev: dict, trait: str) -> dict:
 
 
 def _verified_guard(eng, edits, medians, enforce):
-    return guard_mod.Guard().check_verified(
+    from model_lobotomy import guards as _guards
+    return _guards.get_guard().check_verified(
         eng, edits, medians=medians, max_new_tokens=24, seed=engine.SEED,
         judge_fn=guard_mod.refusal_judge_fn(eng),
         research_mode=not enforce, cancel=_cancel)

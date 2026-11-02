@@ -623,7 +623,8 @@ def delete_check(eng, spec, cfg: dict, knob: dict, medians: dict,
         done += 2
         if progress is not None:
             progress("delete_check", done, total)
-    gv = guard_mod.Guard().check_verified(
+    from model_lobotomy import guards as _guards
+    gv = _guards.get_guard().check_verified(
         eng, edits, medians=medians, max_new_tokens=24,
         seed=DELETE_CHECK_SEED,
         judge_fn=guard_mod.refusal_judge_fn(eng),
@@ -1373,7 +1374,8 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         frozen["layer"], frozen["unit"], med[frozen["layer"]],
         frozen["dose"]),))
     enforce = guard_mod.should_enforce(guard, research_mode)
-    gv = guard_mod.Guard().check_verified(
+    from model_lobotomy import guards as _guards
+    gv = _guards.get_guard().check_verified(
         eng, frozen_edits, medians=med, max_new_tokens=24, seed=seed,
         judge_fn=guard_mod.refusal_judge_fn(eng),
         research_mode=not enforce)
