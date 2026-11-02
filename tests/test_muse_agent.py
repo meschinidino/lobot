@@ -89,6 +89,83 @@ class MuseTest(unittest.TestCase):
         self.assertNotIn("secret", fake.prompts[0])
         self.assertIn("0.146", fake.prompts[0])
 
+    def _explain_report(self):
+        return {"trait": "cowboy", "verdict": "knob",
+                "frozen": {"layer": 17, "dose": 0.5, "tuning_gain": 0.102},
+                "final": {
+                    "update_up": {"card": {
+                        "passed": False, "trait_mean": 0.179,
+                        "trait_ci": [0.074, 0.296]}},
+                    "update_down": {"card": {
+                        "passed": False, "trait_mean": 0.028,
+                        "trait_ci": [-0.005, 0.061]}},
+                    "delete": {"card": {
+                        "passed": False, "trait_mean": 0.001,
+                        "trait_ci": [-0.018, 0.022]}}},
+                "guard": {"blocked": False, "screens": {}}}
+
+    def test_summary_has_bar_for_each_card(self):
+        import inspect
+
+        from model_lobotomy import evaluation
+        bar = round(inspect.signature(
+            evaluation.report_card_pass).parameters["min_gain"].default, 3)
+        summary = muse_mod.report_summary(self._explain_report())
+        for key in ("turn_up", "turn_down", "remove", "prompt_baseline"):
+            self.assertEqual(summary[key]["bar"], bar, key)
+            self.assertIn("judge score", summary[key]["meaning"], key)
+        self.assertEqual(summary["turn_up"]["mean_gain"], 0.179)
+        self.assertEqual(summary["tuning_gain"]["bar"], bar)
+
+    def test_check_explanation_allows_rounding_to_2_places(self):
+        summary = muse_mod.report_summary(self._explain_report())
+        good = "The mean gain was 0.18, below the bar of 0.3."
+        self.assertEqual(muse_mod.check_explanation(good, summary), [])
+        bad = "The trait rose to 0.99."
+        self.assertEqual(muse_mod.check_explanation(bad, summary), ["0.99"])
+
+    def test_explain_good_answer_passes(self):
+        answers = iter(["The mean gain was 0.18, below the bar of 0.3. "
+                         "It failed."])
+        prompts = []
+
+        def fake(prompt):
+            prompts.append(prompt)
+            return next(answers)
+
+        got = muse_mod.Muse(fake).explain(self._explain_report())
+        self.assertIn("0.18", got)
+        self.assertEqual(len(prompts), 1)
+        self.assertIn("not a level", prompts[0])
+        self.assertIn('"bar": 0.3', prompts[0])
+
+    def test_explain_invented_number_is_rejected(self):
+        prompts = []
+
+        def fake(prompt):
+            prompts.append(prompt)
+            return "The trait rose to 0.99. It worked."
+
+        with self.assertRaises(muse_mod.MuseError) as ctx:
+            muse_mod.Muse(fake).explain(self._explain_report())
+        self.assertIn("0.99", str(ctx.exception))
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("rejected", prompts[1])
+        self.assertIn("0.99", prompts[1])
+
+    def test_explain_retry_with_error_can_pass(self):
+        answers = iter(["The trait rose to 0.99.",
+                         "The mean gain was 0.18. It failed."])
+        prompts = []
+
+        def fake(prompt):
+            prompts.append(prompt)
+            return next(answers)
+
+        got = muse_mod.Muse(fake).explain(self._explain_report())
+        self.assertIn("0.18", got)
+        self.assertEqual(len(prompts), 2)
+
     def test_missing_key_is_muse_error(self):
         with mock.patch.dict("os.environ", {"META_API_KEY": ""}):
             with self.assertRaises(muse_mod.MuseError):
@@ -276,6 +353,18 @@ class RoutesTest(unittest.TestCase):
         self.assertEqual(len(fake.prompts), 2)
         self.assertIn("prompt_comparison", fake.prompts[1])
         self.assertIn("tradeoff", fake.prompts[1])
+
+    def test_explain_invented_number_is_502(self):
+        def fake(prompt):
+            return "The trait rose to 0.99. It worked."
+
+        fake.model = "fake-muse"
+        fake.usage = {"calls": 0}
+        with mock.patch.object(muse_mod, "ApiCompleter",
+                               return_value=fake):
+            r = self.client.post(f"/api/traits/{self.job}/explain")
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertIn("0.99", r.json()["detail"])
 
     def test_no_key_is_503_with_hint(self):
         with mock.patch.dict("os.environ", {"META_API_KEY": ""}):

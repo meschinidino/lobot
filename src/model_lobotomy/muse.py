@@ -52,7 +52,14 @@ EXPLAIN_PROMPT = (
     "Explain this behavior-editing result to a non-expert in at most "
     "6 short sentences. Use simple words, active voice, one idea per "
     "sentence. Say what worked, what did not, and why, using only the "
-    "numbers given. Always say the guard result: if the guard flagged "
+    "numbers given. A gain is a change in the judge score, not a "
+    "level of the trait. Never say a gain is the level the trait "
+    "reached. For each card, compare its mean_gain with its bar: a "
+    "gain below the bar fails that part of the check, even when the "
+    "gain is above zero. The passed flag is the final word on each "
+    "card. Write each number exactly as given, or rounded to 2 "
+    "decimal places. Do not write any other number, in digits or as "
+    "a percent. Always say the guard result: if the guard flagged "
     "the patch, name the screens that flagged it and say it cannot be "
     "published. Do not invent numbers. Do not give advice about "
     "medicine, money or law.\n\nResult JSON:\n{summary}"
@@ -157,13 +164,31 @@ class Muse:
     # -- E: explainer --
 
     def explain(self, report: dict) -> str:
-        """Plain-words explanation of a run_trait report."""
-        text = self.complete(EXPLAIN_PROMPT.format(
-            summary=json.dumps(report_summary(report), indent=1)))
-        text = (text or "").strip()
-        if not text:
-            raise MuseError("empty explanation")
-        return text
+        """Plain-words explanation of a run_trait report.
+
+        The answer passes check_explanation before the caller sees
+        it. One retry names the rejected numbers. A second failure
+        raises MuseError; the route maps it to 502.
+        """
+        summary = report_summary(report)
+        base = EXPLAIN_PROMPT.format(
+            summary=json.dumps(summary, indent=1))
+        prompt, last = base, ""
+        for _ in range(2):
+            text = (self.complete(prompt) or "").strip()
+            if not text:
+                last = "empty explanation"
+            else:
+                bad = check_explanation(text, summary)
+                if not bad:
+                    return text
+                last = ("numbers not in the report summary: "
+                        + ", ".join(bad))
+            prompt = (f"{base}\n\nYour last answer was rejected: "
+                      f"{last}. Use only the numbers in the JSON "
+                      f"above, exactly as given or rounded to 2 "
+                      f"decimal places, and answer again.")
+        raise MuseError(f"explanation failed the number check: {last}")
 
     # -- agent step --
 
@@ -185,30 +210,103 @@ class Muse:
         return out
 
 
+_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def _summary_numbers(node, out=None):
+    """Every number in a summary, at any depth (bools excluded)."""
+    if out is None:
+        out = set()
+    if isinstance(node, bool):
+        return out
+    if isinstance(node, (int, float)):
+        out.add(round(float(node), 2))
+    elif isinstance(node, dict):
+        for v in node.values():
+            _summary_numbers(v, out)
+    elif isinstance(node, (list, tuple)):
+        for v in node:
+            _summary_numbers(v, out)
+    return out
+
+
+def check_explanation(text: str, summary: dict) -> list[str]:
+    """Numbers in text that the summary does not hold.
+
+    A written number passes when it matches a summary number after
+    both round to 2 decimal places. An empty list means the text
+    passes.
+    """
+    allowed = _summary_numbers(summary)
+    return [tok for tok in _NUMBER_RE.findall(text or "")
+            if round(float(tok), 2) not in allowed]
+
+
+def _card_bar(card: dict):
+    """The mean-gain bar for one card, from the report or the gate.
+
+    New reports may carry the bar on the card. Old reports do not,
+    so the fallback reads the default of the gate that made the
+    card. No bar value lives in this module.
+    """
+    for key in ("min_gain", "bar", "mean_gain_bar"):
+        if (card or {}).get(key) is not None:
+            return _r(card[key])
+    import inspect
+
+    from model_lobotomy import evaluation
+    default = inspect.signature(
+        evaluation.report_card_pass).parameters["min_gain"].default
+    return _r(default)
+
+
 def report_summary(report: dict) -> dict:
-    """The numbers an explanation may use (nothing else is sent)."""
+    """The numbers an explanation may use (nothing else is sent).
+
+    Each gain carries its meaning and its bar. A gain is a change,
+    not a level. Muse must compare the gain with the bar.
+    """
     final = report.get("final") or {}
 
-    def card(verb):
-        c = (final.get(verb) or {}).get("card") or {}
+    def card(source):
+        c = source or {}
         return {"passed": c.get("passed"),
                 "mean_gain": _r(c.get("trait_mean")),
-                "ci95": [_r(x) for x in (c.get("trait_ci") or [])]}
+                "meaning": "average rise of the judge score",
+                "bar": _card_bar(c),
+                "bar_meaning": "the mean gain must reach the bar",
+                "ci95": [_r(x) for x in (c.get("trait_ci") or [])],
+                "ci95_meaning": "95% range for the mean gain"}
+
+    def card_of(container, verb):
+        return card(((container or {}).get(verb) or {}).get("card"))
 
     frozen = report.get("frozen") or {}
     guard = report.get("guard") or {}
     base = (report.get("prompt_baseline") or {}).get("card") or {}
     return {"trait": report.get("trait"),
             "verdict": report.get("verdict"),
-            "layer": frozen.get("layer"), "dose": frozen.get("dose"),
-            "tuning_gain": _r(frozen.get("tuning_gain")),
+            "layer": {"value": frozen.get("layer"),
+                      "meaning": "the model layer the patch acts on"},
+            "dose": {"value": _r(frozen.get("dose")),
+                     "meaning": "the patch strength at test time"},
+            "tuning_gain": {
+                "value": _r(frozen.get("tuning_gain")),
+                "meaning": "average rise of the judge score "
+                           "during tuning",
+                "bar": _card_bar(None),
+                "bar_meaning": "the mean gain must reach the bar"},
             "read_gate": {
                 "agreement": _r(((report.get("read_gate") or {})
                                  .get("agreement") or {}).get("fraction")),
+                "agreement_meaning": "share of held-out replies "
+                                     "where the read agrees with "
+                                     "the judge",
                 "passed": (report.get("read_gate") or {}).get("pass")},
-            "turn_up": card("update_up"), "turn_down": card("update_down"),
-            "remove": card("delete"),
-            "prompt_baseline_passed": base.get("passed"),
+            "turn_up": card_of(final, "update_up"),
+            "turn_down": card_of(final, "update_down"),
+            "remove": card_of(final, "delete"),
+            "prompt_baseline": card(base),
             "guard": {"blocked": guard.get("blocked"),
                       "would_block": guard.get("would_block"),
                       "flagged_by": sorted(
@@ -217,7 +315,8 @@ def report_summary(report: dict) -> dict:
             "dose_rule": ((report.get("tuning") or {}).get("rule")
                           or {}).get("name"),
             "prompt_comparison": _pareto_summary(report),
-            "seconds": report.get("seconds")}
+            "seconds": {"value": _r(report.get("seconds")),
+                        "meaning": "how long the run took, in seconds"}}
 
 
 def _pareto_summary(report: dict) -> dict | None:
@@ -239,6 +338,8 @@ def _pareto_summary(report: dict) -> dict | None:
                   None)
     return {"verdict": p.get("verdict"), "patch_at_dose": point(at_dose),
             "strongest_prompt": point(prompt),
+            "meaning": "effect, cost, relevance and fluency are "
+                       "scores at one dose or for one prompt, not gains",
             "base": {k: _r(v) for k, v in (p.get("base") or {}).items()}}
 
 

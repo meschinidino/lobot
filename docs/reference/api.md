@@ -290,9 +290,12 @@ report.
 
 `{"id", "explanation", "cached"}`: Muse Spark explains a finished
 report in plain words, from the report's own numbers only, and
-names the guard result. Cached in the job's `trait/explanation.txt`.
-404 without a report; 503 without `META_API_KEY`; 502 when the API
-fails.
+names the guard result. Each gain in the summary has a meaning and
+a bar. The server checks each number in the answer against the
+summary. It asks once more after a failed check. Cached in the
+job's `trait/explanation.txt`. 404 without a report; 503 without
+`META_API_KEY`; 502 when the API fails or the answer fails the
+number check twice.
 
 ## GET /api/traits/{id}/patch (E1 evidence)
 
