@@ -70,6 +70,7 @@ from model_lobotomy import create_job
 from model_lobotomy import drafts as drafts_mod
 from model_lobotomy import followups as followups_mod
 from model_lobotomy import job_import
+from model_lobotomy import jobs_store
 from model_lobotomy import guard as guard_mod
 from model_lobotomy import guard_screens as guard_screens_mod
 from model_lobotomy import combine as combine_mod
@@ -602,14 +603,14 @@ def _trait_job_dir(job_id: str) -> Path:
     runner = _get_runner()
     if not _JOB_ID_RE.fullmatch(job_id or ""):
         raise HTTPException(404, f"Unknown trait {job_id}.")
-    cand = (runner.jobs_dir / job_id).resolve()
+    cand = jobs_store.JobPaths(job_id, runner.jobs_dir).root.resolve()
     try:
         cand.relative_to(runner.jobs_dir.resolve())
     except (OSError, ValueError):
         raise HTTPException(404, f"Unknown trait {job_id}.") from None
-    if not (runner.jobs_dir / job_id / "job.json").is_file():
+    if not jobs_store.JobPaths(job_id, runner.jobs_dir).job_json.is_file():
         raise HTTPException(404, f"Unknown trait {job_id}.")
-    return runner.jobs_dir / job_id
+    return jobs_store.JobPaths(job_id, runner.jobs_dir).root
 
 
 def _card_summary(card: dict | None) -> dict | None:
@@ -631,7 +632,7 @@ def _repairs(trait_dir: Path) -> dict:
     """Every repair record of a run, by method (gr-v1 is "project")."""
     out = {}
     for method in followups_mod.REPAIR_METHODS:
-        rec = _read_json(trait_dir / f"{followups_mod.repair_stem(method)}.json")
+        rec = _read_json(jobs_store.WorkPaths(trait_dir).repair(method))
         if rec is not None:
             out[method] = rec
     return out
@@ -671,7 +672,7 @@ def _enrich_report(trait_dir: Path, rep: dict) -> dict:
     """report.json plus the follow-up results that live beside it (U4)."""
     rep = dict(rep)
     if not rep.get("pareto"):
-        rep["pareto"] = _read_json(trait_dir / "pareto.json")
+        rep["pareto"] = _read_json(jobs_store.WorkPaths(trait_dir).pareto)
     rep["repair"] = _repairs(trait_dir) or None
     tuning = dict(rep.get("tuning") or {})
     tuning["chosen"] = _chosen_cell(rep)
@@ -709,9 +710,9 @@ def _trait_items() -> list[dict]:
     for job in runner.list_jobs():
         if job.get("status") != "done":
             continue
-        trait_dir = runner.jobs_dir / job["id"] / "trait"
+        trait_dir = jobs_store.JobPaths(job["id"], runner.jobs_dir).trait.workdir
         try:
-            rep = json.loads((trait_dir / "report.json").read_text())
+            rep = json.loads(jobs_store.WorkPaths(trait_dir).report.read_text())
         except (OSError, ValueError):
             continue
         frozen = rep.get("frozen") or {}
@@ -741,9 +742,9 @@ def _trait_items() -> list[dict]:
                        "verified": guard["verified"]}
                       if guard is not None else None),
             "patch": (f"/api/traits/{job['id']}/patch"
-                      if (trait_dir / "knob.lobot").is_file() else None),
+                      if jobs_store.WorkPaths(trait_dir).patch.is_file() else None),
             "delete_eligible": bool(frozen) and (
-                trait_dir / "direction.safetensors").is_file(),
+                jobs_store.WorkPaths(trait_dir).direction.is_file()),
             "evidence": _evidence_summary(trait_dir, rep),
         })
     items.sort(key=lambda t: (t["created"] or 0, t["id"]))
@@ -849,8 +850,8 @@ def trait_explain(job_id: str):
 
     Cached in the job dir; the numbers stay the report's own.
     """
-    trait_dir = _trait_job_dir(job_id) / "trait"
-    report = trait_dir / "report.json"
+    trait_dir = jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).trait.workdir
+    report = jobs_store.WorkPaths(trait_dir).report
     if not report.is_file():
         raise HTTPException(404, f"No report for {job_id} yet.")
     rep = _enrich_report(trait_dir, json.loads(report.read_text()))
@@ -938,7 +939,7 @@ _AGENT_ID_RE = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
 
 
 def _agents_dir() -> Path:
-    return _get_runner().jobs_dir / "agents"
+    return jobs_store.JobPaths("agents", _get_runner().jobs_dir).root
 
 
 def _agent_job_id(result: dict) -> str:
@@ -953,11 +954,11 @@ def _register_agent_job(result: dict | None) -> str | None:
     agent made no report.
     """
     workdir = Path((result or {}).get("workdir") or "")
-    if not result or not (workdir / "report.json").is_file():
+    if not result or not jobs_store.WorkPaths(workdir).report.is_file():
         return None
     job_id = _agent_job_id(result)
     jobs_dir = _get_runner().jobs_dir
-    if not (jobs_dir / job_id / "job.json").is_file():
+    if not jobs_store.JobPaths(job_id, jobs_dir).job_json.is_file():
         job_import.import_run(workdir, jobs_dir, job_id)
     return job_id
 
@@ -971,8 +972,7 @@ def _disk_agent(agent_id: str) -> dict | None:
     job_id = _agent_job_id(rec)
     return {"id": agent_id, "status": rec.get("status"),
             "steps": rec.get("steps", []), "result": rec, "error": None,
-            "job_id": job_id if (_get_runner().jobs_dir / job_id
-                                 / "job.json").is_file() else None}
+            "job_id": job_id if jobs_store.JobPaths(job_id, _get_runner().jobs_dir).job_json.is_file() else None}
 
 
 @api.get("/api/agents")
@@ -1127,8 +1127,8 @@ def traits(model_id: str | None = None):
 @api.get("/api/traits/{job_id}/report")
 def trait_report(job_id: str):
     """One trait's report.json, plus pareto, repair and tuning.chosen (U4)."""
-    trait_dir = _trait_job_dir(job_id) / "trait"
-    path = trait_dir / "report.json"
+    trait_dir = jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).trait.workdir
+    path = jobs_store.WorkPaths(trait_dir).report
     if not path.is_file():
         raise HTTPException(404, f"Unknown trait {job_id}.")
     rep = _enrich_report(trait_dir, json.loads(path.read_text()))
@@ -1143,7 +1143,7 @@ class FollowupRequest(BaseModel):
 
 
 def _followup_start(job_id: str, kind: str, opts: dict) -> dict:
-    trait_dir = _trait_job_dir(job_id) / "trait"
+    trait_dir = jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).trait.workdir
     if NO_MODEL or REPLAY:
         raise HTTPException(503, f"{kind.capitalize()} needs model weights. "
                                  "This server runs without them "
@@ -1165,12 +1165,12 @@ def _followup_start(job_id: str, kind: str, opts: dict) -> dict:
 
 
 def _followup_status(job_id: str, kind: str) -> dict:
-    trait_dir = _trait_job_dir(job_id) / "trait"
+    trait_dir = jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).trait.workdir
     st = _get_followups().status(job_id, kind, trait_dir)
-    rep_path = trait_dir / "report.json"
+    rep_path = jobs_store.WorkPaths(trait_dir).report
     rep = _read_json(rep_path) if rep_path.is_file() else {}
     if kind == "pareto":
-        result = rep.get("pareto") or _read_json(trait_dir / "pareto.json")
+        result = rep.get("pareto") or _read_json(jobs_store.WorkPaths(trait_dir).pareto)
     else:
         result = _repairs(trait_dir) or None
     return {"status": st, "result": result}
@@ -1201,14 +1201,14 @@ def trait_repair(job_id: str):
 
 @api.post("/api/traits/{job_id}/{kind}/stop")
 def trait_followup_stop(job_id: str, kind: Literal["pareto", "repair"]):
-    trait_dir = _trait_job_dir(job_id) / "trait"
+    trait_dir = jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).trait.workdir
     return {"status": _get_followups().stop(job_id, kind, trait_dir)}
 
 
 @api.get("/api/traits/{job_id}/repaired/{method}")
 def trait_repaired_patch(job_id: str, method: Literal["gradient", "project"]):
     """The repaired patch, when a repair chose a candidate."""
-    path = _trait_job_dir(job_id) / "trait" / f"knob.repaired-{method}.lobot"
+    path = jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).trait.repaired_patch(method)
     if not path.is_file():
         raise HTTPException(404, f"No repaired patch for {job_id}.")
     return FileResponse(path, media_type="application/zip",
@@ -1218,7 +1218,7 @@ def trait_repaired_patch(job_id: str, method: Literal["gradient", "project"]):
 @api.get("/api/traits/{job_id}/report.md")
 def trait_report_md(job_id: str):
     """One trait's report.md as Markdown (E1)."""
-    path = _trait_job_dir(job_id) / "trait" / "report.md"
+    path = jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).trait.workdir / "report.md"
     if not path.is_file():
         raise HTTPException(404, f"Unknown trait {job_id}.")
     return FileResponse(path, media_type="text/markdown")
@@ -1228,7 +1228,7 @@ def trait_report_md(job_id: str):
 def trait_patch(job_id: str):
     """One trait's knob.lobot patch as a download (E1)."""
     job_dir = _trait_job_dir(job_id)
-    path = job_dir / "trait" / "knob.lobot"
+    path = jobs_store.WorkPaths(job_dir / "trait").patch
     if not path.is_file():
         raise HTTPException(404, f"Unknown trait {job_id}.")
     item = next((t for t in _trait_items() if t["id"] == job_id), None)
@@ -1236,7 +1236,7 @@ def trait_patch(job_id: str):
         family, version = item["family"], item["version"]
     else:
         family, version = job_id, 1
-        rep_path = job_dir / "trait" / "report.json"
+        rep_path = jobs_store.WorkPaths(job_dir / "trait").report
         if rep_path.is_file():
             try:
                 family = json.loads(rep_path.read_text()).get(
@@ -1460,7 +1460,7 @@ def install_patch(req: InstallRequest):
     if not req.model_ref.strip():
         raise HTTPException(400, "Give a model_ref.")
     job_dir = _trait_job_dir(req.trait_id)
-    patch_path = job_dir / "trait" / "knob.lobot"
+    patch_path = jobs_store.WorkPaths(job_dir / "trait").patch
     if not patch_path.is_file():
         raise HTTPException(404, f"Unknown trait {req.trait_id}.")
     if not _install_lock.acquire(blocking=False):
@@ -1548,7 +1548,7 @@ def install_verify(install_id: str, req: InstallVerifyRequest):
 
 def _final_prompts(record: dict, n: int) -> list[str]:
     """First n final-split prompts of the install's Create job."""
-    report = _trait_job_dir(record["trait_id"]) / "trait" / "report.json"
+    report = jobs_store.JobPaths(record["trait_id"], _trait_job_dir(record["trait_id"]).parent).report
     try:
         final = json.loads(report.read_text())["splits"]["final"]
     except (OSError, ValueError, KeyError, TypeError):
@@ -1619,7 +1619,7 @@ def _install_compare_many(record: dict, triples) -> dict:
     job_dir = _trait_job_dir(record["trait_id"])
     try:
         meta = patch_mod.load_patch(
-            job_dir / "trait" / "knob.lobot")["meta"]
+            jobs_store.WorkPaths(job_dir / "trait").patch)["meta"]
     except patch_mod.PatchRejected as e:
         raise HTTPException(422, f"patch rejected: {e}") from None
     card = meta.get("report_card") or {}
@@ -1677,7 +1677,7 @@ def _verify_pin(patch_path) -> dict:
 def verify(req: VerifyRequest):
     """Re-run a trait patch's shipped evidence (RV)."""
     job_dir = _trait_job_dir(req.trait_id)
-    patch_path = job_dir / "trait" / "knob.lobot"
+    patch_path = jobs_store.WorkPaths(job_dir / "trait").patch
     if not patch_path.is_file():
         raise HTTPException(422, f"Trait {req.trait_id} has no saved "
                                  f"patch to verify.")
@@ -1786,7 +1786,7 @@ def _combine_patches(patch_ids: list) -> tuple[list, list]:
     names, patches = [], []
     for pid in patch_ids:
         job_dir = _trait_job_dir(pid)
-        path = job_dir / "trait" / "knob.lobot"
+        path = jobs_store.WorkPaths(job_dir / "trait").patch
         if not path.is_file():
             raise HTTPException(422, f"Trait {pid} has no saved "
                                      f"patch to combine.")
@@ -2764,8 +2764,7 @@ def _latest_knob(trait: str) -> dict | None:
              and j.get("model_id", engine._active_model_id) == engine._active_model_id]
     cands.sort(key=lambda j: j.get("updated", 0), reverse=True)
     for job in cands:
-        path = (runner.jobs_dir / job["id"] / "trait"
-                / "direction.safetensors")
+        path = jobs_store.JobPaths(job["id"], runner.jobs_dir).direction
         if not path.exists():
             continue
         from safetensors.torch import load_file
@@ -2821,7 +2820,7 @@ def _dial_spec(eng, trait: str) -> dict:
     u = u / n
     fp = eng.fingerprint()
     runner = _get_runner()
-    dpath = runner.jobs_dir / knob["job_id"] / "trait" / "dial.json"
+    dpath = jobs_store.JobPaths(knob["job_id"], runner.jobs_dir).trait.workdir / "dial.json"
     if dpath.exists():
         try:
             cached = json.loads(dpath.read_text())

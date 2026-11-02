@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import pathlib
 import os
 import re
 import statistics
@@ -98,6 +99,11 @@ CAPTURE_CACHE_VERSION = 1
 DOSE_RULE = "nll+fluency-v1"
 NLL_MAX_RISE = 1.0
 FLUENCY_FLOOR = 0.5
+
+
+def _wp(workdir):
+    from model_lobotomy.jobs_store import WorkPaths
+    return WorkPaths(pathlib.Path(workdir))
 
 
 def schedule_params(schedule: str) -> dict:
@@ -1265,7 +1271,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
                      "tuning_gain": round(frozen["gain"], 3)}
     from safetensors.torch import save_file as _save_directions
     _save_directions({"direction": frozen["unit"].detach().cpu()},
-                     workdir / "direction.safetensors")
+                     _wp(workdir).direction)
     out["frozen"]["direction_file"] = "direction.safetensors"
 
     t_stage = time.time()
@@ -1400,7 +1406,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
                                   if elig[v]]}
     from model_lobotomy import patch as patch_mod
     patch_mod.save_patch(
-        workdir / "knob.lobot", direction=frozen["unit"],
+        _wp(workdir).patch, direction=frozen["unit"],
         layer=frozen["layer"], dose=frozen["dose"],
         scale=float(med[frozen["layer"]]), trait=trait_name,
         recipe={"instruction": cfg["pos"], "layer": frozen["layer"],
@@ -1423,7 +1429,7 @@ def _json_card(card):
 
 def _write_report(workdir, out, t0):
     out["seconds"] = round(time.time() - t0, 1)
-    (workdir / "report.json").write_text(json.dumps(out, indent=2))
+    _wp(workdir).report.write_text(json.dumps(out, indent=2))
     L = (out.get("frozen") or {}).get("layer", "?")
     lines = [f"# Trait E2E: {out['trait']} -> {out.get('verdict', '?')}",
              f"schedule {out.get('schedule', 'full')}; "
@@ -1453,7 +1459,7 @@ def load_job(workdir) -> dict:
     """
     from model_lobotomy import patch as patch_mod
     workdir = Path(workdir)
-    report = json.loads((workdir / "report.json").read_text())
+    report = json.loads(_wp(workdir).report.read_text())
     if not report.get("patch"):
         raise ValueError(f"{workdir} has no patch (verdict "
                          f"{report.get('verdict')!r})")

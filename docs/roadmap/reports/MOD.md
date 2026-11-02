@@ -37,9 +37,23 @@ Known gaps:
 - New port settings (`LOBOT_GUARD`, `LOBOT_JUDGE` and others) do not
   exist yet. Each later phase adds its own setting.
 
-## Phases 2 to 10
+## Phase 2: Job storage
+
+- New module: `src/model_lobotomy/jobs_store.py`.
+- `JobPaths(job_id)` holds `.job_json`, `.report`, `.patch`,
+  `.direction`, `.pareto` and `.repair(method)`.
+- `WorkPaths(dir)` holds the same files for one trait work dir.
+- `list_jobs()` and `import_run()` moved there.
+- `job_import.py` now re-exports them. Old imports keep working.
+- `create_job`, `followups`, `trait_eval`, `server` and
+  `scripts/import_run.py` use these paths.
+- New setting: `LOBOT_JOBS_DIR`. Default stays `<repo>/jobs`.
+- No route, file format, number or screen changed.
+
+Tests: before 703, after 706 (`OK, skipped=5`). New: 3 tests.
+Parity: replay and live not run. No route changed its shape.
+The 404 check for unknown jobs stays in `_trait_job_dir`.
+
+## Phases 3 to 10
 
 Not started. Each phase gets its own branch and pull request.
-Phase order: job storage, library code out of scripts, judge port,
-guard port, direction and dose-rule ports, Create stages, server
-routers, frontend modules, docs.
