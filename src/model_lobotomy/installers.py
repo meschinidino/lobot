@@ -33,8 +33,10 @@ LLAMACPP_BUILD_CLI = ("/tmp/llama.cpp/build/bin/llama-cli")
 
 
 def _run(cmd, timeout: int):
+    # stdin is closed: llama-cli runs in conversation mode and, with an
+    # open stdin (the server's), waits for the next turn until timeout.
     return subprocess.run(cmd, capture_output=True, text=True,
-                          timeout=timeout)
+                          stdin=subprocess.DEVNULL, timeout=timeout)
 
 
 def _llama_binary() -> str | None:
