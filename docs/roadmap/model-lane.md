@@ -120,3 +120,5 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-11-02 01:28 ET  muse  MOD  meta-llama/Llama-3.2-3B-Instruct  end  live parity pirate seed 0: knob L16@0.5, matches FD ref; HEADREF stale (pre-FD rule)
 2026-11-02 08:38 ET  claude  V1  meta-llama/Llama-3.2-3B-Instruct  start  demo video recording (live server, Playwright)
 2026-11-02 09:09 ET  claude  V1  meta-llama/Llama-3.2-3B-Instruct  end  demo video recorded (hook, storm guard block, cowboy fork, evidence, share)
+2026-11-02 10:31 ET  muse  MODREF  meta-llama/Llama-3.2-3B-Instruct  start  new torch reference: full Create pirate seed 0 with prompt comparison, via the app
+2026-11-02 12:25 ET  muse  MODREF  meta-llama/Llama-3.2-3B-Instruct  end  new torch reference logs/modref_pirate: knob L16@0.5 gain 0.241, pareto tradeoff, 3214.6s; app Create pirate-0-20261102-123532-000 also done (guard on, blocked, same frozen and guard numbers)

@@ -328,3 +328,46 @@ wired in this session.
 - Known gap: one earlier suite run failed with one error while
   an orphan replay server held the GPU slot. I killed that server
   (I had started it in a walk). The rerun passes: 751, OK.
+
+## Fix 6: New live reference (stacked PR 6)
+
+Real weights. Model lane: MODREF start and end lines are in
+`docs/roadmap/model-lane.md`. Two full Creates ran, one at a time.
+
+App Create (live check): job `pirate-0-20261102-123532-000`.
+Full schedule, pirate, seed 0, prompt comparison on, guard on.
+It finished in 2,984.2 s. Frozen: L16 @ 0.5, gain 0.241.
+Verdict: `blocked`. The enforced guard blocks at the prefill step
+(`min_ratio` 0.185). Its guard numbers match the record-only runs.
+The pareto stage ran on its own: `timings["pareto"]` 921.8 s.
+Pareto verdict: `tradeoff`.
+Browser: the evidence page for this job shows the comparison
+chart (`NO CLEAR WINNER`, dose dial present). Zero pageerrors.
+That check ran on real weights in the live server.
+
+CLI reference (new reference): `logs/modref_pirate`.
+Command: `scripts/run_trait.py --trait pirate --seed 0
+--schedule full --pareto`, guard record-only, torch lane.
+It finished in 3,214.6 s, exit 0. Verdict: `knob`.
+Frozen: L16 @ 0.5, gain 0.241. Eligibility: read and update_up.
+Report cards pass and fail on the same verbs as the MOD live run.
+The update_up trait mean is 0.371 in both runs.
+Pareto verdict: `tradeoff`. Pareto timing: 599.7 s, separate.
+This run is the new live-parity reference. It replaces HEADREF
+(Oct 31), which predates the FD dose rule (`nll+fluency-v1`).
+The MOD spec acceptance 6 now points at MODREF.
+
+One plain gap: the app run and the reference differ in verdict.
+The cause is the guard setting, not the numbers.
+The app run enforced the guard. The reference records it only.
+Frozen, eligibility (read, update_up), cards and guard numbers
+are the same in both.
+
+Replay and fakes: the unit suite and `scripts/ui_walk.py` run
+without weights. Their results are in the PR body.
+- Unit suite after the live runs: `Ran 755 tests, OK (skipped=5)`.
+- `uvx pyflakes src scripts`: clean.
+- Browser after the live runs: `scripts/ui_walk.py`, 30 screens,
+  0 pageerrors. It has two screens more than the main run.
+  The new app job adds its evidence page and dial step.
+  The shelf now lists pirate v5 first. That is the new live job.
