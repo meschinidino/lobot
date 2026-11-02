@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Local secrets (META_API_KEY); see .env.example
+.env
+
 # Local run receipts (regenerate via scripts/verify_load.py)
 logs/
 

@@ -191,7 +191,7 @@ const explains = {};
 function explainSection(id) {
   const x = explains[id];
   return `<h2 class="sec">In plain words</h2>${x?.text ? `<div class="explain"><p>${esc(x.text).replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p></div><p class="meta">Written by Muse Spark from this report's numbers only${x.cached ? " (saved earlier)" : ""}. The numbers above are the source; check them there.</p>`
-    : `<div class="row2"><button class="btn" type="button" data-explain="${esc(id)}" ${x?.busy ? "disabled" : ""}>${x?.busy ? "Writing…" : "Explain with Muse"}</button><span class="meta">${x?.err ? esc(x.err) : "Muse Spark reads only this report's numbers and writes a short explanation. It needs META_API_KEY on the server."}</span></div>`}`;
+    : `<div class="row2"><button class="btn" type="button" data-explain="${esc(id)}" ${x?.busy ? "disabled" : ""}>${x?.busy ? "Writing…" : "Explain with Muse"}</button><span class="meta">${x?.err ? esc(x.err) : "Muse Spark reads only this report's numbers and writes a short explanation. It needs META_API_KEY in the .env file on the server."}</span></div>`}`;
 }
 
 // What each state key means. One sentence each, shown in legends and as hover text.

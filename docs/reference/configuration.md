@@ -40,6 +40,12 @@ lobot reads its settings from environment variables. All are optional.
 
 ## Meta model API (Muse Spark)
 
+The server reads `.env` at the repo root when it starts
+(`python -m model_lobotomy.server`). A variable set in the shell wins.
+`.env` is git-ignored; `.env.example` lists the names. `/api/state`
+reports `meta_api.key` (true or false, never the key) and
+`meta_api.model`.
+
 | Variable | Default | Effect |
 |---|---|---|
 | `META_API_KEY` | none | Key for the Meta model API. Never commit it. Without it, Muse routes return 503 |
