@@ -147,6 +147,7 @@ own prompt, predicts its side effects, and repairs them.**
 | 1b | UX | Frontend 100x: dose dial with recorded replies, tuning grid, Library, Muse explanation | `reports/UX-100x.md` | U4 | UI | 1 | **Done**; checked in replay mode |
 | 1c | UX2 | 100X features on screen: describe in words (Muse agent, self-labeling), chat with dials, re-check, removal, install; key legend; stream-disconnect lock fix | `reports/UX2.md` | UX | UI + model | 1 | **Done**; see the report for what ran on real weights |
 | 1d | UX3 | Last screens on real weights (removal view, Muse suggestions, judge check); removal `complete` fix; app guide and agent docs | `reports/UX3.md` | UX2 | UI + model | 1 | **Done**; every screen ran live except Ollama |
+| 0 | MOD | Modularity: one place to change each part (guard, judge, direction, dose rule, Create stages, storage, settings, server routers, frontend modules) | `specs/MOD-modularity.md` | none | No-model + one parity run | 4-6 | (engineering) |
 | 2 | JS | Judged scores: dose rule without NLL; unrequested-change search | `specs/JS-judged-scores.md` | FD, PP | Both | 3 | AxBench (Stanford), VibeCheck (Berkeley) |
 | 3 | GH | Fresh guard test set; repair v3 (iterated gradient projection) | `specs/GH-guard-holdout-repair-v3.md` | GR, FD | Both | 2 | "Safety cost of steering vectors is separable and reducible" (2026) |
 | 4 | UD | "What it thinks of you" dashboard in chat | `specs/UD-user-model-dashboard.md` | CH | Both + UI | 3 | TalkTuner (Harvard) |
@@ -158,6 +159,8 @@ own prompt, predicts its side effects, and repairs them.**
 | 10 | LQ | Ask the activations (stretch, high risk) | `specs/LQ-latent-qa.md` | store | Model | 4 | LatentQA (Berkeley) |
 
 Why this order:
+- MOD first: it is a pure refactor, and it turns most later workstreams
+  into "add one module and one setting".
 - U4 first: the backend already measures more than the screen shows.
 - JS before HD and TD: both new vector sources need a fair dose rule.
 - GH before any new repair or honesty claim: the old guard prompts
