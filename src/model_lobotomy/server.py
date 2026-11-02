@@ -49,6 +49,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import threading
 import time
 import uuid
@@ -131,37 +132,40 @@ def _get_followups() -> followups_mod.FollowupRunner:
 api = FastAPI(title="lobot", docs_url=None, redoc_url=None)
 
 
-def _close_when_done(gen) -> None:
-    """Close a sync generator; wait while a step of it still runs."""
-    for _ in range(2400):  # up to 2 minutes; a step stops at its next cancel check
+class AppState:
+    """One home for the server's shared state, on app.state.
+
+    Properties delegate to the module globals, so tests that set
+    server._runner (and friends) keep working.
+    """
+    _MAP = {"cancel": "_cancel", "runner": "_runner",
+            "followups": "_followups", "agents": "_agents",
+            "agent_lock": "_agent_lock", "chats": "_chats",
+            "sae_cache": "_sae_cache", "install_lock": "_install_lock"}
+    def __getattr__(self, name):
         try:
-            gen.close()
-            return
-        except ValueError:  # generator already executing
-            time.sleep(0.05)
+            return globals()[self._MAP[name]]
+        except KeyError:
+            raise AttributeError(name) from None
+    def __setattr__(self, name, value):
+        if name in self._MAP:
+            globals()[self._MAP[name]] = value
+        else:
+            super().__setattr__(name, value)
+
+
+api.state.app_state = AppState()
+
+
+def _close_when_done(gen) -> None:
+    from model_lobotomy import streaming as _streaming
+    return _streaming.close_when_done(gen)
 
 
 def _ndjson(gen) -> StreamingResponse:
-    """NDJSON response that closes its generator when the client leaves.
-
-    Starlette does not close a sync generator when the client
-    disconnects. A run paused at a yield then never reached its
-    finally, so it kept the engine lock until a restart. On a
-    disconnect this sets the cancel event and closes the generator,
-    which runs its finally (the lock release). A stream that ends
-    normally is left alone, so it cannot cancel the next run.
-    """
-    async def body():
-        finished = False
-        try:
-            async for chunk in iterate_in_threadpool(gen):
-                yield chunk
-            finished = True
-        finally:
-            if not finished:
-                _cancel.set()
-                await run_in_threadpool(_close_when_done, gen)
-    return StreamingResponse(body(), media_type="application/x-ndjson")
+    """NDJSON response that closes its generator when the client leaves."""
+    from model_lobotomy import streaming as _streaming
+    return _streaming.ndjson(gen, _cancel)
 
 
 def _need_torch(eng, feature: str) -> None:
@@ -484,115 +488,22 @@ def _split_char(tok, text: str, ids: list[int], div: int, other: str) -> int:
     return len(commonprefix([text, other]))
 
 
-@api.get("/api/state")
-def state():
-    return _state()
 
 
-@api.post("/api/model")
-def switch_model(req: ModelRequest):
-    if req.model_id not in engine._PRESETS:
-        raise HTTPException(400, f"Unknown model {req.model_id}. "
-                                 f"Supported: {', '.join(sorted(engine._PRESETS))}.")
-    if get_engine().lock.locked():
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    engine._active_model_id = req.model_id
-    engine.unload_engine()
-    return _state()
 
 
-@api.post("/api/run")
-def run(req: RunRequest):
-    prompt = req.prompt.strip()
-    if not prompt:
-        raise HTTPException(400, "The prompt is empty. Type a prompt first.")
-    if not req.rows:
-        raise HTTPException(400, "The recipe is empty. Add at least one row.")
-    if len(req.rows) > engine.MAX_ROWS:
-        raise HTTPException(400, f"Too many rows. The limit is {engine.MAX_ROWS}.")
-    rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose) for r in req.rows]
-    spec = engine.active_spec()
-    try:
-        steer.validate_recipe(rows, spec)
-    except ValueError as e:
-        raise HTTPException(400, f"Invalid row: {e}.") from None
-    if REPLAY:
-        rec = _find_recording(engine._active_model_id, prompt, [r.model_dump() for r in req.rows])
-        if rec is None:
-            raise HTTPException(404, "Replay mode answers only recorded setups, and this one was "
-                                     "not recorded. Record it with scripts/record_sweep.py, or "
-                                     "restart without MODEL_LOBOTOMY_REPLAY to run the model.")
-        if get_engine().lock.locked():
-            raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-        _cancel.clear()
-        return _ndjson(_replay_stream(rec))
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    if req.dial_trait is not None:
-        _need_torch(get_engine(), "dial")
-    if get_engine().lock.locked():
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    _cancel.clear()
-    return _ndjson(_run_stream(prompt, rows, spec, guard=req.guard,
-                    research_mode=req.research_mode,
-                    dial_trait=req.dial_trait))
 
 
-@api.post("/api/stop")
-def stop():
-    _cancel.set()
-    return {"stopping": get_engine().lock.locked()}
 
 
-@api.get("/api/families")
-def families():
-    runner = _get_runner()
-    return {"families": [
-        {"name": f.name, "aliases": list(f.aliases),
-         "pos": f.pos, "neg": f.neg, "judge": f.judge,
-         "hand_validated": f.hand_validated,
-         "validation": f.validation}
-        for f in runner.store.all()]}
 
 
-@api.post("/api/create")
-def create(req: CreateRequest):
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    _need_torch(get_engine(), "create")
-    runner = _get_runner()
-    try:
-        job_id = runner.start(req.description, seed=req.seed,
-                              model_id=engine._active_model_id,
-                              guard=req.guard,
-                              research_mode=req.research_mode,
-                              schedule=req.schedule, pareto=req.pareto)
-    except trait_store.UnsupportedTrait as e:
-        raise HTTPException(422, str(e)) from None
-    return {"job_id": job_id, **runner.status(job_id)}
 
 
-@api.get("/api/create/{job_id}")
-def create_status(job_id: str):
-    try:
-        return _get_runner().reattach(job_id)
-    except KeyError:
-        raise HTTPException(404, f"Unknown job {job_id}.") from None
 
 
-@api.post("/api/create/{job_id}/stop")
-def create_stop(job_id: str):
-    try:
-        return _get_runner().stop(job_id)
-    except KeyError:
-        raise HTTPException(404, f"Unknown job {job_id}.") from None
 
 
-@api.get("/api/jobs")
-def jobs():
-    return {"jobs": _get_runner().list_jobs()}
 
 
 _JOB_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -769,52 +680,6 @@ def _draft_or_404(draft_id: str):
         raise HTTPException(404, f"Unknown draft '{draft_id}'.") from None
 
 
-@api.post("/api/drafts")
-def draft_create(req: DraftRequest):
-    """Draft model-written parts + 20 candidate replies (C3)."""
-    allowed, reason = guard_mod.draft_description_allowed(
-        req.description)
-    if not allowed:
-        raise HTTPException(422, reason)
-    if REPLAY:
-        raise HTTPException(503, "Drafts need the model. "
-                                 "Replay mode has no recordings for them.")
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    eng = get_engine()
-    if not eng.lock.acquire(blocking=False):
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    try:
-        if eng.model is None or eng.model_id != engine._active_model_id:
-            eng.load(engine._active_model_id)
-        try:
-            if req.drafter == "muse":
-                parts = _muse().draft_parts(req.description)
-            else:
-                parts = drafts_mod.draft_family(eng, req.description,
-                                                seed=req.seed)
-        except drafts_mod.DraftError as e:
-            raise HTTPException(422, str(e)) from None
-        try:
-            replies = drafts_mod.candidate_replies(
-                eng, parts, prompt_bank.PROMPT_BANK, seed=req.seed)
-        except drafts_mod.DraftError as e:
-            raise HTTPException(500, str(e)) from None
-        draft_id = drafts_mod.new_draft_id(ROOT / "store",
-                                           req.description)
-        record = drafts_mod.build_draft_record(
-            draft_id, req.description, parts, eng.model_id,
-            eng.revision)
-        drafts_mod.save_draft(ROOT / "store", draft_id, record,
-                              replies)
-        return {"id": draft_id, "description": record["description"],
-                "parts": {k: record[k] for k in
-                          ("pos", "neg", "judge", "baselines")},
-                "replies": [drafts_mod.public_reply(r) for r in replies],
-                "labeled": 0, "total": len(replies)}
-    finally:
-        eng.lock.release()
 
 
 def _muse():
@@ -835,104 +700,14 @@ def _muse_call(fn, *args):
         raise HTTPException(502, f"Muse Spark failed: {e}") from None
 
 
-@api.post("/api/drafts/{draft_id}/prelabel")
-def draft_prelabel(draft_id: str):
-    """Muse Spark label suggestions; the user still saves the labels."""
-    record, replies, labels = _draft_or_404(draft_id)
-    got = _muse_call(_muse().prelabel, record["description"], replies)
-    return {"id": draft_id, "suggestions": got, "total": len(replies),
-            "suggested": len(got), "labeled": len(labels)}
 
 
-@api.post("/api/traits/{job_id}/explain")
-def trait_explain(job_id: str):
-    """Plain-words explanation of a finished report (Muse Spark).
-
-    Cached in the job dir; the numbers stay the report's own.
-    """
-    trait_dir = jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).trait.workdir
-    report = jobs_store.WorkPaths(trait_dir).report
-    if not report.is_file():
-        raise HTTPException(404, f"No report for {job_id} yet.")
-    rep = _enrich_report(trait_dir, json.loads(report.read_text()))
-    # The cache is keyed by the numbers Muse sees, so a later Pareto or
-    # repair run gets a fresh explanation.
-    from model_lobotomy import muse as muse_mod
-    key = hashlib.sha256(json.dumps(muse_mod.report_summary(rep),
-                                    sort_keys=True).encode()).hexdigest()
-    cached, key_path = trait_dir / "explanation.txt", trait_dir / "explanation.key"
-    if cached.is_file() and key_path.is_file() and \
-            key_path.read_text().strip() == key:
-        return {"id": job_id, "explanation": cached.read_text().strip(),
-                "cached": True}
-    text = _muse_call(_muse().explain, rep)
-    cached.write_text(text + "\n")
-    key_path.write_text(key + "\n")
-    return {"id": job_id, "explanation": text, "cached": False}
 
 
 _agents: dict[str, dict] = {}
 _agent_lock = threading.Lock()
 
 
-@api.post("/api/agent")
-def agent_start(req: AgentRequest):
-    """Start the Create agent (Muse Spark + local gates) in the background."""
-    allowed, reason = guard_mod.draft_description_allowed(req.description)
-    if not allowed:
-        raise HTTPException(422, reason)
-    if REPLAY or NO_MODEL:
-        raise HTTPException(503, "The agent needs the model loaded.")
-    _need_torch(get_engine(), "create")
-    muse = _muse()
-    if not _agent_lock.acquire(blocking=False):
-        raise HTTPException(409, "An agent run is in progress.")
-    eng = get_engine()
-    if not eng.lock.acquire(blocking=False):
-        _agent_lock.release()
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    from model_lobotomy import agent as agent_mod
-    cancel = threading.Event()
-    state = {"status": "running", "steps": [], "result": None,
-             "error": None, "cancel": cancel,
-             "description": req.description, "started": time.time(),
-             "job_id": None}
-
-    def progress(_kind, row):
-        state["steps"].append(row)
-
-    def work():
-        try:
-            if eng.model is None or eng.model_id != engine._active_model_id:
-                eng.load(engine._active_model_id)
-            lane = None
-            if req.lane == "llama":
-                from model_lobotomy import llama_backend
-                lane = trait_eval.LlamaLane(eng, eng.spec,
-                                            llama_backend.CreateDaemon(
-                                                eng.model_id, eng.revision,
-                                                eng.tokenizer))
-            ag = agent_mod.CreateAgent(
-                eng, muse, store=_get_runner().store, lane=lane,
-                max_rounds=req.max_rounds, cancel=cancel,
-                progress=progress)
-            state["id"] = ag.id
-            state["result"] = ag.run(req.description)
-            state["status"] = state["result"]["status"]
-            state["job_id"] = _register_agent_job(state["result"])
-        except agent_mod.AgentStopped:
-            state["status"] = "stopped"
-        except Exception as e:  # noqa: BLE001 - reported to the client
-            state["status"] = "failed"
-            state["error"] = f"{type(e).__name__}: {e}"[:2000]
-        finally:
-            eng.lock.release()
-            _agent_lock.release()
-
-    run_id = uuid.uuid4().hex[:12]
-    _agents[run_id] = state
-    threading.Thread(target=work, daemon=True).start()
-    return {"run_id": run_id, "status": "running"}
 
 
 _AGENT_ID_RE = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
@@ -975,167 +750,20 @@ def _disk_agent(agent_id: str) -> dict | None:
             "job_id": job_id if jobs_store.JobPaths(job_id, _get_runner().jobs_dir).job_json.is_file() else None}
 
 
-@api.get("/api/agents")
-def agents_list():
-    """Agent runs: live ones in memory, finished ones from disk."""
-    out, seen = [], set()
-    for run_id, st in _agents.items():
-        seen.add(st.get("id"))
-        out.append({"run_id": run_id, "id": st.get("id"),
-                    "status": st["status"],
-                    "description": (st.get("result") or {}).get(
-                        "description") or st.get("description"),
-                    "family": (st.get("result") or {}).get("family"),
-                    "job_id": st.get("job_id"),
-                    "started": st.get("started")})
-    root = _agents_dir()
-    if root.is_dir():
-        for d in sorted(root.iterdir(), reverse=True):
-            if d.name in seen:
-                continue
-            st = _disk_agent(d.name)
-            if st is None:
-                continue
-            out.append({"run_id": d.name, "id": d.name,
-                        "status": st["status"],
-                        "description": st["result"].get("description"),
-                        "family": st["result"].get("family"),
-                        "job_id": st["job_id"], "started": None})
-    return {"agents": out}
 
 
-@api.get("/api/agent/{run_id}")
-def agent_status(run_id: str):
-    state = _agents.get(run_id)
-    if state is None:
-        disk = _disk_agent(run_id)
-        if disk is None:
-            raise HTTPException(404, f"Unknown agent run {run_id}.")
-        return disk
-    return {k: v for k, v in state.items() if k != "cancel"}
 
 
-@api.post("/api/agent/{run_id}/stop")
-def agent_stop(run_id: str):
-    state = _agents.get(run_id)
-    if state is None:
-        raise HTTPException(404, f"Unknown agent run {run_id}.")
-    state["cancel"].set()
-    return {"run_id": run_id, "stopping": True}
 
 
-@api.get("/api/drafts/{draft_id}")
-def draft_get(draft_id: str):
-    """One draft: parts + labeling queue with labels so far (C3)."""
-    record, replies, labels = _draft_or_404(draft_id)
-    rows = []
-    for entry in replies:
-        row = drafts_mod.public_reply(entry)
-        row["label"] = labels.get(entry["reply_id"])
-        rows.append(row)
-    return {"id": draft_id, "description": record["description"],
-            "parts": {k: record[k] for k in
-                      ("pos", "neg", "judge", "baselines")},
-            "replies": rows, "labeled": len(labels),
-            "total": len(replies)}
 
 
-@api.post("/api/drafts/{draft_id}/labels")
-def draft_label(draft_id: str, req: LabelsRequest):
-    """Submit user labels for candidate replies (C3)."""
-    _record, replies, labels = _draft_or_404(draft_id)
-    reply_ids = {r["reply_id"] for r in replies}
-    try:
-        merged = drafts_mod.merge_labels(
-            labels, [row.model_dump() for row in req.labels],
-            reply_ids)
-    except drafts_mod.DraftError as e:
-        raise HTTPException(400, str(e)) from None
-    drafts_mod.save_labels(ROOT / "store", draft_id, merged)
-    return {"id": draft_id, "labeled": len(merged),
-            "total": len(replies)}
 
 
-@api.post("/api/drafts/{draft_id}/validate")
-def draft_validate(draft_id: str):
-    """Judge-vs-user agreement; registers the family on pass (C3)."""
-    record, replies, labels = _draft_or_404(draft_id)
-    if len(labels) < len(replies):
-        raise HTTPException(
-            422, f"Label all {len(replies)} replies first "
-                 f"({len(labels)} labeled).")
-    if REPLAY:
-        raise HTTPException(503, "Validation needs the model. "
-                                 "Replay mode has no recordings for it.")
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    eng = get_engine()
-    if not eng.lock.acquire(blocking=False):
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    try:
-        if eng.model is None or eng.model_id != engine._active_model_id:
-            eng.load(engine._active_model_id)
-        from model_lobotomy import trait_eval as trait_eval_mod
-        spec = engine.active_spec()
-        scores = {}
-        for entry in replies:
-            scores[entry["reply_id"]] = trait_eval_mod.judge_score(
-                eng.model, eng.tokenizer, spec, entry["prompt"],
-                entry["reply"], record["judge"])
-        got = drafts_mod.label_agreement(labels, scores)
-        if got["fraction"] < drafts_mod.AGREEMENT_GATE:
-            disag = [rid for rid in sorted(labels)
-                     if (scores[rid] >= 0.5) != bool(labels[rid])]
-            raise HTTPException(422, {
-                "registered": False,
-                "agreement": round(got["fraction"], 4),
-                "gate": drafts_mod.AGREEMENT_GATE,
-                "disagreements": disag,
-            })
-        runner = _get_runner()
-        store = runner.store
-        fam = trait_store.TraitFamily(
-            name=draft_id, pos=record["pos"], neg=record["neg"],
-            judge=record["judge"],
-            baselines=tuple(record["baselines"]))
-        try:
-            store.register(fam)
-        except ValueError:
-            raise HTTPException(422, f"A family named '{draft_id}' "
-                                     f"already exists.") from None
-        store.mark_validated(draft_id, n_labels=got["n"],
-                             agreement=round(got["fraction"], 4),
-                             note="C3 open-description validation")
-        store.save()
-        return {"registered": True, "family": draft_id,
-                "agreement": round(got["fraction"], 4),
-                "gate": drafts_mod.AGREEMENT_GATE}
-    finally:
-        eng.lock.release()
 
 
-@api.get("/api/traits")
-def traits(model_id: str | None = None):
-    """Finished traits with evidence summaries (E1). No model needed."""
-    items = _trait_items()
-    if model_id is not None:
-        items = [t for t in items if t["model_id"] == model_id]
-    return {"traits": items}
 
 
-@api.get("/api/traits/{job_id}/report")
-def trait_report(job_id: str):
-    """One trait's report.json, plus pareto, repair and tuning.chosen (U4)."""
-    trait_dir = jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).trait.workdir
-    path = jobs_store.WorkPaths(trait_dir).report
-    if not path.is_file():
-        raise HTTPException(404, f"Unknown trait {job_id}.")
-    rep = _enrich_report(trait_dir, json.loads(path.read_text()))
-    fu = _get_followups()
-    rep["followups"] = {k: fu.status(job_id, k, trait_dir)
-                        for k in followups_mod.KINDS}
-    return rep
 
 
 class FollowupRequest(BaseModel):
@@ -1176,117 +804,22 @@ def _followup_status(job_id: str, kind: str) -> dict:
     return {"status": st, "result": result}
 
 
-@api.post("/api/traits/{job_id}/pareto")
-def trait_pareto_start(job_id: str):
-    """Run the PP stage for a finished Create (background job)."""
-    return _followup_start(job_id, "pareto", {})
 
 
-@api.get("/api/traits/{job_id}/pareto")
-def trait_pareto(job_id: str):
-    return _followup_status(job_id, "pareto")
 
 
-@api.post("/api/traits/{job_id}/repair")
-def trait_repair_start(job_id: str, req: FollowupRequest | None = None):
-    """Run GR guard repair for a finished Create (background job)."""
-    return _followup_start(job_id, "repair",
-                           {"method": (req or FollowupRequest()).method})
 
 
-@api.get("/api/traits/{job_id}/repair")
-def trait_repair(job_id: str):
-    return _followup_status(job_id, "repair")
 
 
-@api.post("/api/traits/{job_id}/{kind}/stop")
-def trait_followup_stop(job_id: str, kind: Literal["pareto", "repair"]):
-    trait_dir = jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).trait.workdir
-    return {"status": _get_followups().stop(job_id, kind, trait_dir)}
 
 
-@api.get("/api/traits/{job_id}/repaired/{method}")
-def trait_repaired_patch(job_id: str, method: Literal["gradient", "project"]):
-    """The repaired patch, when a repair chose a candidate."""
-    path = jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).trait.repaired_patch(method)
-    if not path.is_file():
-        raise HTTPException(404, f"No repaired patch for {job_id}.")
-    return FileResponse(path, media_type="application/zip",
-                        filename=f"{job_id}-repaired-{method}.lobot")
 
 
-@api.get("/api/traits/{job_id}/report.md")
-def trait_report_md(job_id: str):
-    """One trait's report.md as Markdown (E1)."""
-    path = jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).trait.workdir / "report.md"
-    if not path.is_file():
-        raise HTTPException(404, f"Unknown trait {job_id}.")
-    return FileResponse(path, media_type="text/markdown")
 
 
-@api.get("/api/traits/{job_id}/patch")
-def trait_patch(job_id: str):
-    """One trait's knob.lobot patch as a download (E1)."""
-    job_dir = _trait_job_dir(job_id)
-    path = jobs_store.WorkPaths(job_dir / "trait").patch
-    if not path.is_file():
-        raise HTTPException(404, f"Unknown trait {job_id}.")
-    item = next((t for t in _trait_items() if t["id"] == job_id), None)
-    if item is not None:
-        family, version = item["family"], item["version"]
-    else:
-        family, version = job_id, 1
-        rep_path = jobs_store.WorkPaths(job_dir / "trait").report
-        if rep_path.is_file():
-            try:
-                family = json.loads(rep_path.read_text()).get(
-                    "trait", job_id)
-            except ValueError:
-                pass
-    return FileResponse(path, media_type="application/zip",
-                        filename=f"{family}-v{version}.lobot")
 
 
-@api.post("/api/update")
-def update(req: UpdateRequest):
-    prompt = req.prompt.strip()
-    if not prompt:
-        raise HTTPException(400, "The prompt is empty. Type a prompt first.")
-    if not req.doses or len(req.doses) > MAX_DOSES:
-        raise HTTPException(400, f"Give 1 to {MAX_DOSES} doses.")
-    spec = engine.active_spec()
-    if req.trait is not None and (req.layer is not None
-                                  or req.direction is not None):
-        raise HTTPException(400, "Give a trait or an explicit "
-                                 "layer/direction/scale, not both.")
-    if req.trait is not None:
-        knob = _latest_knob(req.trait)
-        if knob is None:
-            raise HTTPException(404, f"No finished Create job for trait "
-                                     f"'{req.trait}' with a saved direction. "
-                                     f"Create the trait first.")
-        layer, direction, scale = knob["layer"], knob["direction"], None
-    else:
-        if req.layer is None or req.direction is None or req.scale is None:
-            raise HTTPException(400, "Explicit updates need layer, "
-                                     "direction and scale.")
-        layer, direction, scale = req.layer, req.direction, req.scale
-    if not 0 <= layer < spec.layers:
-        raise HTTPException(400, f"Layer {layer} out of bounds "
-                                 f"[0,{spec.layers}).")
-    if len(direction) != spec.hidden:
-        raise HTTPException(400, f"Direction has {len(direction)} dims, "
-                                 f"model needs {spec.hidden}.")
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    if get_engine().lock.locked():
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    _cancel.clear()
-    return _ndjson(_update_stream(prompt, layer, direction, scale, list(req.doses),
-                       min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
-                       spec, guard=req.guard,
-                       research_mode=req.research_mode))
 
 
 def _delete_edits(knob: dict):
@@ -1295,28 +828,6 @@ def _delete_edits(knob: dict):
         int(knob["layer"]), tuple(knob["direction"])),))
 
 
-@api.post("/api/delete")
-def delete(req: DeleteRequest):
-    """Run one prompt clean vs trait-ablated, two columns (DL)."""
-    prompt = req.prompt.strip()
-    if not prompt:
-        raise HTTPException(400, "The prompt is empty. Type a prompt first.")
-    knob = _latest_knob(req.trait)
-    if knob is None:
-        raise HTTPException(422, f"Delete is not eligible for "
-                                 f"'{req.trait}': no finished Create job "
-                                 f"with a saved direction.")
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    _need_torch(get_engine(), "ablate")
-    if get_engine().lock.locked():
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    _cancel.clear()
-    return _ndjson(_delete_stream(prompt, req.trait, knob,
-                       min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
-                       guard=req.guard,
-                       research_mode=req.research_mode))
 
 
 def _delete_stream(prompt: str, trait: str, knob: dict, max_new: int,
@@ -1395,155 +906,16 @@ def _delete_stream(prompt: str, trait: str, knob: dict, max_new: int,
         eng.lock.release()
 
 
-@api.post("/api/delete/check")
-def delete_check(req: DeleteCheckRequest):
-    """Ablation report card with side effects + guard re-check (DL)."""
-    knob = _latest_knob(req.trait)
-    if knob is None:
-        raise HTTPException(422, f"Delete is not eligible for "
-                                 f"'{req.trait}': no finished Create job "
-                                 f"with a saved direction.")
-    prompts = None
-    if req.prompts is not None:
-        prompts = [p for p in req.prompts if p and p.strip()]
-        if not prompts:
-            raise HTTPException(400, "Give at least one prompt.")
-        if len(prompts) > 24:
-            raise HTTPException(400, "Give at most 24 prompts.")
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    _need_torch(get_engine(), "ablate")
-    eng = get_engine()
-    if not eng.lock.acquire(blocking=False):
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    try:
-        t_all = time.perf_counter()
-        if eng.model is None or eng.model_id != engine._active_model_id:
-            eng.load(engine._active_model_id)
-        spec = engine.active_spec()
-        medians, _ = _calibrate(eng, [int(knob["layer"])])
-        try:
-            cfg = trait_eval.family_cfg(req.trait)
-        except KeyError:
-            raise HTTPException(422, f"Delete is not eligible for "
-                                     f"'{req.trait}': no registered family.") from None
-        try:
-            out = trait_eval.delete_check(
-                eng, spec, cfg, knob, medians, prompt_bank.PROMPT_BANK,
-                prompts=prompts, cancel=_cancel)
-        except ValueError as e:
-            raise HTTPException(400, f"{e}.") from None
-        out["seconds"] = round(time.perf_counter() - t_all, 1)
-        return out
-    finally:
-        eng.lock.release()
 
 
 _install_lock = threading.Lock()
 _INSTALL_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
-@api.get("/api/install/targets")
-def install_targets():
-    """Probe llama.cpp and Ollama. Needs no weights (IN)."""
-    return {"targets": [install_mod.probe(t)
-                        for t in install_mod.TARGETS]}
 
 
-@api.post("/api/install")
-def install_patch(req: InstallRequest):
-    """Export a trait patch and install it into one target (IN)."""
-    if req.target not in install_mod.TARGETS:
-        raise HTTPException(400, f"Unknown target {req.target!r}; "
-                                 f"use one of {install_mod.TARGETS}.")
-    if not req.model_ref.strip():
-        raise HTTPException(400, "Give a model_ref.")
-    job_dir = _trait_job_dir(req.trait_id)
-    patch_path = jobs_store.WorkPaths(job_dir / "trait").patch
-    if not patch_path.is_file():
-        raise HTTPException(404, f"Unknown trait {req.trait_id}.")
-    if not _install_lock.acquire(blocking=False):
-        raise HTTPException(409, "An install or verify is running. "
-                                 "Wait for it to finish.")
-    try:
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        install_id = (f"{req.trait_id}-{req.target}-{stamp}")
-        out_dir = install_mod.INSTALLS_ROOT / install_id
-        got = install_mod.install(req.target, patch_path, out_dir,
-                                  req.model_ref.strip())
-        if not got["ok"]:
-            raise HTTPException(422, got["detail"])
-        record = {"install_id": install_id,
-                  "trait_id": req.trait_id,
-                  "target": req.target,
-                  "model_ref": req.model_ref.strip(),
-                  "run": {k: got[k] for k in got
-                          if k not in ("ok", "detail")},
-                  "detail": got["detail"]}
-        install_mod.save_install(record)
-        return record
-    finally:
-        _install_lock.release()
 
 
-@api.post("/api/install/{install_id}/verify")
-def install_verify(install_id: str, req: InstallVerifyRequest):
-    """Run with and without the installed patch; compare (IN)."""
-    if not _INSTALL_ID_RE.fullmatch(install_id or ""):
-        raise HTTPException(404, f"Unknown install {install_id}.")
-    prompt = req.prompt.strip()
-    if req.judge not in (None, "local"):
-        raise HTTPException(400, "judge must be null or 'local'.")
-    if req.judged_n:
-        if req.judge != "local":
-            raise HTTPException(400, "judged_n needs judge 'local'.")
-        if not 1 <= req.judged_n <= INSTALL_JUDGED_MAX:
-            raise HTTPException(400, f"judged_n must be 1 to "
-                                     f"{INSTALL_JUDGED_MAX}.")
-    elif not prompt:
-        raise HTTPException(400, "The prompt is empty. "
-                                 "Type a prompt first.")
-    record = install_mod.load_install(install_id)
-    if record is None:
-        raise HTTPException(404, f"Unknown install {install_id}.")
-    if req.judged_n:
-        return _install_verify_judged(install_id, record, req)
-    if not _install_lock.acquire(blocking=False):
-        raise HTTPException(409, "An install or verify is running. "
-                                 "Wait for it to finish.")
-    try:
-        t_all = time.perf_counter()
-        max_new = min(max(int(req.max_new_tokens), 1), 256)
-        base = install_mod.generate(record["target"], record["run"],
-                                    prompt, patched=False,
-                                    max_new=max_new)
-        if not base["ok"]:
-            raise HTTPException(422, f"Unpatched run failed: "
-                                     f"{base['detail']}")
-        patched = install_mod.generate(record["target"], record["run"],
-                                       prompt, patched=True,
-                                       max_new=max_new)
-        if not patched["ok"]:
-            raise HTTPException(422, f"Patched run failed: "
-                                     f"{patched['detail']}")
-        out = {"install_id": install_id, "prompt": prompt,
-               "base_text": base["text"],
-               "patched_text": patched["text"],
-               "differs": patched["text"] != base["text"],
-               "comparison": None,
-               "seconds": round(time.perf_counter() - t_all, 1)}
-        if req.judge == "local":
-            out["comparison"] = _install_compare(record, prompt,
-                                                 base["text"],
-                                                 patched["text"])
-            out["seconds"] = round(time.perf_counter() - t_all, 1)
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        (install_mod.INSTALLS_ROOT / install_id /
-         f"verify-{stamp}.json").write_text(json.dumps(out, indent=2))
-        return out
-    finally:
-        _install_lock.release()
 
 
 def _final_prompts(record: dict, n: int) -> list[str]:
@@ -1673,53 +1045,8 @@ def _verify_pin(patch_path) -> dict:
     return meta
 
 
-@api.post("/api/verify")
-def verify(req: VerifyRequest):
-    """Re-run a trait patch's shipped evidence (RV)."""
-    job_dir = _trait_job_dir(req.trait_id)
-    patch_path = jobs_store.WorkPaths(job_dir / "trait").patch
-    if not patch_path.is_file():
-        raise HTTPException(422, f"Trait {req.trait_id} has no saved "
-                                 f"patch to verify.")
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded "
-                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to verify.")
-    if get_engine().lock.locked():
-        raise HTTPException(409, "A run is in progress. "
-                                 "Wait for it to finish.")
-    _need_torch(get_engine(), "verify")
-    _verify_pin(patch_path)
-    _cancel.clear()
-    return _ndjson(_verify_stream(patch_path, req.quick))
 
 
-@api.post("/api/verify/upload")
-async def verify_upload(file: UploadFile = File(...)):
-    """Verify an uploaded .lobot file (RV). Never unpickles."""
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded "
-                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to verify.")
-    if get_engine().lock.locked():
-        raise HTTPException(409, "A run is in progress. "
-                                 "Wait for it to finish.")
-    _need_torch(get_engine(), "verify")
-    data = b""
-    while True:
-        chunk = await file.read(1024 * 1024)
-        if not chunk:
-            break
-        data += chunk
-        if len(data) > UPLOAD_BYTES_CAP:
-            raise HTTPException(413, "Patch file is over 64 MB.")
-    import tempfile
-    with tempfile.TemporaryDirectory() as tmp:
-        probe = Path(tmp) / "probe.lobot"
-        probe.write_bytes(data)
-        _verify_pin(probe)
-    _cancel.clear()
-    return _ndjson(_verify_stream(data, True))
 
 
 def _verify_stream(patch, quick: bool):
@@ -1852,51 +1179,8 @@ def _combine_matrix(names, patches, max_new: int, seed: int) -> dict:
         eng.lock.release()
 
 
-@api.post("/api/combine/check")
-def combine_check(req: CombineCheckRequest):
-    """Pair matrix + install order for saved patches (CB)."""
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded "
-                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to combine.")
-    names, patches = _combine_patches(req.patch_ids)
-    if any(p["meta"].get("edit_kind") == "ablate" for p in patches):
-        _need_torch(get_engine(), "ablate")
-    if get_engine().lock.locked():
-        raise HTTPException(409, "A run is in progress. "
-                                 "Wait for it to finish.")
-    return _combine_matrix(names, patches, req.max_new_tokens,
-                           req.seed)
 
 
-@api.get("/api/combine/installed")
-def combine_installed():
-    """Pair matrix for the traits installed via /api/install (CB)."""
-    root = install_mod.INSTALLS_ROOT
-    found: dict[str, float] = {}
-    if root.is_dir():
-        for rec in sorted(root.glob("*/install.json"),
-                          key=lambda p: p.stat().st_mtime):
-            try:
-                tid = json.loads(rec.read_text()).get("trait_id")
-            except ValueError:
-                continue
-            if tid and tid not in found:
-                found[tid] = rec.stat().st_mtime
-    if not found:
-        return {"installed": [], "matrix": None}
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded "
-                                 "(MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to combine.")
-    names, patches = _combine_patches(list(found))
-    if any(p["meta"].get("edit_kind") == "ablate" for p in patches):
-        _need_torch(get_engine(), "ablate")
-    if get_engine().lock.locked():
-        raise HTTPException(409, "A run is in progress. "
-                                 "Wait for it to finish.")
-    return {"installed": list(found),
-            "matrix": _combine_matrix(names, patches, 24, 0)}
 
 
 def _trait_vector(knob: dict, dose: float, scale: float):
@@ -2052,214 +1336,12 @@ def _capture_reply_mats(eng, edits, medians, ids, spec):
     return {layer: grabbed[layer][0][1:] for layer in range(spec.layers)}
 
 
-@api.post("/api/neurons")
-def neurons(req: NeuronsRequest):
-    """Click-a-word (R1, R2): top neurons at one prompt or reply token."""
-    prompt = req.prompt.strip()
-    if not prompt:
-        raise HTTPException(400, "The prompt is empty. Type a prompt first.")
-    if len(req.rows) > engine.MAX_ROWS:
-        raise HTTPException(400, f"Too many rows. The limit is {engine.MAX_ROWS}.")
-    rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose) for r in req.rows]
-    spec = engine.active_spec()
-    try:
-        if rows:
-            steer.validate_recipe(rows, spec)
-    except ValueError as e:
-        raise HTTPException(400, f"Invalid row: {e}.") from None
-    knob = None
-    dose = 1.0
-    if req.trait is not None:
-        knob = _latest_knob(req.trait)
-        if knob is None:
-            raise HTTPException(404, f"No finished Create job for trait "
-                                     f"'{req.trait}' with a saved direction. "
-                                     f"Create the trait first.")
-        dose = req.dose if req.dose is not None else float(knob["dose"])
-    if (req.token_index is None) == (req.reply_char is None):
-        raise HTTPException(400, "Give exactly one of token_index and reply_char.")
-    if req.reply_char is not None and not (req.reply and 0 <= req.reply_char < len(req.reply)):
-        raise HTTPException(400, "reply_char needs a reply and must fall inside it.")
-    top_k = min(max(int(req.top_k), 1), 32)
-    window = min(max(int(req.window), 0), 16)
-    if REPLAY:
-        raise HTTPException(503, "Replay mode loads no weights, and the neurons at a word "
-                                 "need the model. Restart without MODEL_LOBOTOMY_REPLAY.")
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    _need_torch(get_engine(), "capture")
-    eng = get_engine()
-    if not eng.lock.acquire(blocking=False):
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    try:
-        if eng.model is None or eng.model_id != engine._active_model_id:
-            eng.load(engine._active_model_id)
-        preset = engine.active_preset()
-        steer.check_preset_binding(preset, engine._active_model_id)
-        layers = sorted({r.layer for r in rows}
-                        | ({int(knob["layer"])} if knob else set()))
-        medians, _ = _calibrate(eng, layers)
-        vec = ()
-        if knob is not None:
-            vec = (_trait_vector(
-                knob, dose, float(medians[int(knob["layer"])])),)
-        edits = EditSet(neuron=EditSet.from_rows(rows).neuron,
-                        vector=vec)
-        gv = _verified_guard(
-            eng, edits, medians,
-            guard_mod.should_enforce(req.guard, req.research_mode))
-        if gv.blocked:
-            return {"blocked": True, "guard": _guard_event_dict(gv)}
-        wrapped = steer.wrap_prompt_notk(eng.tokenizer, prompt, spec)
-        ids = _token_ids(eng.tokenizer, wrapped)
-        reply_start = None
-        if req.reply:
-            full = _token_ids(eng.tokenizer, wrapped + req.reply)
-            reply_start = len(ids)
-            for i, (a, b) in enumerate(zip(full, ids)):
-                if a != b:
-                    reply_start = i
-                    break
-            ids = full
-        token_index = req.token_index
-        if req.reply_char is not None:
-            token_index = _reply_token_at(eng.tokenizer, ids, reply_start, req.reply_char)
-        if not 1 <= token_index < len(ids):
-            raise HTTPException(400, f"token_index {token_index} out of "
-                                     f"bounds [1,{len(ids)}).")
-        if req.reply:
-            mats = _capture_reply_mats(eng, edits, medians, ids, spec)
-        else:
-            # capture() wraps once itself and drops position 0 (BOS):
-            # matrix row r is wrapped token r + 1.
-            activ = eng.capture_with_edits(
-                [prompt], list(range(spec.layers)), edits, medians,
-                point="mlp_in", reduce="none")
-            mats = {L: activ[L][0] for L in range(spec.layers)}
-        neurons = _rank_neurons(
-            eng, mats, ids, token_index, top_k, window)
-        return {"blocked": False, "model_id": engine._active_model_id,
-                "prompt": prompt,
-                "tokens": [eng.tokenizer.decode([i],
-                                                skip_special_tokens=True)
-                           for i in ids],
-                "token_index": token_index, "reply_start": reply_start,
-                "neurons": neurons}
-    finally:
-        eng.lock.release()
 
 
-@api.get("/api/neuron/{layer}/{neuron}")
-def neuron_card(layer: int, neuron: int, k: int = Query(12, ge=1, le=50)):
-    """One neuron card: pushes_toward plus cached fires_on (R2)."""
-    spec = engine.active_spec()
-    if not 0 <= layer < spec.layers or not 0 <= neuron < spec.intermediate:
-        raise HTTPException(400, f"Neuron L{layer}N{neuron} is out of "
-                                 f"bounds [0,{spec.layers})x"
-                                 f"[0,{spec.intermediate}).")
-    cache_dir = ROOT / "store" / "reader" / _model_slug(
-        engine._active_model_id)
-    if REPLAY:
-        cards_path = cache_dir / "cards.json"
-        if not cards_path.exists():
-            raise HTTPException(
-                503, "Neuron cards need the model, or a recorded "
-                     "cards.json for replay mode.")
-        cards = json.loads(cards_path.read_text())
-        card = cards.get(f"{layer}:{neuron}")
-        if card is None:
-            raise HTTPException(
-                404, f"No recorded card for neuron L{layer}N{neuron}.")
-        return card
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    _need_torch(get_engine(), "reader")
-    eng = get_engine()
-    if not eng.lock.acquire(blocking=False):
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    try:
-        if eng.model is None or eng.model_id != engine._active_model_id:
-            eng.load(engine._active_model_id)
-        pushes = reader.pushes_toward(eng, layer, neuron, k=k)
-        fires, built, tokens = None, False, 0
-        if ((cache_dir / "fires_on.npz").exists()
-                and (cache_dir / "sample.json").exists()):
-            sample = json.loads((cache_dir / "sample.json").read_text())
-            tokens = len(sample.get("tokens", []))
-            fires = reader.fires_on(cache_dir, layer, neuron, k=k)
-            built = True
-        return {"model_id": engine._active_model_id, "layer": layer,
-                "neuron": neuron, "pushes_toward": pushes,
-                "fires_on": fires,
-                "fires_on_cache": {"built": built, "tokens": tokens}}
-    finally:
-        eng.lock.release()
 
 
-@api.get("/api/find")
-def find(word: str = "", layers: str | None = None,
-         k: int = Query(20, ge=1, le=50)):
-    """Neurons that push one word hardest (R2)."""
-    spec = engine.active_spec()
-    layer_list = _parse_layers(layers, spec)
-    if not word or not word.strip():
-        raise HTTPException(400, "The word is empty. Type a word first.")
-    if REPLAY:
-        raise HTTPException(503, "Find needs the model. Replay mode has no recordings for it.")
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    _need_torch(get_engine(), "reader")
-    eng = get_engine()
-    if not eng.lock.acquire(blocking=False):
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    try:
-        if eng.model is None or eng.model_id != engine._active_model_id:
-            eng.load(engine._active_model_id)
-        try:
-            return reader.find_neurons(eng, word, layer_list, k=k)
-        except ValueError as e:
-            raise HTTPException(400, f"{e}.") from None
-    finally:
-        eng.lock.release()
 
 
-@api.post("/api/lift")
-def lift(req: LiftRequest):
-    """Steering lift for one neuron (R2)."""
-    spec = engine.active_spec()
-    if not 0 <= req.layer < spec.layers or not 0 <= req.neuron < spec.intermediate:
-        raise HTTPException(400, f"Neuron L{req.layer}N{req.neuron} is out of "
-                                 f"bounds [0,{spec.layers})x"
-                                 f"[0,{spec.intermediate}).")
-    prompts = req.prompts
-    if prompts is None:
-        path = ROOT / "store" / "reader" / "lift_prompts.json"
-        if not path.exists():
-            raise HTTPException(500, "The lift prompts are missing from the server.")
-        prompts = json.loads(path.read_text())
-    if REPLAY:
-        raise HTTPException(503, "Lift needs the model. Replay mode has no recordings for it.")
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    _need_torch(get_engine(), "reader")
-    eng = get_engine()
-    if not eng.lock.acquire(blocking=False):
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    try:
-        if eng.model is None or eng.model_id != engine._active_model_id:
-            eng.load(engine._active_model_id)
-        medians, _ = _calibrate(eng, [req.layer])
-        try:
-            return reader.steer_lift(eng, req.layer, req.neuron, req.dose,
-                                     req.words, prompts, medians)
-        except ValueError as e:
-            raise HTTPException(400, f"{e}.") from None
-    finally:
-        eng.lock.release()
 
 
 # Loaded SAEs: str(dir) -> (weights mtime, sae, config). Refreshed
@@ -2302,109 +1384,10 @@ def _sae_layers() -> list:
     return out
 
 
-@api.get("/api/features")
-def features():
-    """Trained SAEs for the active model (F1). No model needed."""
-    saes = []
-    for layer, _dir, cfg in _sae_layers():
-        saes.append({
-            "model_id": cfg.get("model_id", engine._active_model_id),
-            "layer": layer,
-            "features": int(cfg.get("features", 0)),
-            "top_k": int(cfg.get("top_k", 0)),
-            "live": cfg.get("live"),
-            "dead": cfg.get("dead"),
-            "mse": cfg.get("mse_last"),
-        })
-    return {"saes": saes}
 
 
-@api.get("/api/feature/{layer}/{index}")
-def feature_card(layer: int, index: int, k: int = Query(12, ge=1, le=50)):
-    """One SAE feature card: pushes plus cached fires (F1)."""
-    spec = engine.active_spec()
-    if not 0 <= layer < spec.layers:
-        raise HTTPException(400, f"Layer {layer} is out of bounds "
-                                 f"[0,{spec.layers}).")
-    found = next((d for L, d, _c in _sae_layers() if L == layer), None)
-    if found is None:
-        raise HTTPException(404, f"No trained SAE for layer {layer} on "
-                                 f"{engine._active_model_id}. Train one with "
-                                 f"scripts/train_sae.py.")
-    if REPLAY:
-        raise HTTPException(503, "Feature cards need the model. "
-                                 "Replay mode has no recordings for them.")
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    _need_torch(get_engine(), "sae")
-    eng = get_engine()
-    if not eng.lock.acquire(blocking=False):
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    try:
-        if eng.model is None or eng.model_id != engine._active_model_id:
-            eng.load(engine._active_model_id)
-        sae, _cfg = _load_sae_cached(found)
-        if not 0 <= index < sae.features:
-            raise HTTPException(400, f"Feature {index} is out of bounds "
-                                     f"[0,{sae.features}).")
-        return sae_mod.feature_card(eng, sae, layer, index,
-                                    cache_dir=found, k=k)
-    finally:
-        eng.lock.release()
 
 
-@api.post("/api/feature-lift")
-def feature_lift(req: FeatureLiftRequest):
-    """Steering lift for one SAE feature (F1)."""
-    spec = engine.active_spec()
-    if not 0 <= req.layer < spec.layers:
-        raise HTTPException(400, f"Layer {req.layer} is out of bounds "
-                                 f"[0,{spec.layers}).")
-    found = next((d for L, d, _c in _sae_layers() if L == req.layer), None)
-    if found is None:
-        raise HTTPException(404, f"No trained SAE for layer {req.layer} on "
-                                 f"{engine._active_model_id}. Train one with "
-                                 f"scripts/train_sae.py.")
-    prompts = req.prompts
-    if prompts is None:
-        path = ROOT / "store" / "reader" / "lift_prompts.json"
-        if not path.exists():
-            raise HTTPException(500, "The lift prompts are missing from the server.")
-        prompts = json.loads(path.read_text())
-    if REPLAY:
-        raise HTTPException(503, "Feature lift needs the model. "
-                                 "Replay mode has no recordings for it.")
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    _need_torch(get_engine(), "sae")
-    eng = get_engine()
-    if not eng.lock.acquire(blocking=False):
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    try:
-        if eng.model is None or eng.model_id != engine._active_model_id:
-            eng.load(engine._active_model_id)
-        sae, _cfg = _load_sae_cached(found)
-        if not 0 <= req.index < sae.features:
-            raise HTTPException(400, f"Feature {req.index} is out of bounds "
-                                     f"[0,{sae.features}).")
-        words = req.words
-        if words is None:
-            words = sae_mod.top_words(reader.pushes_of_direction(
-                eng, sae_mod.feature_direction(sae, req.index),
-                layer=req.layer))
-        if not words:
-            raise HTTPException(422, "Give at least one word.")
-        medians, _ = _calibrate(eng, [req.layer])
-        try:
-            return reader.steer_lift_vector(
-                eng, req.layer, sae_mod.feature_direction(sae, req.index),
-                req.dose, words, prompts, medians)
-        except ValueError as e:
-            raise HTTPException(400, f"{e}.") from None
-    finally:
-        eng.lock.release()
 
 
 def _chat_edits(sess, rows=None, scale=None):
@@ -2426,85 +1409,10 @@ def _chat_edits(sess, rows=None, scale=None):
     return EditSet(neuron=EditSet.from_rows(use).neuron, vector=vec), layers
 
 
-@api.post("/api/chat/start")
-def chat_start(req: ChatStartRequest):
-    """Open a chat session; its edits persist across turns (E2)."""
-    if len(req.rows) > engine.MAX_ROWS:
-        raise HTTPException(400, f"Too many rows. The limit is {engine.MAX_ROWS}.")
-    rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose) for r in req.rows]
-    spec = engine.active_spec()
-    try:
-        if rows:
-            steer.validate_recipe(rows, spec)
-    except ValueError as e:
-        raise HTTPException(400, f"Invalid row: {e}.") from None
-    dose = 1.0
-    if req.trait is not None:
-        knob = _latest_knob(req.trait)
-        if knob is None:
-            raise HTTPException(404, f"No finished Create job for trait "
-                                     f"'{req.trait}' with a saved direction. "
-                                     f"Create the trait first.")
-        dose = req.dose if req.dose is not None else float(knob["dose"])
-    dial_traits = list(req.dial_traits or [])
-    if len(dial_traits) > MAX_CHAT_DIALS:
-        raise HTTPException(400, f"Too many dial traits. "
-                                 f"The limit is {MAX_CHAT_DIALS}.")
-    for trait in dial_traits:
-        if _latest_knob(trait) is None:
-            raise HTTPException(404, f"No finished Create job for trait "
-                                     f"'{trait}' with a saved direction. "
-                                     f"Create the trait first.")
-    if dial_traits:
-        _need_torch(get_engine(), "dial")
-    if len(_chats) >= MAX_CHAT_SESSIONS:
-        oldest = min(_chats, key=lambda k: _chats[k]["created"])
-        del _chats[oldest]
-    sid = uuid.uuid4().hex[:16]
-    _chats[sid] = {"messages": [], "rows": rows, "trait": req.trait,
-                   "dose": dose, "dial_traits": dial_traits,
-                   "turn_records": [],
-                   "max_new_tokens": min(req.max_new_tokens,
-                                         steer.MAX_NEW_TOKENS_CAP),
-                   "guard": req.guard, "research_mode": req.research_mode,
-                   "model_id": engine._active_model_id,
-                   "created": time.time()}
-    return {"session_id": sid, "model_id": engine._active_model_id}
 
 
-@api.get("/api/chat/{session_id}")
-def chat_history(session_id: str):
-    """Chat history for reattach (turns stay server-side)."""
-    sess = _chats.get(session_id)
-    if sess is None:
-        raise HTTPException(404, f"Unknown chat {session_id}.")
-    return {"session_id": session_id, "model_id": sess["model_id"],
-            "turns": list(sess["messages"]),
-            "dial_traits": list(sess.get("dial_traits") or []),
-            "dial_turns": [
-                {"reply": rec["reply"], "dials": rec["dials"]}
-                for rec in sess.get("turn_records") or []]}
 
 
-@api.get("/api/chat/{session_id}/transcript")
-def chat_transcript(session_id: str):
-    """Full replay spec for a chat: per-turn messages, rows, dials (CH)."""
-    sess = _chats.get(session_id)
-    if sess is None:
-        raise HTTPException(404, f"Unknown chat {session_id}.")
-    return {
-        "model_id": sess["model_id"],
-        "trait": sess.get("trait"),
-        "dose": sess.get("dose", 1.0),
-        "dial_traits": list(sess.get("dial_traits") or []),
-        "guard": bool(sess.get("guard", False)),
-        "research_mode": bool(sess.get("research_mode", False)),
-        "turns": [
-            {"message": rec["message"], "rows": rec["rows"],
-             "max_new_tokens": rec.get("max_new_tokens"),
-             "reply": rec["reply"], "dials": rec["dials"]}
-            for rec in sess.get("turn_records") or []],
-    }
 
 
 def _dials_max_diff(a: dict, b: dict) -> float | None:
@@ -2527,133 +1435,8 @@ def _dials_max_diff(a: dict, b: dict) -> float | None:
     return worst
 
 
-@api.post("/api/chat/replay")
-def chat_replay(req: ReplayRequest):
-    """Re-run a transcript in a fresh session; report per-turn match (CH)."""
-    data = req.transcript or {}
-    turns = data.get("turns")
-    if not isinstance(turns, list) or not turns:
-        raise HTTPException(400, "The transcript has no turns.")
-    if data.get("model_id") != engine._active_model_id:
-        raise HTTPException(
-            409, f"Transcript is pinned to {data.get('model_id')}; "
-                 f"the active model is {engine._active_model_id}. "
-                 f"Switch back or start a new chat.")
-    try:
-        parsed = [ReplayTurn(**t) for t in turns]
-    except Exception as e:
-        raise HTTPException(400, f"Bad transcript turn: {e}.") from None
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    if get_engine().lock.locked():
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    spec = engine.active_spec()
-    for turn in parsed:
-        rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose)
-                for r in turn.rows]
-        try:
-            if rows:
-                steer.validate_recipe(rows, spec)
-        except ValueError as e:
-            raise HTTPException(400, f"Invalid row: {e}.") from None
-        if not turn.message.strip():
-            raise HTTPException(400, "A transcript message is empty.")
-    start = ChatStartRequest(
-        trait=data.get("trait"), dose=data.get("dose", 1.0),
-        guard=bool(data.get("guard", False)),
-        research_mode=bool(data.get("research_mode", False)),
-        dial_traits=list(data.get("dial_traits") or []))
-    try:
-        if start.trait is not None and _latest_knob(start.trait) is None:
-            raise KeyError(start.trait)
-        for trait in start.dial_traits:
-            if _latest_knob(trait) is None:
-                raise KeyError(trait)
-    except KeyError as e:
-        raise HTTPException(404, f"No finished Create job for trait "
-                                 f"'{e.args[0]}' with a saved direction. "
-                                 f"Create the trait first.") from None
-    if len(start.dial_traits) > MAX_CHAT_DIALS:
-        raise HTTPException(400, f"Too many dial traits. "
-                                 f"The limit is {MAX_CHAT_DIALS}.")
-    if start.dial_traits:
-        _need_torch(get_engine(), "dial")
-    if len(_chats) >= MAX_CHAT_SESSIONS:
-        oldest = min(_chats, key=lambda k: _chats[k]["created"])
-        del _chats[oldest]
-    sid = uuid.uuid4().hex[:16]
-    _chats[sid] = {"messages": [], "rows": [], "trait": start.trait,
-                   "dose": start.dose if start.trait is not None else 1.0,
-                   "dial_traits": start.dial_traits, "turn_records": [],
-                   "max_new_tokens": steer.MAX_NEW_TOKENS_CAP,
-                   "guard": start.guard,
-                   "research_mode": start.research_mode,
-                   "model_id": engine._active_model_id,
-                   "created": time.time()}
-    results = []
-    for i, (turn, want) in enumerate(zip(parsed, turns), start=1):
-        rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose)
-                for r in turn.rows]
-        _cancel.clear()
-        reply, dials, err = None, None, None
-        max_new = want.get("max_new_tokens") or steer.MAX_NEW_TOKENS_CAP
-        max_new = min(int(max_new), steer.MAX_NEW_TOKENS_CAP)
-        for chunk in _chat_stream(sid, turn.message, rows, max_new):
-            ev = json.loads(chunk.decode())
-            if ev.get("stage") == "done":
-                reply = ev["result"]["reply"]
-                dials = ev["result"].get("dials", {})
-            elif ev.get("stage") in ("error", "blocked", "stopped"):
-                err = ev.get("message", ev.get("stage"))
-        reply_match = err is None and reply == want.get("reply")
-        diff = _dials_max_diff(dials or {}, want.get("dials") or {})
-        dials_match = err is None and diff == 0.0
-        results.append({"turn": i, "match": bool(reply_match and dials_match),
-                        "reply_match": bool(reply_match),
-                        "dials_match": bool(dials_match),
-                        "dials_max_diff": diff,
-                        "error": err})
-    match = all(r["match"] for r in results)
-    return {"match": match, "session_id": sid, "turns": results}
 
 
-@api.post("/api/chat")
-def chat(req: ChatRequest):
-    message = req.message.strip()
-    if not message:
-        raise HTTPException(400, "The message is empty. Type one first.")
-    sess = _chats.get(req.session_id)
-    if sess is None:
-        raise HTTPException(404, f"Unknown chat {req.session_id}.")
-    if sess["model_id"] != engine._active_model_id:
-        raise HTTPException(409, f"Chat {req.session_id} was started on "
-                                 f"{sess['model_id']}; the active model is "
-                                 f"{engine._active_model_id}. Switch back or "
-                                 f"start a new chat.")
-    rows = None
-    if req.rows is not None:
-        if len(req.rows) > engine.MAX_ROWS:
-            raise HTTPException(400, f"Too many rows. The limit is {engine.MAX_ROWS}.")
-        rows = [RecipeRow(layer=r.layer, neuron=r.neuron, dose=r.dose)
-                for r in req.rows]
-        try:
-            if rows:
-                steer.validate_recipe(rows, engine.active_spec())
-        except ValueError as e:
-            raise HTTPException(400, f"Invalid row: {e}.") from None
-    if NO_MODEL:
-        raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
-                                 "Restart without it to run experiments.")
-    if get_engine().lock.locked():
-        raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    if sess.get("dial_traits"):
-        _need_torch(get_engine(), "dial")
-    _cancel.clear()
-    max_new = sess["max_new_tokens"]
-    if req.max_new_tokens is not None:
-        max_new = min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP)
-    return _ndjson(_chat_stream(req.session_id, message, rows, max_new))
 
 
 def _chat_stream(session_id: str, message: str, rows, max_new: int):
@@ -3116,7 +1899,31 @@ def _update_stream(prompt: str, layer: int, direction: list,
 
 # Last, so /api/* routes win. web/ at the root keeps the page's relative
 # paths (vendor/, example.json) the same under any static server.
+# -- routers (MOD phase 8) --
+from model_lobotomy.routers import (  # noqa: E402
+    chat as _r_chat, create as _r_create, drafts_agent as _r_drafts,
+    evidence as _r_evidence, install_verify as _r_install,
+    reader_features as _r_reader, run as _r_run)
+_DYNAMIC = {"NO_MODEL", "REPLAY", "REPLAY_STAGE_S", "ROOT", "WEB",
+            "_runner", "_followups", "_cancel", "reader"}
+for _r in (_r_run, _r_create, _r_evidence, _r_drafts, _r_chat,
+           _r_install, _r_reader):
+    # Inject real types so FastAPI resolves annotations. Dynamic
+    # names stay out: routers read them live from this module
+    # through their module __getattr__ (tests patch them here).
+    def _delegate(_name, _orig):
+        import types as _types
+        if not isinstance(_orig, _types.FunctionType):
+            return _orig
+        def _wrap(*a, **kw):
+            return getattr(sys.modules[__name__], _name)(*a, **kw)
+        return _wrap
+    _r.__dict__.update({k: _delegate(k, v) for k, v in globals().items()
+                        if k not in _DYNAMIC and not k.startswith("__")})
+    api.include_router(_r.router)
+
 api.mount("/", StaticFiles(directory=WEB, html=True), name="web")
+
 
 
 if __name__ == "__main__":
