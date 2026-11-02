@@ -74,3 +74,23 @@ class SettingsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EnvFileTest(unittest.TestCase):
+    """The server reads .env at start; the shell wins; the key never reaches /api/state."""
+
+    def test_reads_env_file_and_keeps_shell_values(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / ".env"
+            p.write_text('# comment\nMETA_API_KEY="k-123"\nexport LOBOT_CREATE_LANE=llama\nPORT=9999\nbad line\n')
+            env = {"PORT": "7860"}
+            done = config.load_env_file(p, env)
+        self.assertEqual(env, {"PORT": "7860", "META_API_KEY": "k-123", "LOBOT_CREATE_LANE": "llama"})
+        self.assertEqual(sorted(done), ["LOBOT_CREATE_LANE", "META_API_KEY"])
+
+    def test_missing_file_is_fine(self):
+        self.assertEqual(config.load_env_file(Path("/nonexistent/.env"), {}), [])
+
+    def test_env_file_is_git_ignored(self):
+        self.assertIn(".env", (ROOT / ".gitignore").read_text().split())

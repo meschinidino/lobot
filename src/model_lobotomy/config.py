@@ -121,6 +121,33 @@ def load_settings(env=None) -> Settings:
     )
 
 
+def load_env_file(path: Path | None = None, env=None) -> list[str]:
+    """Copy KEY=VALUE lines from `.env` into the environment.
+
+    Only the server entry point calls this, before it reads any
+    setting, so `.env` holds META_API_KEY without a shell export.
+    A variable that is already set wins. Returns the names it set.
+    `.env` is git-ignored; never commit it.
+    """
+    e = os.environ if env is None else env
+    path = path or Path(__file__).resolve().parents[2] / ".env"
+    if not path.is_file():
+        return []
+    done = []
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.removeprefix("export ").partition("=")
+        key, value = key.strip(), value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        if key and key not in e:
+            e[key] = value
+            done.append(key)
+    return done
+
+
 def get_settings() -> Settings:
     """Current settings. Fresh on every call; see module docstring."""
     return load_settings()

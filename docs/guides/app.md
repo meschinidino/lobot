@@ -82,7 +82,9 @@ Open a behavior from the shelf or the Library. Top to bottom:
      control vector, gives a run line to copy, and checks the installed
      patch on 16 of its held-out prompts.
 10. **In plain words**: Muse Spark explains the report from its own
-    numbers (needs `META_API_KEY` on the server).
+    numbers. With `META_API_KEY` in `.env`, it writes this as the page
+    opens (one call per report; the server keeps it). Without the key,
+    the section says what is missing.
 
 ## New behavior
 

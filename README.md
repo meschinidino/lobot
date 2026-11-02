@@ -28,8 +28,12 @@ You need [`uv`](https://docs.astral.sh/uv/). The repo pins Python 3.12.
 ```sh
 uv python install 3.12
 uv sync
+cp .env.example .env   # then set META_API_KEY for the Muse Spark features
 uv run python -m model_lobotomy.server
 ```
+
+The server reads `.env` at start and logs `Meta API: on` when the key
+loaded. Without a key, everything except the Muse Spark features works.
 
 Open `http://127.0.0.1:7860`. Type a prompt, set a dose, press Run, and read
 the experiment tree: the answer forks where your edit changed it.
