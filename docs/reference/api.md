@@ -543,7 +543,7 @@ marks them with `delete_eligible`.
 | `token` | `col` (0 off, 1 on), `mode`, `text` (append), `dial` (on-column only, when the trait resolves a dial spec) |
 | `stopped` | `after`: `weights`, `guard`, or `columns` |
 | `error` | `message` |
-| `done` | `result`: `{model_id, prompt, trait, layer, columns: [{mode, text, tokens}], guard, seconds, cache_hit}` |
+| `complete` | `result`: `{model_id, prompt, trait, layer, columns: [{mode, text, tokens}], guard, seconds, cache_hit}` (this route ends with `complete`, not `done`) |
 
 Errors: 400 empty prompt, 422 trait not eligible, 409 busy,
 503 NO_MODEL.

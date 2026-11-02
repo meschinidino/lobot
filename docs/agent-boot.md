@@ -63,7 +63,20 @@ command for their own terminal along with the link.
   `/api/stop`. If the lock survives Stop for minutes, the run is
   stuck; restart the server (a stuck lock past Stop happened
   once).
-- Default model is Qwen (public, about 9 GB on first run).
+- Default model is Qwen (public, about 9 GB on first run). The
+  behaviors and recorded evidence are on Llama 3.2 3B: switch with
+  `curl -s -X POST -H 'Content-Type: application/json' -d
+  '{"model_id": "meta-llama/Llama-3.2-3B-Instruct"}'
+  http://127.0.0.1:7860/api/model`.
+- Muse features (agent, suggestions, "In plain words") need
+  `META_API_KEY` in the server's environment: start it with
+  `export META_API_KEY="$(cat ~/.config/lobot/meta_api_key)"` first.
+  Never print the key.
+- Create from the app on the llama lane: also export
+  `LOBOT_CREATE_LANE=llama` (about 8 to 13 min instead of 35 to 50).
+- A run started from the app waits for a full-generation guard check
+  before the first token in chat and removal (minutes). A closed tab
+  frees the model only after the running step ends.
   Llama is gated: it needs the Hugging Face license plus `uv
   run hf auth login` once per machine.
 - Switching models unloads first (`Engine.load` always unloads),
@@ -106,6 +119,10 @@ and hooks in `src/model_lobotomy/engine.py`, math in
 `src/model_lobotomy/trait_eval.py`. Tests mirror modules in
 `tests/`.
 
+Screens and what each button does: [guides/app.md](guides/app.md).
+A run made on the command line shows in the app only after
+`uv run python scripts/import_run.py logs/<run> --id <name>`.
+
 Scope: the UI lane owns `web/`. Do not edit it unless the user
 explicitly asks. Backend fixes need the suite green before any
 claim.
@@ -116,4 +133,5 @@ claim.
   request from `develop`. Never force-push.
 - Work on `feature/*` branches cut from `develop`.
 - Suite: `uv run python -m unittest discover -s tests -t .`
-  (339 pass, 5 pre-existing weight skips).
+  (696 pass, 5 weight skips, as of 2026-11-02). Stop the server
+  first: it holds the GPU slot, and the suite refuses to start.
