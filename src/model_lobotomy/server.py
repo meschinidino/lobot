@@ -38,6 +38,7 @@ from model_lobotomy.routers import (
     install_verify as _r_install,
     reader_features as _r_reader,
     run as _r_run,
+    tune as _r_tune,
 )
 from model_lobotomy.server_state import STATE
 
@@ -97,7 +98,7 @@ class SameOriginOnly:
 api.add_middleware(SameOriginOnly)
 
 for _r in (_r_run, _r_create, _r_evidence, _r_drafts, _r_chat,
-           _r_install, _r_reader):
+           _r_install, _r_reader, _r_tune):
     api.include_router(_r.router)
 
 # Last, so /api/* routes win. web/ at the root keeps the page's relative

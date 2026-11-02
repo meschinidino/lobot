@@ -186,6 +186,36 @@ function tuningSection(R) {
     <div class="evwrap"><table class="ev pt tgrid"><thead><tr><th scope="col">Layer</th>${doses.map((k) => `<th scope="col" class="mono">${fd(Number(k))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+// Tune with Muse: Muse picks doses, the local judge and the guard decide. Steps show prediction next to measured.
+const tunes = {};
+function tuneSection(R, id) {
+  const x = tunes[id];
+  const head = `<h2 class="sec">Tune with Muse</h2>`;
+  if (!x) return `${head}<p class="meta">Muse Spark picks up to 5 doses. Before each try, Muse writes a prediction. The local judge and the guard decide the final verdict. The guard stays on.</p>
+    <div class="row2"><label style="flex:1;min-width:220px"><span class="meta">Goal</span><input class="num" type="text" id="tuneGoal-${esc(id)}" style="font-family:var(--mono)" placeholder="Raise the trait gain and keep the guard clean"></label><button class="btn" type="button" data-tune="${esc(id)}">Tune with Muse</button></div>`;
+  const rows = (x.steps || []).map((s) => {
+    if (s.stage === "prediction") return `<li><div><b>Try ${s.try_ ?? s.try}: dose <span class="mono">${fd(s.dose)}</span></b><br><span class="meta">Prediction: gain <span class="mono">${num(s.expected_gain)}</span>, guard ${s.guard_pass ? "passes" : "fails"}. ${esc(s.reason || "")}</span></div><span class="state info">PREDICTED</span></li>`;
+    if (s.stage === "measured") return `<li><div><b>Try ${s.try_ ?? s.try}: dose <span class="mono">${fd(s.dose)}</span></b><br><span class="meta">Measured (first-token check): gain <span class="mono">${num(s.gain)}</span>, guard ${s.guard_pass ? "passed" : "did not pass"} in <span class="mono">${s.seconds}s</span>.</span></div><span class="state ${s.confirmed ? "ok" : "warn"}">${s.confirmed ? "CONFIRMED" : "NOT CONFIRMED"}</span></li>`;
+    if (s.stage === "final") return `<li><div><b>Full guard check: dose <span class="mono">${fd(s.dose)}</span></b><br><span class="meta">Held-out gain <span class="mono">${num(s.gain)}</span> against the bar <span class="mono">${num(s.min_gain)}</span>. Guard ${s.guard_blocked ? "blocked it" : "did not block it"}.</span></div><span class="state ${s.passed ? "ok" : "err"}">${s.passed ? "PASS" : "FAIL"}</span></li>`;
+    return "";
+  }).join("");
+  return `${head}${x.busy ? `<p class="meta">Tuning. Each try runs 8 tuning prompts, plain and edited.</p>` : ""}${x.err ? `<p class="meta" style="color:var(--error)">${esc(x.err)}</p>` : ""}
+    ${rows ? `<ol class="ruled screens">${rows}</ol>` : ""}${x.summary ? `<div class="explain"><p>${esc(x.summary).replace(/\n/g, "<br>")}</p></div><p class="meta">Final summary by Muse Spark. The local judge and the guard decided the verdict.</p>` : ""}`;
+}
+
+// Second opinion: Muse Spark re-scores the turn-up pairs. The local judge still gates the verdict.
+const opinions = {};
+function secondOpinionSection(R, id) {
+  const so = opinions[id]?.res || R.second_opinion, x = opinions[id];
+  const head = `<h2 class="sec">Second opinion: Muse Spark</h2>`;
+  if (so) return `${head}<div class="kv2"><span>Muse Spark mean gain</span><span class="mono">${num(so.muse_mean_gain)} ${ci(so.muse_ci95)}</span>
+    <span>Local judge mean gain</span><span class="mono">${num(so.local_mean_gain)}</span>
+    <span>Same direction (up, down or flat, 0.1 margin)</span><span class="mono">${so.agree} of ${so.total}</span>
+    <span>Correlation</span><span class="mono">${so.correlation}</span>
+    <span>Cost</span><span class="mono">${so.calls} calls, ${so.tokens} tokens (${esc(so.model || "")})</span></div>
+    <p class="meta">The local judge gates the Create verdict. Muse Spark does not gate it. This opinion changes no gate and no verdict.</p>`;
+  return `${head}<div class="row2"><button class="btn" type="button" data-second-opinion="${esc(id)}" ${x?.busy ? "disabled" : ""}>${x?.busy ? "Running…" : "Run second opinion (about 3 min, 600 Meta API calls)"}</button><span class="meta">${x?.err ? esc(x.err) : "Muse Spark re-scores the base and steered replies of the turn-up pairs. The local judge gates the Create verdict. Muse Spark does not gate it. It needs META_API_KEY in the .env file on the server."}</span></div>`;}
+
 // In plain words: Muse Spark explains the report from its own numbers; the page keeps the numbers above as the source.
 const explains = {};
 function explainSection(id) {
@@ -213,4 +243,4 @@ const KEY_HELP = {
 };
 const SHELF_KEYS = ["PASS", "INCREASE FAIL", "DECREASE FAIL", "GUARD", "NO KNOB"];
 
-export { short, num, ci, mins, STROKE, stroke, RULES, reports, vecPoint, VERDICT, pointName, paretoSentence, followupKey, noWeights, followupCtl, compareSection, looksLikeReply, doseRuleLine, SCREEN, screenMeasure, guardSection, EXS, exDoses, exQuestions, sampleFor, baseFor, splitWord, markSplit, exState, DIAL, dialAngle, exDial, exOut, setExDose, wireExplorer, explorerSection, tuningSection, explains, explainSection, KEY_HELP, SHELF_KEYS };
+export { short, num, ci, mins, STROKE, stroke, RULES, reports, vecPoint, VERDICT, pointName, paretoSentence, followupKey, noWeights, followupCtl, compareSection, looksLikeReply, doseRuleLine, SCREEN, screenMeasure, guardSection, EXS, exDoses, exQuestions, sampleFor, baseFor, splitWord, markSplit, exState, DIAL, dialAngle, exDial, exOut, setExDose, wireExplorer, explorerSection, tuningSection, explains, explainSection, tunes, tuneSection, opinions, secondOpinionSection, KEY_HELP, SHELF_KEYS };

@@ -254,6 +254,8 @@ def _enrich_report(trait_dir: Path, rep: dict) -> dict:
     rep = dict(rep)
     if not rep.get("pareto"):
         rep["pareto"] = _read_json(jobs_store.WorkPaths(trait_dir).pareto)
+    cached = _read_json(jobs_store.WorkPaths(trait_dir).second_opinion)
+    rep["second_opinion"] = (cached or {}).get("result")
     rep["repair"] = _repairs(trait_dir) or None
     tuning = dict(rep.get("tuning") or {})
     tuning["chosen"] = _chosen_cell(rep)

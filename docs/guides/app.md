@@ -81,7 +81,22 @@ Open a behavior from the shelf or the Library. Top to bottom:
    - **Install** finds llama.cpp and Ollama, installs the patch as a
      control vector, gives a run line to copy, and checks the installed
      patch on 16 of its held-out prompts.
-10. **In plain words**: Muse Spark explains the report from its own
+10. **Second opinion: Muse Spark**: Muse Spark re-scores the base
+    and steered replies of the turn-up pairs. The card sits next to
+    the turn-up card. Press "Run second opinion (about 3 min, 600
+    Meta API calls)" to run it. After a run, the page shows the
+    cached numbers at once. The card shows the same-direction
+    count ("Same direction (up, down or flat, 0.1 margin): N of
+    30") and the correlation of the two judges. The local judge
+    gates the Create verdict. Muse Spark does not gate it.
+11. **Tune with Muse**: Muse Spark picks up to 5 doses for the
+    patch. Before each try, Muse writes a prediction: the expected
+    gain and the guard call. The panel shows each prediction next
+    to the measured result, the guard state, and the final verdict.
+    Each try calls its guard check the "first-token check". The
+    final check is the "full guard check". The local judge and
+    the guard decide the verdict. The guard stays on.
+12. **In plain words**: Muse Spark explains the report from its own
     numbers. With `META_API_KEY` in `.env`, it writes this as the page
     opens (one call per report; the server keeps it). Without the key,
     the section says what is missing.
