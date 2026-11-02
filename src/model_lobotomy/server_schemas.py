@@ -182,3 +182,8 @@ class FollowupRequest(BaseModel):
     method: Literal["gradient", "project"] = "gradient"
 
 
+class TuneRequest(BaseModel):
+    goal: str
+    patch_id: str
+
+

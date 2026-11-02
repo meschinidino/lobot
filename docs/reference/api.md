@@ -297,6 +297,25 @@ job's `trait/explanation.txt`. 404 without a report; 503 without
 `META_API_KEY`; 502 when the API fails or the answer fails the
 number check twice.
 
+## POST /api/tune
+
+`{"goal", "patch_id"}` → NDJSON events. Muse Spark picks doses
+for one patch. It gets two actions: `try_dose` and `stop`. At most
+5 tries run. Before each try, Muse writes a prediction: the
+expected judge gain and whether the guard passes. The server
+writes the prediction to the audit log before the try runs. A try
+runs the patch at that dose on 8 tuning prompts: the plain and
+edited answers, the local judge gain, and the guard first-token
+check. The server appends the measured result to the audit log,
+with `confirmed` true or false. At stop, the server runs the full
+guard check and scores 8 held-out prompts against `MIN_GAIN`.
+The local judge and the guard decide pass or fail. Muse writes
+a final summary. The summary must pass the number check. Events:
+`prediction`, `measured`, `stop`, `final`, `summary`, `done`,
+`error`. 503 without weights or without `META_API_KEY`; 404
+without a patch. The request has no guard switch and no Research
+mode switch. The guard stays on.
+
 ## GET /api/traits/{id}/patch (E1 evidence)
 
 The job's `knob.lobot` patch as `application/zip`, download name

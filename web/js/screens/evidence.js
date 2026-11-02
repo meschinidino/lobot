@@ -186,6 +186,23 @@ function tuningSection(R) {
     <div class="evwrap"><table class="ev pt tgrid"><thead><tr><th scope="col">Layer</th>${doses.map((k) => `<th scope="col" class="mono">${fd(Number(k))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+// Tune with Muse: Muse picks doses, the local judge and the guard decide. Steps show prediction next to measured.
+const tunes = {};
+function tuneSection(R, id) {
+  const x = tunes[id];
+  const head = `<h2 class="sec">Tune with Muse</h2>`;
+  if (!x) return `${head}<p class="meta">Muse Spark picks up to 5 doses. Before each try, Muse writes a prediction. The local judge and the guard decide the final verdict. The guard stays on.</p>
+    <div class="row2"><label style="flex:1;min-width:220px"><span class="meta">Goal</span><input class="num" type="text" id="tuneGoal-${esc(id)}" style="font-family:var(--mono)" placeholder="Raise the trait gain and keep the guard clean"></label><button class="btn" type="button" data-tune="${esc(id)}">Tune with Muse</button></div>`;
+  const rows = (x.steps || []).map((s) => {
+    if (s.stage === "prediction") return `<li><div><b>Try ${s.try_ ?? s.try}: dose <span class="mono">${fd(s.dose)}</span></b><br><span class="meta">Prediction: gain <span class="mono">${num(s.expected_gain)}</span>, guard ${s.guard_pass ? "passes" : "fails"}. ${esc(s.reason || "")}</span></div><span class="state info">PREDICTED</span></li>`;
+    if (s.stage === "measured") return `<li><div><b>Try ${s.try_ ?? s.try}: dose <span class="mono">${fd(s.dose)}</span></b><br><span class="meta">Measured: gain <span class="mono">${num(s.gain)}</span>, guard ${s.guard_pass ? "passed" : "did not pass"} in <span class="mono">${s.seconds}s</span>.</span></div><span class="state ${s.confirmed ? "ok" : "warn"}">${s.confirmed ? "CONFIRMED" : "NOT CONFIRMED"}</span></li>`;
+    if (s.stage === "final") return `<li><div><b>Final check: dose <span class="mono">${fd(s.dose)}</span></b><br><span class="meta">Held-out gain <span class="mono">${num(s.gain)}</span> against the bar <span class="mono">${num(s.min_gain)}</span>. Guard ${s.guard_blocked ? "blocked it" : "did not block it"}.</span></div><span class="state ${s.passed ? "ok" : "err"}">${s.passed ? "PASS" : "FAIL"}</span></li>`;
+    return "";
+  }).join("");
+  return `${head}${x.busy ? `<p class="meta">Tuning. Each try runs 8 tuning prompts, plain and edited.</p>` : ""}${x.err ? `<p class="meta" style="color:var(--error)">${esc(x.err)}</p>` : ""}
+    ${rows ? `<ol class="ruled screens">${rows}</ol>` : ""}${x.summary ? `<div class="explain"><p>${esc(x.summary).replace(/\n/g, "<br>")}</p></div><p class="meta">Final summary by Muse Spark. The local judge and the guard decided the verdict.</p>` : ""}`;
+}
+
 // In plain words: Muse Spark explains the report from its own numbers; the page keeps the numbers above as the source.
 const explains = {};
 function explainSection(id) {
@@ -213,4 +230,4 @@ const KEY_HELP = {
 };
 const SHELF_KEYS = ["PASS", "INCREASE FAIL", "DECREASE FAIL", "GUARD", "NO KNOB"];
 
-export { short, num, ci, mins, STROKE, stroke, RULES, reports, vecPoint, VERDICT, pointName, paretoSentence, followupKey, noWeights, followupCtl, compareSection, looksLikeReply, doseRuleLine, SCREEN, screenMeasure, guardSection, EXS, exDoses, exQuestions, sampleFor, baseFor, splitWord, markSplit, exState, DIAL, dialAngle, exDial, exOut, setExDose, wireExplorer, explorerSection, tuningSection, explains, explainSection, KEY_HELP, SHELF_KEYS };
+export { short, num, ci, mins, STROKE, stroke, RULES, reports, vecPoint, VERDICT, pointName, paretoSentence, followupKey, noWeights, followupCtl, compareSection, looksLikeReply, doseRuleLine, SCREEN, screenMeasure, guardSection, EXS, exDoses, exQuestions, sampleFor, baseFor, splitWord, markSplit, exState, DIAL, dialAngle, exDial, exOut, setExDose, wireExplorer, explorerSection, tuningSection, explains, explainSection, tunes, tuneSection, KEY_HELP, SHELF_KEYS };
