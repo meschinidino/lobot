@@ -57,7 +57,8 @@ EXPLAIN_PROMPT = (
     "reached. For each card, compare its mean_gain with its bar: a "
     "gain below the bar fails that part of the check, even when the "
     "gain is above zero. The passed flag is the final word on each "
-    "card. Write each number exactly as given, or rounded to 2 "
+    "card. Only cards have bars. Never say the tuning gain passed "
+    "or missed. Write each number exactly as given, or rounded to 2 "
     "decimal places. Do not write any other number, in digits or as "
     "a percent. Always say the guard result: if the guard flagged "
     "the patch, name the screens that flagged it and say it cannot be "
@@ -246,25 +247,22 @@ def _card_bar(card: dict):
     """The mean-gain bar for one card, from the report or the gate.
 
     New reports may carry the bar on the card. Old reports do not,
-    so the fallback reads the default of the gate that made the
-    card. No bar value lives in this module.
+    so the fallback reads MIN_GAIN, the gate default in
+    evaluation.py. No bar value lives in this module.
     """
     for key in ("min_gain", "bar", "mean_gain_bar"):
         if (card or {}).get(key) is not None:
             return _r(card[key])
-    import inspect
-
     from model_lobotomy import evaluation
-    default = inspect.signature(
-        evaluation.report_card_pass).parameters["min_gain"].default
-    return _r(default)
+    return _r(evaluation.MIN_GAIN)
 
 
 def report_summary(report: dict) -> dict:
     """The numbers an explanation may use (nothing else is sent).
 
-    Each gain carries its meaning and its bar. A gain is a change,
-    not a level. Muse must compare the gain with the bar.
+    Each card gain carries its meaning and its bar. A gain is a
+    change, not a level. Muse must compare each card gain with
+    its bar. The tuning gain has no bar.
     """
     final = report.get("final") or {}
 
@@ -292,10 +290,9 @@ def report_summary(report: dict) -> dict:
                      "meaning": "the patch strength at test time"},
             "tuning_gain": {
                 "value": _r(frozen.get("tuning_gain")),
-                "meaning": "average rise of the judge score "
-                           "during tuning",
-                "bar": _card_bar(None),
-                "bar_meaning": "the mean gain must reach the bar"},
+                "meaning": "the judge-score rise at the chosen dose "
+                           "during tuning; it picks the layer and "
+                           "has no pass bar"},
             "read_gate": {
                 "agreement": _r(((report.get("read_gate") or {})
                                  .get("agreement") or {}).get("fraction")),

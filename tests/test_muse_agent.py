@@ -105,17 +105,20 @@ class MuseTest(unittest.TestCase):
                 "guard": {"blocked": False, "screens": {}}}
 
     def test_summary_has_bar_for_each_card(self):
-        import inspect
-
         from model_lobotomy import evaluation
-        bar = round(inspect.signature(
-            evaluation.report_card_pass).parameters["min_gain"].default, 3)
+        bar = round(evaluation.MIN_GAIN, 3)
         summary = muse_mod.report_summary(self._explain_report())
         for key in ("turn_up", "turn_down", "remove", "prompt_baseline"):
             self.assertEqual(summary[key]["bar"], bar, key)
             self.assertIn("judge score", summary[key]["meaning"], key)
         self.assertEqual(summary["turn_up"]["mean_gain"], 0.179)
-        self.assertEqual(summary["tuning_gain"]["bar"], bar)
+
+    def test_tuning_gain_has_no_bar(self):
+        summary = muse_mod.report_summary(self._explain_report())
+        tuning = summary["tuning_gain"]
+        self.assertNotIn("bar", tuning)
+        self.assertNotIn("bar_meaning", tuning)
+        self.assertIn("no pass bar", tuning["meaning"])
 
     def test_check_explanation_allows_rounding_to_2_places(self):
         summary = muse_mod.report_summary(self._explain_report())
