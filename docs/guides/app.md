@@ -41,6 +41,15 @@ Warnings first:
 | GUARD (red) | The guard blocked the patch; it cannot be used |
 | NO KNOB | No layer and dose passed; nothing to use |
 
+- **Neurons**: find neurons that push a word. Under it, **Find
+  with Muse** takes a goal and the prompt from the sentence.
+  Muse Spark calls lobot's own tools: find, read, measure and
+  try. Before each measure or try, Muse writes a prediction.
+  The panel shows each step with CONFIRMED or NOT CONFIRMED.
+  Then it shows the final recipe, the guard state and PASS or
+  FAIL. "Use in the sentence" loads the recipe rows into the
+  workbench. lobot decides PASS or FAIL. The guard stays on.
+
 ## Library
 
 One row per behavior (newest version, older versions as links): the

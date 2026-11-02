@@ -1,5 +1,5 @@
 import { KEY_HELP, num, short, stroke } from "./evidence.js";
-import { renderGuard, run, setStatus, setupKey } from "./run.js";
+import { renderGuard, run, setStatus, setupKey, stream } from "./run.js";
 import { loadBehaviors, openPage } from "./pages.js";
 import { chatSend, drawChatStrips } from "./chat.js";
 import { setView } from "./share.js";
@@ -370,6 +370,32 @@ async function findNeurons(word) {
   } catch (e) { out.innerHTML = `<p class="empty">${esc(e.message || e)}</p>`; }
 }
 $("findForm").addEventListener("submit", (e) => { e.preventDefault(); findNeurons($("findIn").value); });
+
+/* Find with Muse (shelf): Muse calls lobot tools, lobot decides PASS or FAIL. */
+const FINDM = { busy: false, steps: [], result: null, err: "" };
+function findMuseRender() {
+  const out = $("findMuseOut"); if (!out) return;
+  const st = $("findMuseState"); if (st) st.textContent = FINDM.busy ? "Working…" : FINDM.err || "";
+  const rows = FINDM.steps.map((s) => {
+    if (s.stage === "prediction") return `<li><div><b>${esc(s.tool)}</b><br><span class="meta">Prediction: ${esc(JSON.stringify(s.prediction))} · args ${esc(JSON.stringify(s.args))}</span></div><span class="state info">PREDICTED</span></li>`;
+    if (s.stage === "result") { const r = s.result || {}, txt = r.error ? esc(r.error) : r.lift != null ? `lift <span class="mono">${num(r.lift)}</span>` : r.guard ? `guard ${r.guard_pass ? "passed" : "did not pass"}` : `${(r.results || []).length} results`; return `<li><div><b>${esc(s.tool)}</b><br><span class="meta">${txt} in <span class="mono">${s.seconds}s</span></span></div>${s.confirmed != null ? `<span class="state ${s.confirmed ? "ok" : "warn"}">${s.confirmed ? "CONFIRMED" : "NOT CONFIRMED"}</span>` : ""}</li>`; }
+    if (s.stage === "final") return `<li><div><b>Final recipe</b><br><span class="meta">${s.rows.map((r) => `L${r.layer}N${r.neuron} at ${fd(r.dose)}`).join(", ") || "none"} · lift <span class="mono">${num(s.lift)}</span> against <span class="mono">${num(s.lift_bar)}</span> · guard ${s.guard_blocked ? "blocked it" : "did not block it"}</span></div><span class="state ${s.passed ? "ok" : "err"}">${s.passed ? "PASS" : "FAIL"}</span></li>`;
+    return "";
+  }).join("");
+  out.innerHTML = `${rows ? `<ol class="ruled screens">${rows}</ol>` : ""}${FINDM.result?.summary ? `<div class="explain"><p>${esc(FINDM.result.summary).replace(/\n/g, "<br>")}</p></div>` : ""}${FINDM.result ? `<div class="row2"><button class="btn btn-sm" type="button" id="findUse">Use in the sentence</button><span class="meta">Loads the recipe rows into the workbench.</span></div>` : ""}`;
+  $("findUse")?.addEventListener("click", () => { S.rows = FINDM.result.final.rows.map((r) => ({ ...r })); S.focusEdit = 0; setView("work"); update(); });
+}
+async function findWithClaude() {
+  const goal = $("findGoal").value.trim(); if (!goal) { FINDM.err = "Write a goal first."; findMuseRender(); return; }
+  const prompt = $("prompt")?.value.trim() || "Tell me about your weekend.";
+  FINDM.busy = true; FINDM.err = ""; FINDM.steps = []; FINDM.result = null; findMuseRender();
+  try { await stream("api/find-with-Muse", { goal, prompt }, (ev) => {
+      if (ev.stage === "done") { FINDM.result = ev.result; return true; }
+      FINDM.steps.push(ev); findMuseRender(); return false; });
+  } catch (e) { FINDM.err = e.message; }
+  FINDM.busy = false; findMuseRender();
+}
+$("findMuseBtn").addEventListener("click", findWithClaude);
 $("findOut").addEventListener("click", (e) => { const b = e.target.closest("[data-card]"); if (!b) return; const [L, N] = b.dataset.card.split(",").map(Number); setView("work"); openCard(L, N); });
 
 /* The lift proof (U2): after a run with a neuron the reader described, measure how much it lifted the predicted word. */

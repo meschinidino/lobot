@@ -319,6 +319,27 @@ a final summary. The summary must pass the number check. Events:
 without a patch. The request has no guard switch and no Research
 mode switch. The guard stays on.
 
+## POST /api/find-with-Muse
+
+`{"goal", "prompt"}` → NDJSON events. Muse Spark finds a neuron
+edit with five tools: `find_neurons`, `read_neuron`,
+`measure_lift`, `try_recipe` and `stop`. At most 12 tool calls
+run. A recipe holds at most 4 neurons. Each dose must sit inside
+the engine dose range. `measure_lift` and `try_recipe` need a
+`prediction` field. The server writes each prediction to the
+audit log before the tool runs. It appends the result with
+`confirmed` true or false. A lift confirms when the measured
+lift lands within a factor of 2 of the prediction. At stop, the
+server runs the full guard check on the recipe. It measures the
+lift of the target words on the held-out lift prompts in
+`store/reader/lift_prompts.json`. Pass needs lift at or over
+`LIFT_BAR` (3.0) and no guard block. lobot decides pass or fail.
+Muse writes a final summary. It must pass the number check.
+Events: `prediction`, `result`, `stop`, `final`, `summary`,
+`done`, `error`. The events stream through a thread and a queue.
+503 in replay mode, without weights, or without `META_API_KEY`.
+The guard stays on. No Research mode.
+
 ## POST /api/traits/{id}/second-opinion
 
 `{"id", "muse_mean_gain", "muse_ci95", "local_mean_gain", "agree",

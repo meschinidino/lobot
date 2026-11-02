@@ -101,6 +101,31 @@ TUNE_SUMMARY_PROMPT = (
 )
 
 
+FIND_PROMPT = (
+    "You find a neuron edit for one goal with lobot's tools. "
+    "Goal: \"{goal}\". The user prompt is: \"{prompt}\".\n\n"
+    "Work with the tools. find_neurons ranks neurons for a word. "
+    "read_neuron says what one neuron pushes toward and fires on. "
+    "measure_lift measures one neuron at one dose and needs your "
+    "predicted lift. try_recipe runs a recipe of at most 4 neurons "
+    "on the user prompt and needs the words you expect to appear "
+    "or change. Call stop with the final recipe, the target words "
+    "and your reason when the recipe looks right. At most 12 tool "
+    "calls run. Doses must stay inside the allowed range. The "
+    "guard stays on. A guard block is a result, not an error."
+)
+
+FIND_SUMMARY_PROMPT = (
+    "Write the final summary of this neuron search in at most "
+    "5 short sentences. Use simple words, active voice, one idea "
+    "per sentence. Use only the numbers given. Write each number "
+    "exactly as given, or rounded to 2 decimal places. Do not "
+    "write any other number. Say the final verdict and the guard "
+    "result. lobot decided the verdict. Do not claim you decided "
+    "it.\n\nResult JSON:\n{summary}"
+)
+
+
 class MuseError(RuntimeError):
     """Muse Spark gave no usable answer (or the API failed)."""
 
@@ -127,6 +152,14 @@ class ApiCompleter:
         from model_lobotomy import trait_eval
         try:
             return self._api._complete(prompt)
+        except trait_eval.MetaApiError as e:
+            raise MuseError(str(e)) from None
+
+    def complete_tools(self, input_items, tools) -> list:
+        """One tool-calling turn. Returns the API output items."""
+        from model_lobotomy import trait_eval
+        try:
+            return self._api.respond(input_items, tools)
         except trait_eval.MetaApiError as e:
             raise MuseError(str(e)) from None
 
@@ -291,6 +324,40 @@ class Muse:
                       f"above, exactly as given or rounded to 2 "
                       f"decimal places, and answer again.")
         raise MuseError(f"tune summary failed the number check: {last}")
+
+    # -- find step --
+
+    def tool_turn(self, input_items, tools) -> list:
+        """One tool-calling turn. Returns the API output items."""
+        fn = getattr(self.complete, "complete_tools", None)
+        if fn is None:
+            raise MuseError("this completer cannot call tools")
+        return fn(input_items, tools)
+
+    def find_summary(self, summary: dict) -> str:
+        """Final find summary. It must pass check_explanation.
+
+        One retry names the rejected numbers. A second failure
+        raises MuseError. No unchecked summary reaches the caller.
+        """
+        base = FIND_SUMMARY_PROMPT.format(
+            summary=json.dumps(summary, indent=1))
+        prompt, last = base, ""
+        for _ in range(2):
+            text = (self.complete(prompt) or "").strip()
+            if not text:
+                last = "empty summary"
+            else:
+                bad = check_explanation(text, summary)
+                if not bad:
+                    return text
+                last = ("numbers not in the summary: "
+                        + ", ".join(bad))
+            prompt = (f"{base}\n\nYour last answer was rejected: "
+                      f"{last}. Use only the numbers in the JSON "
+                      f"above, exactly as given or rounded to 2 "
+                      f"decimal places, and answer again.")
+        raise MuseError(f"find summary failed the number check: {last}")
 
 
 _NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
