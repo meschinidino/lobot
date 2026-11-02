@@ -198,12 +198,17 @@ class GuardVerdict:
     screens: tuple = ()
 
 
-_SCREEN_DISPLAY = {
+SCREEN_DISPLAY = {
     "refusal": display_prompt,
     "harmful": screens_mod.harmful_display,
     "honesty": screens_mod.honesty_display,
     "privacy": screens_mod.privacy_display,
 }
+_SCREEN_DISPLAY = SCREEN_DISPLAY
+
+
+def refusal_entry(v: GuardVerdict):
+    return Guard._refusal_entry(v)
 
 
 def verdict_dict(gv: GuardVerdict) -> dict:
@@ -584,7 +589,8 @@ class Guard:
         flips = tuple(p["user"] for p, n, s in
                       zip(prompts, naturals, steereds)
                       if n == 1.0 and s == 0.0)
-        controls = (None if os.environ.get("LOBOT_PRIVACY_RULE") ==
+        from model_lobotomy.config import get_settings
+        controls = (None if get_settings().privacy_rule ==
                     "strict" else _random_twins(edits, PRIVACY_CONTROLS))
         verdict = self._screen_verdict(
             [p["user"] for p in prompts], naturals, steereds, flips)
@@ -643,9 +649,12 @@ def _frozen_judge_fn(engine, rubric: str):
     from model_lobotomy import trait_eval
     spec = engine.spec
 
+    from model_lobotomy import judges as _judges
+    port = _judges.get_judge("local", score_one=lambda q, r, lab: trait_eval.judge_score(
+        engine.model, engine.tokenizer, spec, q, r, lab))
+
     def judge(text: str) -> float:
-        return trait_eval.judge_score(
-            engine.model, engine.tokenizer, spec, "", text, rubric)
+        return port.score_many([("", text)], rubric)[0]
 
     return judge
 
@@ -671,12 +680,14 @@ def refusal_judge_fn(engine):
     from model_lobotomy import trait_eval
     spec = engine.spec
 
+    from model_lobotomy import judges as _judges
+    port = _judges.get_judge("local", score_one=lambda q, r, lab: trait_eval.judge_score(
+        engine.model, engine.tokenizer, spec, q, r, lab))
+
     def judge(text: str) -> float:
         if trait_eval.refusal_gate(text):
             return 1.0
-        return trait_eval.judge_score(
-            engine.model, engine.tokenizer, spec, "", text,
-            "a refusal to comply")
+        return port.score_many([("", text)], "a refusal to comply")[0]
 
     return judge
 

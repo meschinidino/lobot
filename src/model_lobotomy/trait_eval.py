@@ -20,8 +20,8 @@ run_trait() and write logs/<trait>/.
 """
 from __future__ import annotations
 
-import importlib.util
 import json
+import pathlib
 import os
 import re
 import statistics
@@ -42,10 +42,7 @@ from model_lobotomy import guard as guard_mod  # noqa: E402
 from model_lobotomy import pareto as pareto_mod  # noqa: E402
 from model_lobotomy import steer  # noqa: E402
 
-_SPIKE = importlib.util.spec_from_file_location(
-    "spike_knob_mod", ROOT / "scripts" / "spike_knob.py")
-spike = importlib.util.module_from_spec(_SPIKE)
-_SPIKE.loader.exec_module(spike)
+from model_lobotomy import spike  # noqa: E402
 
 TUNE_DOSES = [0.0, 0.5, 1.0, 1.5, 2.0]
 GEN_TOKENS = 60
@@ -98,6 +95,11 @@ CAPTURE_CACHE_VERSION = 1
 DOSE_RULE = "nll+fluency-v1"
 NLL_MAX_RISE = 1.0
 FLUENCY_FLOOR = 0.5
+
+
+def _wp(workdir):
+    from model_lobotomy.jobs_store import WorkPaths
+    return WorkPaths(pathlib.Path(workdir))
 
 
 def schedule_params(schedule: str) -> dict:
@@ -419,6 +421,9 @@ class Judge:
     def score(self, question: str, reply: str, rubric: str) -> float:
         raise NotImplementedError
 
+    def score_many(self, pairs, label) -> list[float]:
+        return [self.score(q, r, label) for q, r in pairs]
+
 
 class LocalJudge(Judge):
     """The frozen local judge: judge_score with bound model pieces."""
@@ -465,12 +470,13 @@ class MetaApiJudge(Judge):
     def __init__(self, key=None, model=None, n_samples=10,
                  temperature=1.0, reasoning_effort="low",
                  timeout=180, max_retries=3, backoff=1.0):
-        key = key if key is not None else os.environ.get("META_API_KEY", "")
+        from model_lobotomy.config import get_settings
+        _s = get_settings()
+        key = key if key is not None else _s.meta_api_key
         if not key.strip():
             raise MetaApiError("META_API_KEY is not set")
         self._key = key.strip()
-        model = model if model is not None else os.environ.get(
-            "LOBOT_JUDGE_MODEL", "")
+        model = model if model is not None else _s.judge_model
         self.model = model.strip() or META_JUDGE_MODEL_DEFAULT
         self.n_samples = n_samples
         self.temperature = temperature
@@ -617,7 +623,8 @@ def delete_check(eng, spec, cfg: dict, knob: dict, medians: dict,
         done += 2
         if progress is not None:
             progress("delete_check", done, total)
-    gv = guard_mod.Guard().check_verified(
+    from model_lobotomy import guards as _guards
+    gv = _guards.get_guard().check_verified(
         eng, edits, medians=medians, max_new_tokens=24,
         seed=DELETE_CHECK_SEED,
         judge_fn=guard_mod.refusal_judge_fn(eng),
@@ -681,7 +688,12 @@ class TorchLane:
 
     def __init__(self, eng, spec):
         self.eng, self.spec = eng, spec
-        self._judged: dict[tuple, float] = {}
+        from model_lobotomy import judges as _judges
+        from model_lobotomy.config import get_settings as _gs
+        _kind = _gs().judge_kind
+        self._judge = (_judges.get_judge("local", raw=self._judge_raw)
+                       if _kind == "local" else _judges.get_judge(_kind))
+        self._judged = self._judge._cache
         self._nlls: dict[tuple, float] = {}
 
     def info(self) -> dict:
@@ -696,10 +708,9 @@ class TorchLane:
         return out
 
     def judge_many(self, pairs, label) -> list[float]:
-        keys = [(q, r, label) for q, r in pairs]
-        todo = list(dict.fromkeys(k for k in keys if k not in self._judged))
-        self._judged.update(zip(todo, self._judge_raw(todo)))
-        return [self._judged[k] for k in keys]
+        return self._judge.score_many(pairs, label)
+
+    score_many = judge_many
 
     def nll_many(self, pairs) -> list[float]:
         keys = [(q, r) for q, r in pairs]
@@ -809,36 +820,34 @@ class LlamaLane(TorchLane):
 
 def derive_direction(eng, spec, cfg, prompts):
     """Mean-diff unit + threshold per layer on contrast prefixes."""
-    A = eng.capture([f"{cfg['pos']}\n\n{q}" for q in prompts],
-                    list(range(spec.layers)), point="block_out", reduce="last")
-    B = eng.capture([f"{cfg['neg']}\n\n{q}" for q in prompts],
-                    list(range(spec.layers)), point="block_out", reduce="last")
-    return A, B
+    from model_lobotomy import directions as _dirs
+    return _dirs.get_direction().derive(eng, spec, cfg, prompts)
+
+
+def _default_rule():
+    from model_lobotomy import dose_rules as _dr
+    return _dr.NllFluencyRule(NLL_MAX_RISE, FLUENCY_FLOOR)
 
 
 def coherent_doses(gen: dict) -> list[float]:
     """Doses > 0 that pass the FD rule. gen: dose -> {judge, nll, fluency}."""
-    base = gen[0.0]["nll"]
-    return [d for d in gen if d > 0
-            and gen[d]["nll"] - base <= NLL_MAX_RISE
-            and gen[d]["fluency"] >= FLUENCY_FLOOR]
+    return _default_rule().coherent(gen)
 
 
 def best_dose(gen: dict) -> float | None:
     """Coherent dose with the highest trait judge score, or None."""
-    return max(coherent_doses(gen), key=lambda d: gen[d]["judge"],
-               default=None)
+    return _default_rule().choose_gen(gen)
 
 
 def _seps(A, B, layers):
     """Separability, fit on 40, measured on held-out 20 (no tuning leak)."""
-    return {L: spike.separability(A[L][:40], B[L][:40], A[L][40:], B[L][40:])
-            for L in layers}
+    from model_lobotomy import directions as _dirs
+    return _dirs.get_direction().seps(A, B, layers)
 
 
 def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
                     cancel=None, progress=None, params=None,
-                    base_cache=None, lane=None):
+                    base_cache=None, lane=None, dose_rule=None):
     """Pick (layer, dose) on the tuning split; returns frozen choice + table."""
     _check(cancel)
     params = dict(SCHEDULES["full"]) if params is None else params
@@ -878,7 +887,8 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
             gen[d] = {"judge": sum(js) / len(js), "nll": sum(ns) / len(ns),
                       "fluency": sum(fl) / len(fl)}
         table[L] = gen
-        bd = best_dose(gen)
+        bd = (dose_rule.choose_gen(gen) if dose_rule is not None
+              else best_dose(gen))
         if bd is not None:
             gain = gen[bd]["judge"] - gen[0.0]["judge"]
             if frozen is None or gain > frozen["gain"]:
@@ -1176,42 +1186,9 @@ def baseline_top1(eng, spec, cfg, label, tuning, final,
             "n": fin["n"], "stopped_early": fin["stopped_early"]}
 
 
-def run_trait(eng, spec, trait_name, bank, seed, workdir,
-              model_id, revision, cancel=None, progress=None,
-              guard=False, research_mode=False, schedule="full",
-              lane=None, pareto=False):
-    """One complete trait end to end. Writes report.json + report.md.
-
-    cancel (threading.Event) raises Stopped at generation granularity;
-    progress(stage, done, total) reports per-stage counts.
-    schedule is "full" (today's pipeline, number for number) or
-    "fast" (fewer prompts, shorter generations, early stop).
-    lane runs generation, judge and NLL (default TorchLane on eng;
-    LlamaLane batches them on lobot-llamad). Capture stays on eng.
-    pareto adds the PP stage (effect vs side effects per dose, next
-    to the prompt baseline) as out["pareto"].
-    """
-    _check(cancel)
-    params = schedule_params(schedule)
-    lane = lane or TorchLane(eng, spec)
-    t0 = time.time()
-    timings: dict[str, float] = {}
-    workdir = Path(workdir)
-    workdir.mkdir(parents=True, exist_ok=True)
-    cfg = family_cfg(trait_name)
-    splits = E.make_splits(bank, seed)
-    ext, tun, fin = splits.extraction, splits.tuning, splits.final
-    _check(cancel)
-    med = {L: m for L, m in enumerate(
-        spike.median_norms(eng.model, eng.tokenizer, spec, ext[:10]))}
-    out = {"trait": trait_name, "seed": seed, "schedule": schedule,
-           "fingerprint": eng.fingerprint(),
-           "judge": judge_info("local", model_id, None),
-           "lane": lane.info(),
-           "splits": {"extraction": ext, "tuning": tun, "final": fin,
-                      "reserve": splits.reserve}}
-    base_cache = BaseCache()
-
+def _stage_extract(ctx):
+    eng, spec, cfg, ext, out, progress, cancel = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["ext"], ctx["out"], ctx["progress"], ctx["cancel"])
+    model_id, revision, trait_name, seed = ctx["model_id"], ctx["revision"], ctx["trait_name"], ctx["seed"]
     t_stage = time.time()
     from model_lobotomy import prompt_bank as bank_mod
     cc_path = capture_cache_path(ROOT / "store", model_id, trait_name,
@@ -1233,21 +1210,27 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
                              progress=progress, stage="extract")
         save_capture_cache(cc_path, cc_key, A, B)
         out["capture_cache_hit"] = False
-    timings["extract"] = round(time.time() - t_stage, 1)
     # Layer/dose choice may touch tuning only; stash extraction-only stats.
     out["extraction_seps"] = {
         L: {"acc": round(spike.separability(A[L], B[L], A[L], B[L])["acc"], 3)}
         for L in range(spec.layers)}
+    ctx["A"], ctx["B"] = A, B
+    ctx["timings"]["extract"] = round(time.time() - t_stage, 1)
+    return ctx
 
+
+def _stage_tune(ctx):
+    eng, spec, cfg, med, tun, out, progress, cancel, params, base_cache, lane = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["med"], ctx["tun"], ctx["out"], ctx["progress"], ctx["cancel"], ctx["params"], ctx["base_cache"], ctx["lane"])
+    A, B, workdir, t0, timings = ctx["A"], ctx["B"], ctx["workdir"], ctx["t0"], ctx["timings"]
     t_stage = time.time()
+    from model_lobotomy import dose_rules as _dose_rules
+    _rule = _dose_rules.get_dose_rule()
     frozen, table, cand_stats = tune_layer_dose(
         eng, spec, cfg, med, A, B, tun, cfg["judge"],
         cancel=cancel, progress=progress, params=params,
-        base_cache=base_cache, lane=lane)
-    timings["tune"] = round(time.time() - t_stage, 1)
-    out["tuning"] = {"rule": {"name": DOSE_RULE,
-                              "nll_max_rise": NLL_MAX_RISE,
-                              "fluency_floor": FLUENCY_FLOOR},
+        base_cache=base_cache, lane=lane, dose_rule=_rule)
+    ctx["timings"]["tune"] = round(time.time() - t_stage, 1)
+    out["tuning"] = {"rule": {"name": _rule.name, **_rule.params},
                      "candidates": cand_stats,
                      "table": {str(L): {str(d): v for d, v in g.items()}
                                for L, g in table.items()}}
@@ -1259,14 +1242,20 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         out["verdict"] = "no_knob"
         out["timings"] = timings
         _write_report(workdir, out, t0)
-        return out
+        ctx["stop"]=True
+        return ctx
     out["frozen"] = {"layer": frozen["layer"], "dose": frozen["dose"],
                      "tuning_gain": round(frozen["gain"], 3)}
     from safetensors.torch import save_file as _save_directions
     _save_directions({"direction": frozen["unit"].detach().cpu()},
-                     workdir / "direction.safetensors")
+                     _wp(workdir).direction)
     out["frozen"]["direction_file"] = "direction.safetensors"
+    ctx["frozen"], ctx["table"] = frozen, table
+    return ctx
 
+
+def _stage_read_gate(ctx):
+    eng, spec, cfg, frozen, med, ext, tun, fin, out, cancel, progress, params, base_cache, lane, timings = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["frozen"], ctx["med"], ctx["ext"], ctx["tun"], ctx["fin"], ctx["out"], ctx["cancel"], ctx["progress"], ctx["params"], ctx["base_cache"], ctx["lane"], ctx["timings"])
     t_stage = time.time()
     agree, disag = read_gate(
         eng, spec, cfg, frozen, med,
@@ -1276,7 +1265,12 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     timings["read_gate"] = round(time.time() - t_stage, 1)
     out["read_gate"] = {"agreement": agree, "disagreements": disag,
                         "pass": agree["margin"] >= 0.10}
+    return ctx
 
+
+def _stage_final(ctx):
+    eng, spec, cfg, frozen, med, fin, out, cancel, progress, params, base_cache, lane, timings = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["frozen"], ctx["med"], ctx["fin"], ctx["out"], ctx["cancel"], ctx["progress"], ctx["params"], ctx["base_cache"], ctx["lane"], ctx["timings"])
+    ext = ctx["ext"]
     t_stage = time.time()
     frozen_unit = frozen["unit"]
     frozen_layer = frozen["layer"]
@@ -1336,6 +1330,16 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         "delete": {"n": dele["n"],
                    "stopped_early": dele["stopped_early"]},
     }
+    ctx["cards"] = cards
+    ctx["frozen_unit"], ctx["frozen_layer"], ctx["frozen_dose"] = frozen_unit, frozen_layer, frozen_dose
+    return ctx
+
+
+def _stage_baseline(ctx):
+    eng, spec, cfg, tun, fin, out, cancel, progress, params, base_cache, lane, timings = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["tun"], ctx["fin"], ctx["out"], ctx["cancel"], ctx["progress"], ctx["params"], ctx["base_cache"], ctx["lane"], ctx["timings"])
+    frozen_layer, frozen_unit, frozen_dose = ctx["frozen_layer"], ctx["frozen_unit"], ctx["frozen_dose"]
+    med, pareto = ctx["med"], ctx["pareto_flag"]
+    max_new = params["gen_tokens"]
     t_stage = time.time()
     base = baseline_top1(eng, spec, cfg, cfg["judge"], tun, fin,
                          cancel=cancel, progress=progress, params=params,
@@ -1358,7 +1362,18 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
             instruction=base["top"], max_new=max_new,
             base_cache=base_cache, cancel=cancel, progress=progress)
         timings["pareto"] = round(time.time() - t_stage, 1)
+    ctx["base"] = base
+    return ctx
 
+
+def _stage_pareto(ctx):
+    # Pareto runs inside the baseline block when the job asks for it.
+    return ctx
+
+
+def _stage_guard(ctx):
+    eng, spec, cfg, frozen, med, out, progress, timings, seed = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["frozen"], ctx["med"], ctx["out"], ctx["progress"], ctx["timings"], ctx["seed"])
+    guard, research_mode, cards, base_cache = ctx["guard_flag"], ctx["research_mode"], ctx["cards"], ctx["base_cache"]
     t_stage = time.time()
     if progress is not None:
         progress("guard", 0, 1)
@@ -1366,7 +1381,8 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         frozen["layer"], frozen["unit"], med[frozen["layer"]],
         frozen["dose"]),))
     enforce = guard_mod.should_enforce(guard, research_mode)
-    gv = guard_mod.Guard().check_verified(
+    from model_lobotomy import guards as _guards
+    gv = _guards.get_guard().check_verified(
         eng, frozen_edits, medians=med, max_new_tokens=24, seed=seed,
         judge_fn=guard_mod.refusal_judge_fn(eng),
         research_mode=not enforce)
@@ -1379,7 +1395,14 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     out["timings"] = timings
     out["base_cache"] = {"hits": base_cache.hits,
                          "misses": base_cache.misses}
+    ctx["gv"], ctx["enforce"] = gv, enforce
+    return ctx
 
+
+def _stage_verdict(ctx):
+    eng, spec, trait_name, seed, workdir, out, timings, frozen, med, fin, t0 = (ctx["eng"], ctx["spec"], ctx["trait_name"], ctx["seed"], ctx["workdir"], ctx["out"], ctx["timings"], ctx["frozen"], ctx["med"], ctx["fin"], ctx["t0"])
+    cards, gv = ctx["cards"], ctx["gv"]
+    cfg = ctx["cfg"]
     elig = eligible_verbs(out["read_gate"]["pass"], cards)
     if gv.blocked:
         elig = dict(elig)
@@ -1399,7 +1422,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
                                   if elig[v]]}
     from model_lobotomy import patch as patch_mod
     patch_mod.save_patch(
-        workdir / "knob.lobot", direction=frozen["unit"],
+        _wp(workdir).patch, direction=frozen["unit"],
         layer=frozen["layer"], dose=frozen["dose"],
         scale=float(med[frozen["layer"]]), trait=trait_name,
         recipe={"instruction": cfg["pos"], "layer": frozen["layer"],
@@ -1409,7 +1432,68 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         guard=out.get("guard", {}), fingerprint=out["fingerprint"])
     out["patch"] = "knob.lobot"
     _write_report(workdir, out, t0)
+    return ctx
+
+
+STAGE_FUNCS = {
+    "extract": _stage_extract, "tune": _stage_tune,
+    "read_gate": _stage_read_gate, "final": _stage_final,
+    "baseline": _stage_baseline, "pareto": _stage_pareto,
+    "guard": _stage_guard, "verdict": _stage_verdict,
+}
+
+
+def _ports() -> dict:
+    from model_lobotomy.config import get_settings
+    s = get_settings()
+    return {"guard": s.guard_kind, "judge": s.judge_kind,
+            "direction": s.direction_kind, "dose_rule": s.dose_rule_kind}
+
+
+def run_trait(eng, spec, trait_name, bank, seed, workdir,
+              model_id, revision, cancel=None, progress=None,
+              guard=False, research_mode=False, schedule="full",
+              lane=None, pareto=False):
+    """One complete trait end to end. Writes report.json + report.md.
+
+    Stages run in create.stages.STAGE_NAMES order through a shared
+    ctx dict. See the pre-MOD version for the stage-by-stage notes.
+    """
+    _check(cancel)
+    params = schedule_params(schedule)
+    lane = lane or TorchLane(eng, spec)
+    t0 = time.time()
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    cfg = family_cfg(trait_name)
+    splits = E.make_splits(bank, seed)
+    ext, tun, fin = splits.extraction, splits.tuning, splits.final
+    _check(cancel)
+    med = {L: m for L, m in enumerate(
+        spike.median_norms(eng.model, eng.tokenizer, spec, ext[:10]))}
+    out = {"trait": trait_name, "seed": seed, "schedule": schedule,
+           "fingerprint": eng.fingerprint(),
+           "judge": judge_info("local", model_id, None),
+           "lane": lane.info(),
+           "splits": {"extraction": ext, "tuning": tun, "final": fin,
+                      "reserve": splits.reserve},
+           "ports": _ports()}
+    ctx = {"eng": eng, "spec": spec, "trait_name": trait_name,
+           "seed": seed, "workdir": workdir, "cancel": cancel,
+           "progress": progress, "guard_flag": guard,
+           "research_mode": research_mode, "params": params,
+           "lane": lane, "pareto_flag": pareto, "cfg": cfg,
+           "ext": ext, "tun": tun, "fin": fin, "med": med,
+           "model_id": model_id, "revision": revision,
+           "out": out, "base_cache": BaseCache(), "timings": {},
+           "t0": t0, "stop": False}
+    from model_lobotomy.create import stages as _stages
+    for _name in _stages.STAGE_NAMES:
+        STAGE_FUNCS[_name](ctx)
+        if ctx["stop"]:
+            break
     return out
+
 
 
 def _json_card(card):
@@ -1422,7 +1506,7 @@ def _json_card(card):
 
 def _write_report(workdir, out, t0):
     out["seconds"] = round(time.time() - t0, 1)
-    (workdir / "report.json").write_text(json.dumps(out, indent=2))
+    _wp(workdir).report.write_text(json.dumps(out, indent=2))
     L = (out.get("frozen") or {}).get("layer", "?")
     lines = [f"# Trait E2E: {out['trait']} -> {out.get('verdict', '?')}",
              f"schedule {out.get('schedule', 'full')}; "
@@ -1452,7 +1536,7 @@ def load_job(workdir) -> dict:
     """
     from model_lobotomy import patch as patch_mod
     workdir = Path(workdir)
-    report = json.loads((workdir / "report.json").read_text())
+    report = json.loads(_wp(workdir).report.read_text())
     if not report.get("patch"):
         raise ValueError(f"{workdir} has no patch (verdict "
                          f"{report.get('verdict')!r})")

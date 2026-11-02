@@ -86,8 +86,10 @@ def judge_fn_for(eng, trait: str, label: str | None = None):
     if label is None:
         label = trait_eval.spike.BEHAVIORS[trait]["judge"]
     spec = eng.spec
-    return lambda q, r: trait_eval.judge_score(
-        eng.model, eng.tokenizer, spec, q, r, label)
+    from model_lobotomy import judges as _judges
+    port = _judges.get_judge("local", score_one=lambda q, r, lab: trait_eval.judge_score(
+        eng.model, eng.tokenizer, spec, q, r, lab))
+    return lambda q, r: port.score_many([(q, r)], label)[0]
 
 
 def run_verify_patch(patch, *, quick: bool, progress=None,

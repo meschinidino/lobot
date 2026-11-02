@@ -79,7 +79,8 @@ class ApiCompleter:
 
     def __init__(self, temperature: float = 0.7):
         from model_lobotomy import trait_eval
-        model = os.environ.get("LOBOT_MUSE_MODEL", "") or MUSE_MODEL_DEFAULT
+        from model_lobotomy.config import get_settings
+        model = get_settings().muse_model or MUSE_MODEL_DEFAULT
         try:
             self._api = trait_eval.MetaApiJudge(
                 model=model, n_samples=1, temperature=temperature)

@@ -17,7 +17,8 @@ from pathlib import Path
 from model_lobotomy import patch as patch_mod
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-INSTALLS_ROOT = ROOT / "jobs" / "installs"
+from model_lobotomy import jobs_store as _jobs_store
+INSTALLS_ROOT = _jobs_store.default_jobs_dir() / "installs"
 
 TARGETS = ("llamacpp", "ollama")
 INSTALL_TIMEOUT = 300
@@ -40,7 +41,8 @@ def _run(cmd, timeout: int):
 
 
 def _llama_binary() -> str | None:
-    for cand in (os.environ.get("LOBOT_LLAMACPP_CLI"),
+    from model_lobotomy.config import get_settings
+    for cand in (get_settings().llamacpp_cli,
                  shutil.which("llama-cli"), LLAMACPP_BUILD_CLI):
         if cand and Path(cand).is_file() and os.access(cand, os.X_OK):
             return cand

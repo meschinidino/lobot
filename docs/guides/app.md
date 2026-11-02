@@ -121,3 +121,15 @@ note: the reading then includes the push itself.
 ```sh
 uv run python scripts/import_run.py logs/<run> --id <name>
 ```
+
+## Where each screen's code lives
+
+- Workbench: `web/js/screens/workbench.js`, run flow in `run.js`.
+- Evidence: `web/js/screens/evidence.js` and `pages.js`.
+- Library: `web/js/screens/library.js`.
+- New behavior: `web/js/screens/new-behavior.js`.
+- Agent: `web/js/screens/agent.js`.
+- Labeling: `web/js/screens/labeling.js`.
+- Chat: `web/js/screens/chat.js`.
+- Shared: `web/js/state.js`, `web/js/api.js`, `web/js/components/`
+  (dial, chart, legend, strip), styles in `web/css/app.css`.

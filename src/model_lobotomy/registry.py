@@ -31,7 +31,8 @@ from model_lobotomy import patch as patch_mod
 INDEX_VERSION = "lobot-registry-v1"
 STATEMENT_KIND = "lobot-publish-v1"
 INDEX_FILE = "index.json"
-HOME = Path(os.environ.get("LOBOT_HOME", Path.home() / ".lobot"))
+from model_lobotomy.config import get_settings as _get_settings
+HOME = _get_settings().lobot_home
 
 # Statement fields, in the order they are documented; the signature
 # covers canonical_json of exactly these keys.

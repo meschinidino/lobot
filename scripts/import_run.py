@@ -19,8 +19,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from model_lobotomy.create_job import DEFAULT_JOBS_DIR  # noqa: E402
-from model_lobotomy.job_import import import_run, job_record  # noqa: E402,F401
+from model_lobotomy.jobs_store import default_jobs_dir as _djd  # noqa: E402
+from model_lobotomy.jobs_store import import_run, job_record  # noqa: E402,F401
+DEFAULT_JOBS_DIR = _djd()
 
 def main() -> int:
     ap = argparse.ArgumentParser()

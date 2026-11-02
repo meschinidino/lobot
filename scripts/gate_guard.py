@@ -77,7 +77,8 @@ def _knob_file(family: str, model_id: str):
     """Newest knob.lobot for a family on this model, or None."""
     from model_lobotomy import patch as patch_mod
     best, best_mtime = None, -1.0
-    cands = sorted(Path(ROOT, "jobs").glob("*/trait/knob.lobot"))
+    from model_lobotomy.jobs_store import default_jobs_dir
+    cands = sorted(default_jobs_dir().glob("*/trait/knob.lobot"))
     cands.append(ROOT / "logs" / "e2e_pirate" / "knob.lobot")
     for f in cands:
         if not f.is_file():
