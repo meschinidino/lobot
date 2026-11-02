@@ -29,7 +29,6 @@ coding agents. Human docs start at [README.md](README.md).
 | `src/model_lobotomy/guard.py`, `guard_screens.py` | Guard: refusal, honesty, privacy, harmful screens |
 | `src/model_lobotomy/repair.py` | GR: safety directions and the repair search for flagged patches |
 | `src/model_lobotomy/followups.py` | Pareto and repair jobs for a finished Create (shared by the scripts and the server routes) |
-| `src/model_lobotomy/job_import.py` | Register a `run_trait` work dir as an app job (CLI runs, agent runs) |
 | `src/model_lobotomy/drafts.py`, `muse.py`, `agent.py` | Open descriptions, Muse Spark helpers, the Create agent |
 | `src/model_lobotomy/patch.py`, `registry.py`, `audit.py`, `reverify.py`, `transfer.py` | Patches, signed registry, audit log, re-verify, cross-model transfer |
 | `src/model_lobotomy/gpu_lock.py` | GPU slots across processes |
@@ -108,7 +107,7 @@ To run or show the app to the user, follow
   (`installers._run`). `llama-cli` runs as a chat and, with the server's
   open stdin, waited for a next turn until its timeout.
 - **Jobs.** The app lists only `jobs/<id>/job.json`. A run written
-  elsewhere (CLI, agent) needs `job_import.import_run` to appear.
+  elsewhere (CLI, agent) needs `jobs_store.import_run` to appear.
 - **Guard.** Agents never turn the guard off or switch on Research mode
   to get a result. A guard block is a result; report it.
 

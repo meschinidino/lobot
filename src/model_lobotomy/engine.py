@@ -15,12 +15,10 @@ scripts and the model lane; product paths (app.py, server.py) run here.
 """
 from __future__ import annotations
 
-import os
 import threading
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 
 import torch
 
@@ -190,7 +188,7 @@ def _build_hooks(model, spec, edits: EditSet, medians: dict,
         def _post(_m, _a, out, *, _L=layer):
             counter[0] += 1
             h = steer._block_hidden(out)
-            dev, dt = h.device, h.dtype
+            dt = h.dtype
             x = h.float()
             for u in abl.get(_L, []):
                 uu = u.to(x.device)
@@ -825,8 +823,9 @@ class Engine:
         def _post(_m, _a, out, *, _L):
             counter[0] += 1
             h = steer._block_hidden(out)
-            dev, dt = h.device, h.dtype
+            dt = h.dtype
             x = h.float()
+            dev = x.device
             for layer, u in abl:
                 if layer != _L:
                     continue

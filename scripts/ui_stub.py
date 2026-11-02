@@ -204,7 +204,6 @@ def run(body: dict):
 @app.post("/api/neurons")
 def neurons(body: dict):
     time.sleep(.3)
-    reply = body.get("reply") or ""
     return {"blocked": False, "model_id": S["active"], "prompt": body["prompt"], "tokens": [], "token_index": 12, "reply_start": 9,
             "neurons": [{"layer": 11 + i, "neuron": 1343 + 97 * i, "activation": 9.2 - i * 1.1, "top_contexts": [],
                          "pushes_toward_top": [["Ġpirate", "Ġship", "Ġsea"], ["Ġno", "Ġnever", "Ġrefuse"], None, ["Ġfine", "Ġok", "Ġsure"]][i % 4]} for i in range(6)]}

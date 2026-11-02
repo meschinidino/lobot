@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from model_lobotomy import combine as C  # noqa: E402
-from model_lobotomy import guard  # noqa: E402
+from model_lobotomy import guard, guards  # noqa: E402
 from model_lobotomy import installers as I  # noqa: E402
 from model_lobotomy import patch as patch_mod  # noqa: E402
 from model_lobotomy import server  # noqa: E402
@@ -51,11 +51,9 @@ class FakeGuard:
         self.block_when = block_when
         self.calls: list = []
 
-    def check_verified(self, engine, edits, *, medians,
-                       max_new_tokens, seed, judge_fn,
-                       cancel=None):
+    def confirm(self, engine, edits, screens=None, **kw):
         self.calls.append(edits)
-        return _verdict(self.block_when(edits))
+        return guards.from_old(_verdict(self.block_when(edits)))
 
 
 class CachingFakeGuard(FakeGuard):
@@ -63,23 +61,18 @@ class CachingFakeGuard(FakeGuard):
         super().__init__(block_when)
         self.cache: dict = {}
 
-    def check_verified(self, engine, edits, *, medians,
-                       max_new_tokens, seed, judge_fn,
-                       cancel=None):
+    def confirm(self, engine, edits, screens=None, **kw):
         key = guard.edit_set_fingerprint(edits)
         if key in self.cache:
             v = self.cache[key]
-            return guard.GuardVerdict(
-                blocked=v.blocked, min_ratio=v.min_ratio,
-                worst_prompt=v.worst_prompt,
-                blocked_prompts=v.blocked_prompts,
-                natural=v.natural, steered=v.steered, cached=True,
+            return guards.from_old(guard.GuardVerdict(
+                blocked=v.blocked, min_ratio=v.screens["refusal"]["measure"]["min_ratio"],
+                worst_prompt=v.screens["refusal"]["measure"].get("worst_prompt"),
+                blocked_prompts=tuple(v.screens["refusal"]["flagged_prompts"]),
+                natural=(), steered=(), cached=True,
                 research_mode=False, would_block=v.would_block,
-                full_generation=True, screens=())
-        v = super().check_verified(
-            engine, edits, medians=medians,
-            max_new_tokens=max_new_tokens, seed=seed,
-            judge_fn=judge_fn, cancel=cancel)
+                full_generation=True, screens=()))
+        v = super().confirm(engine, edits, screens=screens, **kw)
         self.cache[key] = v
         return v
 
@@ -229,9 +222,9 @@ class RouteTest(unittest.TestCase):
         self.jobs_dir = Path(self.tmp.name) / "jobs"
         self.jobs_dir.mkdir()
         from model_lobotomy import create_job
-        server._runner = create_job.CreateRunner(
+        server.STATE.runner = create_job.CreateRunner(
             jobs_dir=self.jobs_dir)
-        self.addCleanup(setattr, server, "_runner", None)
+        self.addCleanup(setattr, server.STATE, "runner", None)
         self.roots = mock.patch.object(
             I, "INSTALLS_ROOT", Path(self.tmp.name) / "installs")
         self.roots.start()
@@ -252,20 +245,20 @@ class RouteTest(unittest.TestCase):
                 scale=2.0)
 
     def test_cap_400_above_8(self):
-        with mock.patch.object(server, "NO_MODEL", False):
+        with mock.patch.object(server.STATE, "no_model", False):
             r = self.client.post("/api/combine/check", json={
                 "patch_ids": [f"id-{i}" for i in range(9)]})
         self.assertEqual(r.status_code, 400)
 
     def test_empty_400(self):
-        with mock.patch.object(server, "NO_MODEL", False):
+        with mock.patch.object(server.STATE, "no_model", False):
             r = self.client.post("/api/combine/check", json={
                 "patch_ids": []})
         self.assertEqual(r.status_code, 400)
 
     def test_unknown_404(self):
-        with mock.patch.object(server, "NO_MODEL", False), \
-                mock.patch.object(server, "get_engine"):
+        with mock.patch.object(server.STATE, "no_model", False), \
+                mock.patch.object(server.helpers, "get_engine"):
             r = self.client.post("/api/combine/check", json={
                 "patch_ids": ["nope-0"]})
         self.assertEqual(r.status_code, 404)
@@ -273,8 +266,8 @@ class RouteTest(unittest.TestCase):
     def test_missing_patch_422(self):
         (self.jobs_dir / self.job_a / "trait"
          / "knob.lobot").unlink()
-        with mock.patch.object(server, "NO_MODEL", False), \
-                mock.patch.object(server, "get_engine"):
+        with mock.patch.object(server.STATE, "no_model", False), \
+                mock.patch.object(server.helpers, "get_engine"):
             r = self.client.post("/api/combine/check", json={
                 "patch_ids": [self.job_a]})
         self.assertEqual(r.status_code, 422)
@@ -286,8 +279,8 @@ class RouteTest(unittest.TestCase):
             direction=torch.ones(8), layer=14, dose=0.5,
             trait="blunt", recipe={}, report_card={}, guard={},
             fingerprint={"model_id": "other/model"}, scale=2.0)
-        with mock.patch.object(server, "NO_MODEL", False), \
-                mock.patch.object(server, "get_engine"):
+        with mock.patch.object(server.STATE, "no_model", False), \
+                mock.patch.object(server.helpers, "get_engine"):
             r = self.client.post("/api/combine/check", json={
                 "patch_ids": [self.job_a]})
         self.assertEqual(r.status_code, 422)
@@ -295,8 +288,8 @@ class RouteTest(unittest.TestCase):
     def test_busy_409(self):
         eng = mock.Mock()
         eng.lock.locked.return_value = True
-        with mock.patch.object(server, "NO_MODEL", False), \
-                mock.patch.object(server, "get_engine",
+        with mock.patch.object(server.STATE, "no_model", False), \
+                mock.patch.object(server.helpers, "get_engine",
                                   return_value=eng):
             r = self.client.post("/api/combine/check", json={
                 "patch_ids": [self.job_a]})
@@ -307,10 +300,10 @@ class RouteTest(unittest.TestCase):
         eng.lock.locked.return_value = False
         sent = {"matrix": {"install_order": ["blunt",
                                              "blunt #2"]}}
-        with mock.patch.object(server, "NO_MODEL", False), \
-                mock.patch.object(server, "get_engine",
+        with mock.patch.object(server.STATE, "no_model", False), \
+                mock.patch.object(server.helpers, "get_engine",
                                   return_value=eng), \
-                mock.patch.object(server, "_combine_matrix",
+                mock.patch.object(server.helpers, "_combine_matrix",
                                   return_value=dict(sent)) as cm:
             r = self.client.post("/api/combine/check", json={
                 "patch_ids": [self.job_a, self.job_b]})
@@ -334,10 +327,10 @@ class RouteTest(unittest.TestCase):
         eng = mock.Mock()
         eng.lock.locked.return_value = False
         sent = {"install_order": ["blunt"]}
-        with mock.patch.object(server, "NO_MODEL", False), \
-                mock.patch.object(server, "get_engine",
+        with mock.patch.object(server.STATE, "no_model", False), \
+                mock.patch.object(server.helpers, "get_engine",
                                   return_value=eng), \
-                mock.patch.object(server, "_combine_matrix",
+                mock.patch.object(server.helpers, "_combine_matrix",
                                   return_value=dict(sent)):
             r = self.client.get("/api/combine/installed")
         self.assertEqual(r.status_code, 200, r.text)

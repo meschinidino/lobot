@@ -48,16 +48,18 @@ async function run(fan = false) {
   if (fan && !beh) return;
   closePop(); setRunning(true);
   const key = setupKey(), research = S.research, guardBody = { guard: !research, research_mode: research };
-  const t0 = performance.now(), msgs = { weights: "Loading weights and calibration.", guard: "Checking the refusal guard.", baseline: "Baseline pass.", steered: "Edited pass.", columns: "Generating every dose at once." };
+  const t0 = performance.now(), msgs = { weights: "Loading weights and calibration.", guard: "Checking the refusal guard: first-token check.", guard_full: "First-token check passed. Running the full-answer check.", baseline: "Baseline pass.", steered: "Edited pass.", columns: "Generating every dose at once." };
   const tick = setInterval(() => ($("runMsg").textContent = `${$("runMsg").textContent.split(" · ")[0]} · ${((performance.now() - t0) / 1000).toFixed(1)} s`), 100);
   setStatus("info", "RUNNING", msgs.weights);
-  const end = () => { clearInterval(tick); S.live = null; S.checking = false; setRunning(false); refreshState(); };
+  const end = () => { clearInterval(tick); S.live = null; S.checking = false; S.guardStep = null; setRunning(false); refreshState(); };
   const onCommon = (ev) => {
-    if (ev.stage === "weights") { S.checking = !research; renderGuard(); }
-    if (ev.stage === "guard" || ev.stage === "columns" && !research) { S.checking = false; if (!research) S.guardSeen[key] = "passed"; renderGuard(); }
+    if (ev.stage === "weights") { S.checking = !research; S.guardStep = research ? null : "first"; renderGuard(); }
+    if (ev.stage === "guard" && !research) { S.checking = true; S.guardStep = "first"; renderGuard(); }
+    if (ev.stage === "guard_full" && !research) { S.guardStep = "full"; S.guardSeen[key] = "first-passed"; renderGuard(); }
+    if ((ev.stage === "columns" || ev.stage === "complete") && !research) { S.checking = false; S.guardStep = null; S.guardSeen[key] = "passed"; renderGuard(); }
     if (ev.stage === "stopped") { end(); setStatus("info", "STOPPED", "Stopped. The tree keeps the runs it had."); return true; }
     if (ev.stage === "blocked") {
-      S.guardSeen[key] = "blocked"; S.blockMsg = { key, text: blockedMsg(ev.guard || {}) }; end(); setStatus("err", "BLOCKED", S.blockMsg.text);
+      S.guardStep = null; S.guardSeen[key] = "blocked"; S.blockMsg = { key, text: blockedMsg(ev.guard || {}) }; end(); setStatus("err", "BLOCKED", S.blockMsg.text);
       $("live").textContent = "Blocked by the refusal guard."; return true;
     }
     if (msgs[ev.stage]) setStatus("info", "RUNNING", msgs[ev.stage]);
@@ -143,7 +145,7 @@ function renderGuard() {
   const seen = S.guardSeen[setupKey()];
   document.querySelectorAll("[data-research]").forEach((x) => (x.hidden = !S.research));
   $("researchBtn").hidden = S.research || !S.api;
-  const [kind, text] = S.research ? ["warn", "RESEARCH MODE · GUARD OFF"] : S.checking ? ["info", "CHECKING EDITS"] : !S.rows.length ? ["info", "GUARD ON"]
+  const [kind, text] = S.research ? ["warn", "RESEARCH MODE · GUARD OFF"] : S.checking && S.guardStep === "full" ? ["info", "FIRST-TOKEN CHECK PASSED · FULL CHECK RUNNING"] : S.checking ? ["info", "CHECKING EDITS · FIRST-TOKEN CHECK"] : !S.rows.length ? ["info", "GUARD ON"]
     : seen === "passed" ? ["ok", "CHECK PASSED"] : seen === "blocked" ? ["err", "BLOCKED"] : seen === "failed" ? ["err", "CHECK FAILED"] : ["info", "GUARD ON · NOT CHECKED"];
   $("guardKey").className = `state ${kind}`; $("guardKey").textContent = text;
   const beh = S.rows.find(isB), job = creating();

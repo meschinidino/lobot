@@ -23,7 +23,6 @@ import torch  # noqa: E402
 
 from model_lobotomy import engine  # noqa: E402
 from model_lobotomy import sae  # noqa: E402
-from model_lobotomy import steer  # noqa: E402
 from scripts.build_reader_cache import split_docs  # noqa: E402
 
 

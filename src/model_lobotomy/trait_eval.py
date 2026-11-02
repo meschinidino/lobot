@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-import os
 import re
 import statistics
 import sys
@@ -624,7 +623,7 @@ def delete_check(eng, spec, cfg: dict, knob: dict, medians: dict,
         if progress is not None:
             progress("delete_check", done, total)
     from model_lobotomy import guards as _guards
-    gv = _guards.get_guard().check_verified(
+    gv = _guards.get_guard().confirm(
         eng, edits, medians=medians, max_new_tokens=24,
         seed=DELETE_CHECK_SEED,
         judge_fn=guard_mod.refusal_judge_fn(eng),
@@ -643,7 +642,7 @@ def delete_check(eng, spec, cfg: dict, knob: dict, medians: dict,
             "deleted_rate": sum(s >= 0.5 for s in ref_del)
             / len(ref_del),
             "n": len(ref_base)},
-        "guard": guard_mod.verdict_dict(gv),
+        "guard": gv.report,
     }
 
 
@@ -707,10 +706,8 @@ class TorchLane:
                             cancel=cancel))
         return out
 
-    def judge_many(self, pairs, label) -> list[float]:
+    def score_many(self, pairs, label) -> list[float]:
         return self._judge.score_many(pairs, label)
-
-    score_many = judge_many
 
     def nll_many(self, pairs) -> list[float]:
         keys = [(q, r) for q, r in pairs]
@@ -877,8 +874,8 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
             done += len(tuning)
             if progress is not None:
                 progress("tune", done, total)
-            js = lane.judge_many(list(zip(tuning, rs)), cfg["judge"])
-            fl = lane.judge_many(list(zip(tuning, rs)),
+            js = lane.score_many(list(zip(tuning, rs)), cfg["judge"])
+            fl = lane.score_many(list(zip(tuning, rs)),
                                  pareto_mod.FLUENCY_LABEL)
             nl = lane.nll_many(
                 list(zip(tuning, rs))
@@ -946,8 +943,8 @@ def _loop_gains(eng, spec, cfg, final, edits, sign, params,
     _check(cancel)
     if progress is not None:
         progress(stage, len(final), len(final))
-    jbs = lane.judge_many(list(zip(final, bases)), cfg["judge"])
-    jss = lane.judge_many(list(zip(final, sts)), cfg["judge"])
+    jbs = lane.score_many(list(zip(final, bases)), cfg["judge"])
+    jss = lane.score_many(list(zip(final, sts)), cfg["judge"])
     gains, pairs = [], []
     for q, base, st, jb, js in zip(final, bases, sts, jbs, jss):
         gains.append(js - jb if sign > 0 else jb - js)
@@ -971,9 +968,9 @@ def _gain_steps(eng, spec, cfg, label, qs, t_prompts, t_edits,
     _check(cancel)
     cts = lane.gen_many(c_prompts, c_edits, max_new, cancel=cancel)
     _check(cancel)
-    jbs = lane.judge_many(list(zip(qs, bases)), label)
-    jss = lane.judge_many(list(zip(qs, sts)), label)
-    jcs = lane.judge_many(list(zip(qs, cts)), label)
+    jbs = lane.score_many(list(zip(qs, bases)), label)
+    jss = lane.score_many(list(zip(qs, sts)), label)
+    jcs = lane.score_many(list(zip(qs, cts)), label)
     out = []
     for q, base, st, jb, js, jc in zip(qs, bases, sts, jbs, jss, jcs):
         tg = js - jb if tsign > 0 else jb - js
@@ -1123,7 +1120,7 @@ def read_gate(eng, spec, cfg, frozen, med, agree_qs,
     bases = _base_texts(eng, spec, lane, base_cache, rest, max_new, cancel)
     if progress is not None:
         progress("read_gate", len(rest), len(rest))
-    jss = lane.judge_many(list(zip(rest, bases)), cfg["judge"])
+    jss = lane.score_many(list(zip(rest, bases)), cfg["judge"])
     for i, (q, base, js) in enumerate(zip(rest, bases, jss)):
         pl, rl = bool((H[i] @ u).item() > thr), bool(js >= 0.5)
         probe_labels.append(pl)
@@ -1160,8 +1157,8 @@ def baseline_top1(eng, spec, cfg, label, tuning, final,
         sts = lane.gen_many([f"{ins}\n\n{q}" for q in tuning],
                             engine_mod.EMPTY_EDITS, max_new, cancel=cancel)
         _check(cancel)
-        jbs = lane.judge_many(list(zip(tuning, bases)), label)
-        jss = lane.judge_many(list(zip(tuning, sts)), label)
+        jbs = lane.score_many(list(zip(tuning, bases)), label)
+        jss = lane.score_many(list(zip(tuning, sts)), label)
         gains = [js - jb for jb, js in zip(jbs, jss)]
         done += len(tuning)
         if progress is not None:
@@ -1337,9 +1334,6 @@ def _stage_final(ctx):
 
 def _stage_baseline(ctx):
     eng, spec, cfg, tun, fin, out, cancel, progress, params, base_cache, lane, timings = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["tun"], ctx["fin"], ctx["out"], ctx["cancel"], ctx["progress"], ctx["params"], ctx["base_cache"], ctx["lane"], ctx["timings"])
-    frozen_layer, frozen_unit, frozen_dose = ctx["frozen_layer"], ctx["frozen_unit"], ctx["frozen_dose"]
-    med, pareto = ctx["med"], ctx["pareto_flag"]
-    max_new = params["gen_tokens"]
     t_stage = time.time()
     base = baseline_top1(eng, spec, cfg, cfg["judge"], tun, fin,
                          cancel=cancel, progress=progress, params=params,
@@ -1354,26 +1348,31 @@ def _stage_baseline(ctx):
         "card": _json_card(base_card)}
     out["early_stop"]["prompt_baseline"] = {
         "n": base["n"], "stopped_early": base["stopped_early"]}
-    if pareto:
-        t_stage = time.time()
-        out["pareto"] = pareto_mod.run_pareto(
-            lane, cfg["judge"], fin, layer=frozen_layer, unit=frozen_unit,
-            scale=med[frozen_layer], frozen_dose=frozen_dose,
-            instruction=base["top"], max_new=max_new,
-            base_cache=base_cache, cancel=cancel, progress=progress)
-        timings["pareto"] = round(time.time() - t_stage, 1)
     ctx["base"] = base
     return ctx
 
 
 def _stage_pareto(ctx):
-    # Pareto runs inside the baseline block when the job asks for it.
+    if not ctx["pareto_flag"]:
+        return ctx
+    cfg, fin, out, cancel, progress, params, base_cache, lane, timings = (ctx["cfg"], ctx["fin"], ctx["out"], ctx["cancel"], ctx["progress"], ctx["params"], ctx["base_cache"], ctx["lane"], ctx["timings"])
+    frozen_layer, frozen_unit, frozen_dose = ctx["frozen_layer"], ctx["frozen_unit"], ctx["frozen_dose"]
+    med, base = ctx["med"], ctx["base"]
+    t_stage = time.time()
+    if progress is not None:
+        progress("pareto", 0, 1)
+    out["pareto"] = pareto_mod.run_pareto(
+        lane, cfg["judge"], fin, layer=frozen_layer, unit=frozen_unit,
+        scale=med[frozen_layer], frozen_dose=frozen_dose,
+        instruction=base["top"], max_new=params["gen_tokens"],
+        base_cache=base_cache, cancel=cancel, progress=progress)
+    timings["pareto"] = round(time.time() - t_stage, 1)
     return ctx
 
 
 def _stage_guard(ctx):
-    eng, spec, cfg, frozen, med, out, progress, timings, seed = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["frozen"], ctx["med"], ctx["out"], ctx["progress"], ctx["timings"], ctx["seed"])
-    guard, research_mode, cards, base_cache = ctx["guard_flag"], ctx["research_mode"], ctx["cards"], ctx["base_cache"]
+    eng, frozen, med, out, progress, timings, seed = (ctx["eng"], ctx["frozen"], ctx["med"], ctx["out"], ctx["progress"], ctx["timings"], ctx["seed"])
+    guard, research_mode, base_cache = ctx["guard_flag"], ctx["research_mode"], ctx["base_cache"]
     t_stage = time.time()
     if progress is not None:
         progress("guard", 0, 1)
@@ -1382,14 +1381,14 @@ def _stage_guard(ctx):
         frozen["dose"]),))
     enforce = guard_mod.should_enforce(guard, research_mode)
     from model_lobotomy import guards as _guards
-    gv = _guards.get_guard().check_verified(
+    gv = _guards.get_guard().confirm(
         eng, frozen_edits, medians=med, max_new_tokens=24, seed=seed,
         judge_fn=guard_mod.refusal_judge_fn(eng),
         research_mode=not enforce)
     timings["guard"] = round(time.time() - t_stage, 1)
     if progress is not None:
         progress("guard", 1, 1)
-    out["guard"] = {**guard_mod.verdict_dict(gv),
+    out["guard"] = {**gv.report,
                     "enforced": enforce,
                     "research_mode": research_mode}
     out["timings"] = timings
@@ -1400,7 +1399,7 @@ def _stage_guard(ctx):
 
 
 def _stage_verdict(ctx):
-    eng, spec, trait_name, seed, workdir, out, timings, frozen, med, fin, t0 = (ctx["eng"], ctx["spec"], ctx["trait_name"], ctx["seed"], ctx["workdir"], ctx["out"], ctx["timings"], ctx["frozen"], ctx["med"], ctx["fin"], ctx["t0"])
+    trait_name, seed, workdir, out, frozen, med, fin, t0 = (ctx["trait_name"], ctx["seed"], ctx["workdir"], ctx["out"], ctx["frozen"], ctx["med"], ctx["fin"], ctx["t0"])
     cards, gv = ctx["cards"], ctx["gv"]
     cfg = ctx["cfg"]
     elig = eligible_verbs(out["read_gate"]["pass"], cards)
@@ -1457,7 +1456,7 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     """One complete trait end to end. Writes report.json + report.md.
 
     Stages run in create.stages.STAGE_NAMES order through a shared
-    ctx dict. See the pre-MOD version for the stage-by-stage notes.
+    ctx dict. Each stage function holds its own notes.
     """
     _check(cancel)
     params = schedule_params(schedule)

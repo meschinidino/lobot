@@ -1,34 +1,35 @@
-"""Routes: run. Helpers and state live in server (late import)."""
+"""Routes: run. Helpers live in server_helpers. State lives in server_state.STATE."""
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, Query, Request, UploadFile  # noqa: F401
+from fastapi import APIRouter
+from model_lobotomy.server_state import STATE
+from model_lobotomy import server_helpers as helpers
+from model_lobotomy.server_schemas import (DeleteCheckRequest, DeleteRequest, ModelRequest, RunRequest, UpdateRequest)
+from fastapi import HTTPException
+from model_lobotomy.steer import RecipeRow
+from model_lobotomy import app as engine
+from model_lobotomy import prompt_bank
+from model_lobotomy import steer
+import time
+from model_lobotomy import trait_eval
 
 router = APIRouter()
 
 
-class _Live:
-    def __getattr__(self, name):
-        from model_lobotomy import server as _server
-        return getattr(_server, name)
-
-
-_live = _Live()
-
-
 @router.get("/api/state")
 def state():
-    return _state()
+    return helpers._state()
 
 @router.post("/api/model")
 def switch_model(req: ModelRequest):
     if req.model_id not in engine._PRESETS:
         raise HTTPException(400, f"Unknown model {req.model_id}. "
                                  f"Supported: {', '.join(sorted(engine._PRESETS))}.")
-    if get_engine().lock.locked():
+    if helpers.get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     engine._active_model_id = req.model_id
     engine.unload_engine()
-    return _state()
+    return helpers._state()
 
 @router.post("/api/run")
 def run(req: RunRequest):
@@ -45,47 +46,47 @@ def run(req: RunRequest):
         steer.validate_recipe(rows, spec)
     except ValueError as e:
         raise HTTPException(400, f"Invalid row: {e}.") from None
-    if _live.REPLAY:
-        rec = _find_recording(engine._active_model_id, prompt, [r.model_dump() for r in req.rows])
+    if STATE.replay:
+        rec = helpers._find_recording(engine._active_model_id, prompt, [r.model_dump() for r in req.rows])
         if rec is None:
             raise HTTPException(404, "Replay mode answers only recorded setups, and this one was "
                                      "not recorded. Record it with scripts/record_sweep.py, or "
                                      "restart without MODEL_LOBOTOMY_REPLAY to run the model.")
-        if get_engine().lock.locked():
+        if helpers.get_engine().lock.locked():
             raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-        _live._cancel.clear()
-        return _ndjson(_replay_stream(rec))
-    if _live.NO_MODEL:
+        STATE.cancel.clear()
+        return helpers._ndjson(helpers._replay_stream(rec))
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
     if req.dial_trait is not None:
-        _need_torch(get_engine(), "dial")
-    if get_engine().lock.locked():
+        helpers._need_torch(helpers.get_engine(), "dial")
+    if helpers.get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    _live._cancel.clear()
-    return _ndjson(_run_stream(prompt, rows, spec, guard=req.guard,
+    STATE.cancel.clear()
+    return helpers._ndjson(helpers._run_stream(prompt, rows, spec, guard=req.guard,
                     research_mode=req.research_mode,
                     dial_trait=req.dial_trait))
 
 @router.post("/api/stop")
 def stop():
-    _live._cancel.set()
-    return {"stopping": get_engine().lock.locked()}
+    STATE.cancel.set()
+    return {"stopping": helpers.get_engine().lock.locked()}
 
 @router.post("/api/update")
 def update(req: UpdateRequest):
     prompt = req.prompt.strip()
     if not prompt:
         raise HTTPException(400, "The prompt is empty. Type a prompt first.")
-    if not req.doses or len(req.doses) > MAX_DOSES:
-        raise HTTPException(400, f"Give 1 to {MAX_DOSES} doses.")
+    if not req.doses or len(req.doses) > helpers.MAX_DOSES:
+        raise HTTPException(400, f"Give 1 to {helpers.MAX_DOSES} doses.")
     spec = engine.active_spec()
     if req.trait is not None and (req.layer is not None
                                   or req.direction is not None):
         raise HTTPException(400, "Give a trait or an explicit "
                                  "layer/direction/scale, not both.")
     if req.trait is not None:
-        knob = _latest_knob(req.trait)
+        knob = helpers._latest_knob(req.trait)
         if knob is None:
             raise HTTPException(404, f"No finished Create job for trait "
                                      f"'{req.trait}' with a saved direction. "
@@ -102,13 +103,13 @@ def update(req: UpdateRequest):
     if len(direction) != spec.hidden:
         raise HTTPException(400, f"Direction has {len(direction)} dims, "
                                  f"model needs {spec.hidden}.")
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    if get_engine().lock.locked():
+    if helpers.get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    _live._cancel.clear()
-    return _ndjson(_update_stream(prompt, layer, direction, scale, list(req.doses),
+    STATE.cancel.clear()
+    return helpers._ndjson(helpers._update_stream(prompt, layer, direction, scale, list(req.doses),
                        min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
                        spec, guard=req.guard,
                        research_mode=req.research_mode))
@@ -119,19 +120,19 @@ def delete(req: DeleteRequest):
     prompt = req.prompt.strip()
     if not prompt:
         raise HTTPException(400, "The prompt is empty. Type a prompt first.")
-    knob = _latest_knob(req.trait)
+    knob = helpers._latest_knob(req.trait)
     if knob is None:
         raise HTTPException(422, f"Delete is not eligible for "
                                  f"'{req.trait}': no finished Create job "
                                  f"with a saved direction.")
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    _need_torch(get_engine(), "ablate")
-    if get_engine().lock.locked():
+    helpers._need_torch(helpers.get_engine(), "ablate")
+    if helpers.get_engine().lock.locked():
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
-    _live._cancel.clear()
-    return _ndjson(_delete_stream(prompt, req.trait, knob,
+    STATE.cancel.clear()
+    return helpers._ndjson(helpers._delete_stream(prompt, req.trait, knob,
                        min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
                        guard=req.guard,
                        research_mode=req.research_mode))
@@ -139,7 +140,7 @@ def delete(req: DeleteRequest):
 @router.post("/api/delete/check")
 def delete_check(req: DeleteCheckRequest):
     """Ablation report card with side effects + guard re-check (DL)."""
-    knob = _latest_knob(req.trait)
+    knob = helpers._latest_knob(req.trait)
     if knob is None:
         raise HTTPException(422, f"Delete is not eligible for "
                                  f"'{req.trait}': no finished Create job "
@@ -151,11 +152,11 @@ def delete_check(req: DeleteCheckRequest):
             raise HTTPException(400, "Give at least one prompt.")
         if len(prompts) > 24:
             raise HTTPException(400, "Give at most 24 prompts.")
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    _need_torch(get_engine(), "ablate")
-    eng = get_engine()
+    helpers._need_torch(helpers.get_engine(), "ablate")
+    eng = helpers.get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     try:
@@ -163,7 +164,7 @@ def delete_check(req: DeleteCheckRequest):
         if eng.model is None or eng.model_id != engine._active_model_id:
             eng.load(engine._active_model_id)
         spec = engine.active_spec()
-        medians, _ = _calibrate(eng, [int(knob["layer"])])
+        medians, _ = helpers._calibrate(eng, [int(knob["layer"])])
         try:
             cfg = trait_eval.family_cfg(req.trait)
         except KeyError:
@@ -172,7 +173,7 @@ def delete_check(req: DeleteCheckRequest):
         try:
             out = trait_eval.delete_check(
                 eng, spec, cfg, knob, medians, prompt_bank.PROMPT_BANK,
-                prompts=prompts, cancel=_live._cancel)
+                prompts=prompts, cancel=STATE.cancel)
         except ValueError as e:
             raise HTTPException(400, f"{e}.") from None
         out["seconds"] = round(time.perf_counter() - t_all, 1)

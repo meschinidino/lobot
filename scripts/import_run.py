@@ -4,7 +4,7 @@ run_trait.py writes its evidence to any work dir (logs/<run> by
 habit). The app lists only jobs/<id>/job.json. This copies the work
 dir to jobs/<id>/trait/ and writes job.json from the report, so the
 evidence page, Pareto and repair routes can use the run. Nothing is
-re-measured. The logic is job_import.import_run.
+re-measured. The logic is jobs_store.import_run.
 
 Run:
     uv run python scripts/import_run.py logs/fd_pirate_llama
@@ -20,7 +20,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from model_lobotomy.jobs_store import default_jobs_dir as _djd  # noqa: E402
-from model_lobotomy.jobs_store import import_run, job_record  # noqa: E402,F401
+from model_lobotomy.jobs_store import import_run, job_record  # noqa: E402
+
+__all__ = ["import_run", "job_record"]
 DEFAULT_JOBS_DIR = _djd()
 
 def main() -> int:

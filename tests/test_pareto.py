@@ -73,7 +73,7 @@ class FakeLane:
             tag = "base"
         return [f"{tag}|{q}" for q in prompts]
 
-    def judge_many(self, pairs, label):
+    def score_many(self, pairs, label):
         out = []
         for _q, r in pairs:
             tag, q = r.split("|", 1)

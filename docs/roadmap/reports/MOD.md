@@ -219,3 +219,155 @@ reference run after FD. That rerun is out of MOD scope.
 Replay parity (phase 9): static JS parity plus replay HTTP
 checks. Browser DOM parity was not run. No browser tool is
 wired in this session.
+
+## Fix 1: Pareto stage (stacked PR 1)
+
+- `_stage_pareto` now runs `pareto_mod.run_pareto`.
+- It reads `ctx["base"]` from the baseline stage.
+- It emits `pareto` progress and writes `timings["pareto"]`.
+- `_stage_baseline` no longer runs the prompt comparison.
+- The stage comment that called it a placeholder is gone.
+- `pyflakes` is a dev dependency (`pyproject.toml`, `uv.lock`).
+- The pyflakes unit test lands with Fix 3.
+- Fix 3 removes the router undefined names (more than 500 today).
+- A clean full pyflakes run is not possible before Fix 3.
+- Tests: `Ran 737 tests, OK (skipped=5)`. Before: 736 plus this PR's 1 new test in `tests/test_create_stages.py` (the count also reflects PR #31 tests already on develop).
+- Replay: not run. No route or screen changed.
+- Browser: not run. This PR touches no `web/` or router file.
+- Live weights: not run. Unit tests and fakes only.
+
+## Fix 2: Guard port callers (stacked PR 2)
+
+- Every caller in `server.py`, `combine.py`, `trait_eval.py` and
+  `followups.py` uses `get_guard()` plus `screen()` or `confirm()`.
+- Scripts `gate_guard.py`, `parity_llama.py` and `lobot_registry.py`
+  (file: `scripts/lobot_registry.py`) use the same port.
+- `GuardPortVerdict` carries `report` and `screen_reports`.
+- Those fields hold the old JSON shapes, so files do not change.
+- `confirm(screens=[...])` runs full generation on named screens.
+- `confirm(confirmed=True)` runs the always-full confirmed check.
+- The forwarded `check*` methods on `ScreensV2Guard` are gone.
+- The old-style methods on `NoopGuard` are gone.
+- New tests: `tests/test_guard_swap_paths.py` (6 tests).
+- With `LOBOT_GUARD=noop`, they run run/chat/removal/verify (all
+  through `server._verified_guard`), Create, combine, follow-ups
+  and the delete-check guard entry. No path blocks.
+- Tests: `Ran 743 tests, OK (skipped=5)`.
+- Pyflakes on touched files: clean, except one pre-existing
+  re-export in `followups.py`. Fix 4 removes that alias.
+- Full pyflakes: not clean yet. The routers hold the undefined
+  names. Fix 3 removes them.
+- Browser: not run. This PR touches no `web/` or router file.
+- Live weights: not run. Unit tests and fakes only.
+
+## Fix 3: Real router modules (stacked PR 3)
+
+- New modules: `server_state.py`, `server_schemas.py`, `server_helpers.py`.
+- `AppState` in `server_state.py` holds the state as plain fields.
+- `STATE` is that one object. `api.state.app_state` is `STATE`.
+- Request shapes live in `server_schemas.py`.
+- Helpers and stream builders live in `server_helpers.py`.
+- Routers import from those modules. No `_Live`, no `__getattr__`,
+  no `__dict__.update`, no `_delegate` in `server.py` or routers.
+- Routers call helpers as `helpers.<name>()`.
+- Tests patch `STATE` fields and `server.helpers`, not server globals.
+- Pyflakes gate: `tests/test_pyflakes.py` runs pyflakes on `src`
+  and `scripts`. It fails on any finding.
+- `uvx pyflakes src scripts`: clean (612 findings before this series).
+- That cleanup also fixed a real bug: `engine.py` batched `_post`
+  used an undefined `dev`. It now uses `x.device`.
+- It also replaced `app.py` alias globals (`_rung_n`, `_run_lock`,
+  `_model_id`) with `_ENGINE` attributes. Same values.
+- Tests: `Ran 745 tests, OK (skipped=5)`. Count after this PR's runs is recorded in the PR body.
+- Browser: `scripts/ui_walk.py` walks 28 screens in replay mode.
+- It switches the server to Llama first. Zero pageerrors.
+- Page text: identical to a run of the same script against `main`
+  with the same local jobs and drafts (both 28 screens).
+- First main run had 32 screens. The extra screens came from
+  local jobs and drafts that the clean worktree did not share.
+  With the same data, the screen list and text match.
+- Live weights: not run. Replay mode and fakes only.
+
+## Fix 4: Remove the other MOD shims (stacked PR 4)
+
+- `job_import.py` is deleted. Its only callers were docstrings.
+- They now name `jobs_store.import_run`. `AGENTS.md` follows.
+- Lanes: `judge_many` is gone. The method is `score_many`.
+- The `score_many = judge_many` alias line is gone.
+- Callers in `trait_eval.py`, `pareto.py` and the lane tests
+  use `score_many`.
+- `run_trait` docstring: the "pre-MOD" pointer is gone.
+- `guard.py`: the `_SCREEN_DISPLAY` alias is gone.
+- `app.py`: `_ENGINE_ALIASES` and the module `__getattr__` are gone.
+- Its two callers read `engine._ENGINE.model` and `.model_id`.
+- New tests: `tests/test_no_shims.py` (4 tests).
+- Tests: `Ran 749 tests, OK (skipped=5)`.
+- Browser: `scripts/ui_walk.py`, 28 screens, 0 pageerrors.
+- Page text matches the main run with the same data.
+- Live weights: not run. Replay mode and fakes only.
+
+## Fix 5: Guard key shows both steps (stacked PR 5)
+
+- Streams now run the verified guard in two steps.
+- `server_helpers._verified_guard_stream` runs `screen()` first.
+- After the first-token check passes, it emits `guard_full`.
+- Then `confirm()` runs the full-answer check. Same final verdict.
+- The workbench key shows `CHECKING EDITS · FIRST-TOKEN CHECK`.
+- Then it shows `FIRST-TOKEN CHECK PASSED · FULL CHECK RUNNING`.
+- The final result is `CHECK PASSED` or `BLOCKED`. No early pass.
+- `docs/reference/api.md` lists the new `guard_full` stage.
+- The run status line names both steps too.
+- New tests: one stream two-step test, one frontend text test.
+- Stage-sequence tests now expect `guard_full` before generation.
+- Tests: `Ran 751 tests, OK (skipped=5)`.
+- Browser: `scripts/ui_walk.py`, 28 screens, 0 pageerrors.
+- Page text diff against main: one line. The guard key reads
+  `CHECKING EDITS · FIRST-TOKEN CHECK` during the run.
+  That line is this fix. Every other screen matches.
+- Replay mode and fakes only. No weights loaded.
+- Known gap: one earlier suite run failed with one error while
+  an orphan replay server held the GPU slot. I killed that server
+  (I had started it in a walk). The rerun passes: 751, OK.
+
+## Fix 6: New live reference (stacked PR 6)
+
+Real weights. Model lane: MODREF start and end lines are in
+`docs/roadmap/model-lane.md`. Two full Creates ran, one at a time.
+
+App Create (live check): job `pirate-0-20261102-123532-000`.
+Full schedule, pirate, seed 0, prompt comparison on, guard on.
+It finished in 2,984.2 s. Frozen: L16 @ 0.5, gain 0.241.
+Verdict: `blocked`. The enforced guard blocks at the prefill step
+(`min_ratio` 0.185). Its guard numbers match the record-only runs.
+The pareto stage ran on its own: `timings["pareto"]` 921.8 s.
+Pareto verdict: `tradeoff`.
+Browser: the evidence page for this job shows the comparison
+chart (`NO CLEAR WINNER`, dose dial present). Zero pageerrors.
+That check ran on real weights in the live server.
+
+CLI reference (new reference): `logs/modref_pirate`.
+Command: `scripts/run_trait.py --trait pirate --seed 0
+--schedule full --pareto`, guard record-only, torch lane.
+It finished in 3,214.6 s, exit 0. Verdict: `knob`.
+Frozen: L16 @ 0.5, gain 0.241. Eligibility: read and update_up.
+Report cards pass and fail on the same verbs as the MOD live run.
+The update_up trait mean is 0.371 in both runs.
+Pareto verdict: `tradeoff`. Pareto timing: 599.7 s, separate.
+This run is the new live-parity reference. It replaces HEADREF
+(Oct 31), which predates the FD dose rule (`nll+fluency-v1`).
+The MOD spec acceptance 6 now points at MODREF.
+
+One plain gap: the app run and the reference differ in verdict.
+The cause is the guard setting, not the numbers.
+The app run enforced the guard. The reference records it only.
+Frozen, eligibility (read, update_up), cards and guard numbers
+are the same in both.
+
+Replay and fakes: the unit suite and `scripts/ui_walk.py` run
+without weights. Their results are in the PR body.
+- Unit suite after the live runs: `Ran 755 tests, OK (skipped=5)`.
+- `uvx pyflakes src scripts`: clean.
+- Browser after the live runs: `scripts/ui_walk.py`, 30 screens,
+  0 pageerrors. It has two screens more than the main run.
+  The new app job adds its evidence page and dial step.
+  The shelf now lists pirate v5 first. That is the new live job.

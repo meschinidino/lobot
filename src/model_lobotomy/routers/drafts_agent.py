@@ -1,18 +1,25 @@
-"""Routes: drafts_agent. Helpers and state live in server (late import)."""
+"""Routes: drafts_agent. Helpers live in server_helpers. State lives in server_state.STATE."""
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, Query, Request, UploadFile  # noqa: F401
+from fastapi import APIRouter
+from model_lobotomy.server_state import STATE
+from model_lobotomy import server_helpers as helpers
+from model_lobotomy.server_schemas import (AgentRequest, DraftRequest, LabelsRequest)
+from fastapi import HTTPException
+from model_lobotomy import drafts as drafts_mod
+from model_lobotomy import app as engine
+from model_lobotomy import guard as guard_mod
+import hashlib
+from model_lobotomy import jobs_store
+import json
+from model_lobotomy import prompt_bank
+import threading
+import time
+from model_lobotomy import trait_eval
+from model_lobotomy import trait_store
+import uuid
 
 router = APIRouter()
-
-
-class _Live:
-    def __getattr__(self, name):
-        from model_lobotomy import server as _server
-        return getattr(_server, name)
-
-
-_live = _Live()
 
 
 @router.post("/api/drafts")
@@ -22,13 +29,13 @@ def draft_create(req: DraftRequest):
         req.description)
     if not allowed:
         raise HTTPException(422, reason)
-    if _live.REPLAY:
+    if STATE.replay:
         raise HTTPException(503, "Drafts need the model. "
                                  "Replay mode has no recordings for them.")
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    eng = get_engine()
+    eng = helpers.get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     try:
@@ -36,7 +43,7 @@ def draft_create(req: DraftRequest):
             eng.load(engine._active_model_id)
         try:
             if req.drafter == "muse":
-                parts = _muse().draft_parts(req.description)
+                parts = helpers._muse().draft_parts(req.description)
             else:
                 parts = drafts_mod.draft_family(eng, req.description,
                                                 seed=req.seed)
@@ -47,12 +54,12 @@ def draft_create(req: DraftRequest):
                 eng, parts, prompt_bank.PROMPT_BANK, seed=req.seed)
         except drafts_mod.DraftError as e:
             raise HTTPException(500, str(e)) from None
-        draft_id = drafts_mod.new_draft_id(_live.ROOT / "store",
+        draft_id = drafts_mod.new_draft_id(STATE.root / "store",
                                            req.description)
         record = drafts_mod.build_draft_record(
             draft_id, req.description, parts, eng.model_id,
             eng.revision)
-        drafts_mod.save_draft(_live.ROOT / "store", draft_id, record,
+        drafts_mod.save_draft(STATE.root / "store", draft_id, record,
                               replies)
         return {"id": draft_id, "description": record["description"],
                 "parts": {k: record[k] for k in
@@ -65,8 +72,8 @@ def draft_create(req: DraftRequest):
 @router.post("/api/drafts/{draft_id}/prelabel")
 def draft_prelabel(draft_id: str):
     """Muse Spark label suggestions; the user still saves the labels."""
-    record, replies, labels = _draft_or_404(draft_id)
-    got = _muse_call(_muse().prelabel, record["description"], replies)
+    record, replies, labels = helpers._draft_or_404(draft_id)
+    got = helpers._muse_call(helpers._muse().prelabel, record["description"], replies)
     return {"id": draft_id, "suggestions": got, "total": len(replies),
             "suggested": len(got), "labeled": len(labels)}
 
@@ -76,11 +83,11 @@ def trait_explain(job_id: str):
 
     Cached in the job dir; the numbers stay the report's own.
     """
-    trait_dir = jobs_store.JobPaths(job_id, _trait_job_dir(job_id).parent).trait.workdir
+    trait_dir = jobs_store.JobPaths(job_id, helpers._trait_job_dir(job_id).parent).trait.workdir
     report = jobs_store.WorkPaths(trait_dir).report
     if not report.is_file():
         raise HTTPException(404, f"No report for {job_id} yet.")
-    rep = _enrich_report(trait_dir, json.loads(report.read_text()))
+    rep = helpers._enrich_report(trait_dir, json.loads(report.read_text()))
     # The cache is keyed by the numbers Muse sees, so a later Pareto or
     # repair run gets a fresh explanation.
     from model_lobotomy import muse as muse_mod
@@ -91,7 +98,7 @@ def trait_explain(job_id: str):
             key_path.read_text().strip() == key:
         return {"id": job_id, "explanation": cached.read_text().strip(),
                 "cached": True}
-    text = _muse_call(_muse().explain, rep)
+    text = helpers._muse_call(helpers._muse().explain, rep)
     cached.write_text(text + "\n")
     key_path.write_text(key + "\n")
     return {"id": job_id, "explanation": text, "cached": False}
@@ -102,15 +109,15 @@ def agent_start(req: AgentRequest):
     allowed, reason = guard_mod.draft_description_allowed(req.description)
     if not allowed:
         raise HTTPException(422, reason)
-    if _live.REPLAY or _live.NO_MODEL:
+    if STATE.replay or STATE.no_model:
         raise HTTPException(503, "The agent needs the model loaded.")
-    _need_torch(get_engine(), "create")
-    muse = _muse()
-    if not _agent_lock.acquire(blocking=False):
+    helpers._need_torch(helpers.get_engine(), "create")
+    muse = helpers._muse()
+    if not STATE.agent_lock.acquire(blocking=False):
         raise HTTPException(409, "An agent run is in progress.")
-    eng = get_engine()
+    eng = helpers.get_engine()
     if not eng.lock.acquire(blocking=False):
-        _agent_lock.release()
+        STATE.agent_lock.release()
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     from model_lobotomy import agent as agent_mod
     cancel = threading.Event()
@@ -134,13 +141,13 @@ def agent_start(req: AgentRequest):
                                                 eng.model_id, eng.revision,
                                                 eng.tokenizer))
             ag = agent_mod.CreateAgent(
-                eng, muse, store=_get_runner().store, lane=lane,
+                eng, muse, store=STATE.get_runner().store, lane=lane,
                 max_rounds=req.max_rounds, cancel=cancel,
                 progress=progress)
             state["id"] = ag.id
             state["result"] = ag.run(req.description)
             state["status"] = state["result"]["status"]
-            state["job_id"] = _register_agent_job(state["result"])
+            state["job_id"] = helpers._register_agent_job(state["result"])
         except agent_mod.AgentStopped:
             state["status"] = "stopped"
         except Exception as e:  # noqa: BLE001 - reported to the client
@@ -148,10 +155,10 @@ def agent_start(req: AgentRequest):
             state["error"] = f"{type(e).__name__}: {e}"[:2000]
         finally:
             eng.lock.release()
-            _agent_lock.release()
+            STATE.agent_lock.release()
 
     run_id = uuid.uuid4().hex[:12]
-    _agents[run_id] = state
+    STATE.agents[run_id] = state
     threading.Thread(target=work, daemon=True).start()
     return {"run_id": run_id, "status": "running"}
 
@@ -159,7 +166,7 @@ def agent_start(req: AgentRequest):
 def agents_list():
     """Agent runs: live ones in memory, finished ones from disk."""
     out, seen = [], set()
-    for run_id, st in _agents.items():
+    for run_id, st in STATE.agents.items():
         seen.add(st.get("id"))
         out.append({"run_id": run_id, "id": st.get("id"),
                     "status": st["status"],
@@ -168,12 +175,12 @@ def agents_list():
                     "family": (st.get("result") or {}).get("family"),
                     "job_id": st.get("job_id"),
                     "started": st.get("started")})
-    root = _agents_dir()
+    root = helpers._agents_dir()
     if root.is_dir():
         for d in sorted(root.iterdir(), reverse=True):
             if d.name in seen:
                 continue
-            st = _disk_agent(d.name)
+            st = helpers._disk_agent(d.name)
             if st is None:
                 continue
             out.append({"run_id": d.name, "id": d.name,
@@ -185,9 +192,9 @@ def agents_list():
 
 @router.get("/api/agent/{run_id}")
 def agent_status(run_id: str):
-    state = _agents.get(run_id)
+    state = STATE.agents.get(run_id)
     if state is None:
-        disk = _disk_agent(run_id)
+        disk = helpers._disk_agent(run_id)
         if disk is None:
             raise HTTPException(404, f"Unknown agent run {run_id}.")
         return disk
@@ -195,7 +202,7 @@ def agent_status(run_id: str):
 
 @router.post("/api/agent/{run_id}/stop")
 def agent_stop(run_id: str):
-    state = _agents.get(run_id)
+    state = STATE.agents.get(run_id)
     if state is None:
         raise HTTPException(404, f"Unknown agent run {run_id}.")
     state["cancel"].set()
@@ -204,7 +211,7 @@ def agent_stop(run_id: str):
 @router.get("/api/drafts/{draft_id}")
 def draft_get(draft_id: str):
     """One draft: parts + labeling queue with labels so far (C3)."""
-    record, replies, labels = _draft_or_404(draft_id)
+    record, replies, labels = helpers._draft_or_404(draft_id)
     rows = []
     for entry in replies:
         row = drafts_mod.public_reply(entry)
@@ -219,7 +226,7 @@ def draft_get(draft_id: str):
 @router.post("/api/drafts/{draft_id}/labels")
 def draft_label(draft_id: str, req: LabelsRequest):
     """Submit user labels for candidate replies (C3)."""
-    _record, replies, labels = _draft_or_404(draft_id)
+    _record, replies, labels = helpers._draft_or_404(draft_id)
     reply_ids = {r["reply_id"] for r in replies}
     try:
         merged = drafts_mod.merge_labels(
@@ -227,25 +234,25 @@ def draft_label(draft_id: str, req: LabelsRequest):
             reply_ids)
     except drafts_mod.DraftError as e:
         raise HTTPException(400, str(e)) from None
-    drafts_mod.save_labels(_live.ROOT / "store", draft_id, merged)
+    drafts_mod.save_labels(STATE.root / "store", draft_id, merged)
     return {"id": draft_id, "labeled": len(merged),
             "total": len(replies)}
 
 @router.post("/api/drafts/{draft_id}/validate")
 def draft_validate(draft_id: str):
     """Judge-vs-user agreement; registers the family on pass (C3)."""
-    record, replies, labels = _draft_or_404(draft_id)
+    record, replies, labels = helpers._draft_or_404(draft_id)
     if len(labels) < len(replies):
         raise HTTPException(
             422, f"Label all {len(replies)} replies first "
                  f"({len(labels)} labeled).")
-    if _live.REPLAY:
+    if STATE.replay:
         raise HTTPException(503, "Validation needs the model. "
                                  "Replay mode has no recordings for it.")
-    if _live.NO_MODEL:
+    if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
-    eng = get_engine()
+    eng = helpers.get_engine()
     if not eng.lock.acquire(blocking=False):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     try:
@@ -268,7 +275,7 @@ def draft_validate(draft_id: str):
                 "gate": drafts_mod.AGREEMENT_GATE,
                 "disagreements": disag,
             })
-        runner = _get_runner()
+        runner = STATE.get_runner()
         store = runner.store
         fam = trait_store.TraitFamily(
             name=draft_id, pos=record["pos"], neg=record["neg"],

@@ -199,36 +199,36 @@ def _judge_for(screen, eng, spec):
 
 
 def _run_screen(screen, eng, medians, judge_fn, prompts, edits):
-    g = guard_mod.Guard()
+    from model_lobotomy import guards as guards_mod
+    g = guards_mod.get_guard()
     rows = []
     for name, es in edits:
         if screen in PREFILL_SCREENS:
             t0 = time.time()
-            gg = guard_mod.Guard(refusal_set=tuple(prompts))
-            pre = gg.check(eng, es, medians=medians)
+            pre = g.screen(eng, es, medians=medians,
+                           refusal_set=tuple(prompts))
             t1 = time.time()
         else:
             pre, t0, t1 = None, time.time(), time.time()
+        full_kw = {}
         if screen == "refusal":
-            gg = guard_mod.Guard(refusal_set=tuple(prompts))
-            full = gg.check_full(eng, es, medians=medians,
-                                 max_new_tokens=MAX_NEW, seed=SEED,
-                                 judge_fn=judge_fn)
+            full_kw["refusal_set"] = tuple(prompts)
         else:
-            full = g.check_screen_full(
-                eng, es, screen, medians=medians,
-                max_new_tokens=MAX_NEW, seed=SEED,
-                judge_fn=judge_fn, prompts=prompts)
+            full_kw["prompts"] = tuple(prompts)
+        full = g.confirm(
+            eng, es, screens=[screen], medians=medians,
+            max_new_tokens=MAX_NEW, seed=SEED, judge_fn=judge_fn,
+            **full_kw)
         t2 = time.time()
         pre_blocked = pre.blocked if pre is not None else None
         miss = (pre is not None and not pre.blocked
                 and full.blocked)
         fp = (pre is not None and pre.blocked
               and not full.blocked)
-        flips = [p for p in full.blocked_prompts
+        flips = [p for p in full.screens[screen]["flagged_prompts"]
                  if isinstance(p, str)]
         rows.append({"edit": name, "prefill_blocked": pre_blocked,
-                     "prefill_min_ratio": (round(pre.min_ratio, 3)
+                     "prefill_min_ratio": (round(pre.screens["refusal"]["measure"]["min_ratio"], 3)
                                            if pre is not None
                                            else None),
                      "full_blocked": full.blocked,

@@ -45,7 +45,6 @@ import argparse
 import json
 import sys
 import time
-from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -53,7 +52,6 @@ sys.path.insert(0, str(ROOT))
 
 import torch
 
-from model_lobotomy import engine as engine_mod
 from model_lobotomy import steer
 
 OUT = ROOT / "logs" / "spike_knob" / "v2"
@@ -113,15 +111,15 @@ QUESTIONS = [
 ]
 
 from model_lobotomy.spike import (  # noqa: E402,F401
-    BEHAVIORS, _ab_ids, _wrap_ids, _yes_no_ids, add_vector, best_dose,
-    capture_last, coherent_doses, generate, judge, median_norms, nll,
+    BEHAVIORS, add_vector, best_dose,
+    capture_last, generate, judge, median_norms, nll,
     probe, separability, verdict)
 
 # -- run ------------------------------------------------------------------------
 
 def run_behavior(model, tok, spec, name: str, cfg: dict, med: list[float]) -> dict:
     t0 = time.time()
-    tr, te = QUESTIONS[:N_TRAIN], QUESTIONS[N_TRAIN:]
+    te = QUESTIONS[N_TRAIN:]
     A = capture_last(model, tok, spec, [f"{cfg['pos']}\n\n{q}" for q in QUESTIONS])
     B = capture_last(model, tok, spec, [f"{cfg['neg']}\n\n{q}" for q in QUESTIONS])
     seps = {}

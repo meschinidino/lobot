@@ -51,11 +51,12 @@ def cmd_guard(args) -> int:
     edits = engine_mod.EditSet(vector=(engine_mod.VectorEdit(
         int(meta["layer"]), unit, float(meta["scale"]),
         float(meta["dose"])),))
-    v = guard_mod.Guard().check_confirmed(
+    from model_lobotomy import guards as guards_mod
+    v = guards_mod.get_guard().confirm(
         eng, edits, medians={}, max_new_tokens=24,
         seed=(meta.get("recipe") or {}).get("seed", 0),
-        judge_fn=guard_mod.refusal_judge_fn(eng))
-    record = {**guard_mod.verdict_dict(v), "enforced": False,
+        judge_fn=guard_mod.refusal_judge_fn(eng), confirmed=True)
+    record = {**v.report, "enforced": False,
               "research_mode": False, "confirmed": True}
     out = Path(args.out or str(Path(args.patch).with_suffix(""))
                + ".guarded.lobot")
@@ -67,10 +68,10 @@ def cmd_guard(args) -> int:
         fingerprint=meta.get("fingerprint") or {},
         scale=meta.get("scale"))
     audit.record("guard", path=str(out), would_block=v.would_block,
-                 screens=sorted(n for n, _ in v.screens))
+                 screens=sorted(v.screens))
     _print({"out": str(out), "would_block": v.would_block,
-            "flagged_by": sorted(n for n, sc in v.screens
-                                 if sc.blocked or sc.would_block)})
+            "flagged_by": sorted(n for n, sc in v.screens.items()
+                                 if sc["blocked"] or sc["would_block"])})
     return 0
 
 

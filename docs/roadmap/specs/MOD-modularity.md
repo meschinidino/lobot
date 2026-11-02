@@ -136,9 +136,11 @@ keeps its rule (publish only `verified` and not flagged).
    as before. Compare the page text before and after phase 9.
 6. **Live parity, once, at the end** (model slot). One full-schedule
    torch Create for pirate, seed 0. The verdict, layer, dose and
-   eligibility equal the torch reference run (`HEADREF` in
-   `docs/roadmap/model-lane.md`). The report cards match within the
-   reference's own bootstrap intervals.
+   eligibility equal the torch reference run (MODREF,
+   `logs/modref_pirate`, recorded 2026-11-02 in
+   `docs/roadmap/model-lane.md`; it replaces the Oct 31 HEADREF,
+   which predates the FD dose rule). The report cards match within
+   the reference's own bootstrap intervals.
 7. A report in `docs/roadmap/reports/MOD.md` with each phase's diff size,
    test counts and the parity results.
 

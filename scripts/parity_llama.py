@@ -8,7 +8,7 @@ unloads, then llama runs the same prompts x editsets. Compares:
   with torch logit gap < 0.5 (near-tie).
 - Prefill per prompt x editset: full-vocab cosine >= 0.999,
   same top-1, refusal-starter |d| <= 0.01 (F16 strict bars).
-- Guard().check verdicts on 3 neuron doses (0/1/2): identical.
+- Guard screen() verdicts on 3 neuron doses (0/1/2): identical.
 - Speed: median of 5 baseline runs (TTFT, tok/s) + cvec build ms.
 
 --quant q8_0 switches to the loose bars (baseline prefill top-1
@@ -39,6 +39,7 @@ sys.path.insert(0, str(ROOT))
 
 from model_lobotomy import engine as engine_mod  # noqa: E402
 from model_lobotomy import guard as guard_mod  # noqa: E402
+from model_lobotomy import guards as guards_mod  # noqa: E402
 from model_lobotomy import llama_backend as lb  # noqa: E402
 from model_lobotomy import patch as patch_mod  # noqa: E402
 from model_lobotomy import steer  # noqa: E402
@@ -201,11 +202,11 @@ def main() -> int:
         for dose in GUARD_DOSES:
             es = engine_mod.EditSet(neuron=(
                 engine_mod.NeuronEdit(nlayer, nneuron, dose),))
-            gv = guard_mod.Guard().check(
+            gv = guards_mod.get_guard().screen(
                 teng, es, medians=medians)
             torch_guard.append(
                 {"dose": dose, "blocked": gv.blocked,
-                 "min_ratio": gv.min_ratio,
+                 "min_ratio": gv.screens["refusal"]["measure"]["min_ratio"],
                  "would_block": gv.would_block})
         torch_speed = []
         for _ in range(SPEED_REPS):
@@ -252,11 +253,11 @@ def main() -> int:
         for dose in GUARD_DOSES:
             es = engine_mod.EditSet(neuron=(
                 engine_mod.NeuronEdit(nlayer, nneuron, dose),))
-            gv = guard_mod.Guard().check(
+            gv = guards_mod.get_guard().screen(
                 leng, es, medians=medians)
             llama_guard.append(
                 {"dose": dose, "blocked": gv.blocked,
-                 "min_ratio": gv.min_ratio,
+                 "min_ratio": gv.screens["refusal"]["measure"]["min_ratio"],
                  "would_block": gv.would_block})
         llama_speed = []
         for _ in range(SPEED_REPS):

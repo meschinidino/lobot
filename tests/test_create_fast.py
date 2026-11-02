@@ -134,9 +134,9 @@ class SchedulePlumbingTest(unittest.TestCase):
         runner = create_job.CreateRunner(
             jobs_dir=self.jobs, store=_validated_store(self.tmp.name),
             engine=FakeRunnerEngine(), run_trait_fn=fn)
-        server._runner = runner
-        self.addCleanup(setattr, server, "_runner", None)
-        nomodel = mock.patch.object(server, "NO_MODEL", False)
+        server.STATE.runner = runner
+        self.addCleanup(setattr, server.STATE, "runner", None)
+        nomodel = mock.patch.object(server.STATE, "no_model", False)
         nomodel.start()
         self.addCleanup(nomodel.stop)
         client = TestClient(server.api)

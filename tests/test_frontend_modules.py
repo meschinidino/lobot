@@ -14,6 +14,12 @@ class FrontendTest(unittest.TestCase):
         for fp in sorted((WEB/"js").rglob("*.js")):
             r=subprocess.run(["node","--check",str(fp)], capture_output=True, text=True)
             self.assertEqual(r.returncode,0, f"{fp}: {r.stderr}")
+    def test_guard_key_shows_both_steps(self):
+        run=(WEB/"js"/"screens"/"run.js").read_text()
+        self.assertIn("FIRST-TOKEN CHECK PASSED · FULL CHECK RUNNING", run)
+        self.assertIn("CHECKING EDITS · FIRST-TOKEN CHECK", run)
+        self.assertIn("CHECK PASSED", run)
+        self.assertIn("guard_full", run)
     def test_no_inline_script_or_style(self):
         html=(WEB/"index.html").read_text()
         self.assertNotIn("<style>", html)

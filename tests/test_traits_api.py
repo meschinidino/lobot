@@ -80,8 +80,8 @@ class TraitsApiTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.jobs_dir = Path(self.tmp.name) / "jobs"
         self.jobs_dir.mkdir()
-        server._runner = create_job.CreateRunner(jobs_dir=self.jobs_dir)
-        self.addCleanup(setattr, server, "_runner", None)
+        server.STATE.runner = create_job.CreateRunner(jobs_dir=self.jobs_dir)
+        self.addCleanup(setattr, server.STATE, "runner", None)
         self.client = TestClient(server.api)
 
     def test_traits_lists_only_done_jobs(self):
@@ -261,9 +261,9 @@ class TraitsApiTest(unittest.TestCase):
         for bid in ["../x", "/abs", "a/b", "", "nope"]:
             with self.subTest(helper=bid):
                 with self.assertRaises(HTTPException) as ctx:
-                    server._trait_job_dir(bid)
+                    server.helpers._trait_job_dir(bid)
                 self.assertEqual(ctx.exception.status_code, 404)
-        self.assertEqual(server._trait_job_dir(job_id),
+        self.assertEqual(server.helpers._trait_job_dir(job_id),
                          self.jobs_dir / job_id)
 
 

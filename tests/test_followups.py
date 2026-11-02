@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from model_lobotomy import create_job  # noqa: E402
 from model_lobotomy import followups  # noqa: E402
+from model_lobotomy import jobs_store  # noqa: E402
 from model_lobotomy import patch as patch_mod  # noqa: E402
 from model_lobotomy import server  # noqa: E402
 from model_lobotomy import trait_eval  # noqa: E402
@@ -163,8 +164,8 @@ class FollowupRunnerTest(unittest.TestCase):
             self.runner.start("j", "nope", self.dir, MODEL)
         with self.assertRaises(ValueError):
             followups.repair_job(None, self.dir, method="nope")
-        self.assertEqual(followups.repair_stem("project"), "repair")
-        self.assertEqual(followups.repair_stem("gradient"),
+        self.assertEqual(jobs_store.repair_stem("project"), "repair")
+        self.assertEqual(jobs_store.repair_stem("gradient"),
                          "repair_gradient")
 
 
@@ -177,10 +178,10 @@ class ReportRoutesTest(unittest.TestCase):
         rep = write_run(self.jobs / self.job_id / "trait")
         (self.jobs / self.job_id / "job.json").write_text(json.dumps(
             import_run.job_record(self.job_id, rep, 1793300000.0)))
-        server._runner = create_job.CreateRunner(jobs_dir=self.jobs)
-        self.addCleanup(setattr, server, "_runner", None)
-        server._followups = followups.FollowupRunner(FakeEng())
-        self.addCleanup(setattr, server, "_followups", None)
+        server.STATE.runner = create_job.CreateRunner(jobs_dir=self.jobs)
+        self.addCleanup(setattr, server.STATE, "runner", None)
+        server.STATE.followups = followups.FollowupRunner(FakeEng())
+        self.addCleanup(setattr, server.STATE, "followups", None)
         self.client = TestClient(server.api)
 
     def trait_dir(self):
@@ -208,7 +209,7 @@ class ReportRoutesTest(unittest.TestCase):
             "repair": None})
 
     def test_start_needs_weights(self):
-        with mock.patch.object(server, "REPLAY", True):
+        with mock.patch.object(server.STATE, "replay", True):
             r = self.client.post(f"/api/traits/{self.job_id}/pareto")
         self.assertEqual(r.status_code, 503)
 
@@ -220,10 +221,10 @@ class ReportRoutesTest(unittest.TestCase):
             (Path(workdir) / "repair_gradient.json").write_text(
                 json.dumps({"status": "repaired", **kw}))
 
-        server._followups = followups.FollowupRunner(
+        server.STATE.followups = followups.FollowupRunner(
             FakeEng(), repair_fn=fake, pareto_fn=fake)
-        with mock.patch.object(server, "NO_MODEL", False), \
-                mock.patch.object(server, "REPLAY", False):
+        with mock.patch.object(server.STATE, "no_model", False), \
+                mock.patch.object(server.STATE, "replay", False):
             r = self.client.post(f"/api/traits/{self.job_id}/repair",
                                  json={"method": "gradient"})
             self.assertEqual(r.status_code, 200, r.text)
@@ -238,8 +239,8 @@ class ReportRoutesTest(unittest.TestCase):
         self.assertEqual(res["result"]["gradient"]["method"], "gradient")
 
     def test_bad_method_and_unknown_job(self):
-        with mock.patch.object(server, "NO_MODEL", False), \
-                mock.patch.object(server, "REPLAY", False):
+        with mock.patch.object(server.STATE, "no_model", False), \
+                mock.patch.object(server.STATE, "replay", False):
             r = self.client.post(f"/api/traits/{self.job_id}/repair",
                                  json={"method": "nope"})
         self.assertEqual(r.status_code, 422)
@@ -310,21 +311,21 @@ class AgentJobsTest(unittest.TestCase):
                       "steps": [{"step": "draft"}]}
             (jobs / "agents" / aid / "agent.json").write_text(
                 json.dumps(result))
-            server._runner = create_job.CreateRunner(jobs_dir=jobs)
-            self.addCleanup(setattr, server, "_runner", None)
+            server.STATE.runner = create_job.CreateRunner(jobs_dir=jobs)
+            self.addCleanup(setattr, server.STATE, "runner", None)
             client = TestClient(server.api)
             (row,) = client.get("/api/agents").json()["agents"]
             self.assertEqual((row["id"], row["status"], row["job_id"]),
                              (aid, "done", None))
-            job_id = server._register_agent_job(result)
+            job_id = server.helpers._register_agent_job(result)
             self.assertEqual(job_id, f"pirate-agent-{aid}")
-            self.assertEqual(server._register_agent_job(result), job_id)
+            self.assertEqual(server.helpers._register_agent_job(result), job_id)
             st = client.get(f"/api/agent/{aid}").json()
             self.assertEqual((st["job_id"], len(st["steps"])), (job_id, 1))
             ids = [t["id"] for t in client.get("/api/traits").json()["traits"]]
             self.assertIn(job_id, ids)
             self.assertEqual(client.get("/api/agent/../x").status_code, 404)
-            self.assertIsNone(server._register_agent_job(
+            self.assertIsNone(server.helpers._register_agent_job(
                 {"agent_id": aid, "workdir": str(Path(tmp) / "none")}))
 
 
@@ -343,8 +344,8 @@ class StreamCloseTest(unittest.TestCase):
     def test_disconnect_closes_generator_and_releases_lock(self):
         import asyncio
         lock, log = threading.Lock(), []
-        server._cancel.clear()
-        resp = server._ndjson(self._gen(lock, log))
+        server.STATE.cancel.clear()
+        resp = server.helpers._ndjson(self._gen(lock, log))
 
         async def leave_early():
             it = resp.body_iterator
@@ -354,18 +355,18 @@ class StreamCloseTest(unittest.TestCase):
         asyncio.run(leave_early())
         self.assertEqual(log, ["closed"])
         self.assertFalse(lock.locked())
-        self.assertTrue(server._cancel.is_set())
-        server._cancel.clear()
+        self.assertTrue(server.STATE.cancel.is_set())
+        server.STATE.cancel.clear()
 
     def test_normal_end_does_not_cancel(self):
         import asyncio
         lock, log = threading.Lock(), []
-        server._cancel.clear()
-        resp = server._ndjson(self._gen(lock, log))
+        server.STATE.cancel.clear()
+        resp = server.helpers._ndjson(self._gen(lock, log))
 
         async def read_all():
             return [c async for c in resp.body_iterator]
 
         self.assertEqual(len(asyncio.run(read_all())), 2)
         self.assertFalse(lock.locked())
-        self.assertFalse(server._cancel.is_set())
+        self.assertFalse(server.STATE.cancel.is_set())

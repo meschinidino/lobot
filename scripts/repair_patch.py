@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from model_lobotomy import followups  # noqa: E402
+from model_lobotomy import jobs_store  # noqa: E402
 from model_lobotomy import trait_eval  # noqa: E402
 from model_lobotomy.engine import get_engine  # noqa: E402
 
@@ -48,7 +49,7 @@ def main() -> int:
     log(f"status={out['status']} flagged={out.get('flagged')} "
         f"chosen={(out.get('chosen') or {}).get('method')}"
         f"@{(out.get('chosen') or {}).get('factor')}")
-    stem = followups.repair_stem(args.method)
+    stem = jobs_store.repair_stem(args.method)
     log(f"wrote {Path(args.jobdir) / f'{stem}.json'}")
     return 0
 
