@@ -118,3 +118,5 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-11-01 20:33 ET  claude  UX3  meta-llama/Llama-3.2-3B-Instruct  end  removal view (noir) and labeling with Muse suggestions done
 2026-11-02 00:32 ET  muse  MOD  meta-llama/Llama-3.2-3B-Instruct  start  live parity: torch Create pirate seed 0 full schedule vs HEADREF
 2026-11-02 01:28 ET  muse  MOD  meta-llama/Llama-3.2-3B-Instruct  end  live parity pirate seed 0: knob L16@0.5, matches FD ref; HEADREF stale (pre-FD rule)
+2026-11-02 08:38 ET  claude  V1  meta-llama/Llama-3.2-3B-Instruct  start  demo video recording (live server, Playwright)
+2026-11-02 09:09 ET  claude  V1  meta-llama/Llama-3.2-3B-Instruct  end  demo video recorded (hook, storm guard block, cowboy fork, evidence, share)
