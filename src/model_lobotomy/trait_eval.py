@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-import os
 import re
 import statistics
 import sys
@@ -1337,9 +1336,6 @@ def _stage_final(ctx):
 
 def _stage_baseline(ctx):
     eng, spec, cfg, tun, fin, out, cancel, progress, params, base_cache, lane, timings = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["tun"], ctx["fin"], ctx["out"], ctx["cancel"], ctx["progress"], ctx["params"], ctx["base_cache"], ctx["lane"], ctx["timings"])
-    frozen_layer, frozen_unit, frozen_dose = ctx["frozen_layer"], ctx["frozen_unit"], ctx["frozen_dose"]
-    med, pareto = ctx["med"], ctx["pareto_flag"]
-    max_new = params["gen_tokens"]
     t_stage = time.time()
     base = baseline_top1(eng, spec, cfg, cfg["judge"], tun, fin,
                          cancel=cancel, progress=progress, params=params,
@@ -1354,26 +1350,31 @@ def _stage_baseline(ctx):
         "card": _json_card(base_card)}
     out["early_stop"]["prompt_baseline"] = {
         "n": base["n"], "stopped_early": base["stopped_early"]}
-    if pareto:
-        t_stage = time.time()
-        out["pareto"] = pareto_mod.run_pareto(
-            lane, cfg["judge"], fin, layer=frozen_layer, unit=frozen_unit,
-            scale=med[frozen_layer], frozen_dose=frozen_dose,
-            instruction=base["top"], max_new=max_new,
-            base_cache=base_cache, cancel=cancel, progress=progress)
-        timings["pareto"] = round(time.time() - t_stage, 1)
     ctx["base"] = base
     return ctx
 
 
 def _stage_pareto(ctx):
-    # Pareto runs inside the baseline block when the job asks for it.
+    if not ctx["pareto_flag"]:
+        return ctx
+    cfg, fin, out, cancel, progress, params, base_cache, lane, timings = (ctx["cfg"], ctx["fin"], ctx["out"], ctx["cancel"], ctx["progress"], ctx["params"], ctx["base_cache"], ctx["lane"], ctx["timings"])
+    frozen_layer, frozen_unit, frozen_dose = ctx["frozen_layer"], ctx["frozen_unit"], ctx["frozen_dose"]
+    med, base = ctx["med"], ctx["base"]
+    t_stage = time.time()
+    if progress is not None:
+        progress("pareto", 0, 1)
+    out["pareto"] = pareto_mod.run_pareto(
+        lane, cfg["judge"], fin, layer=frozen_layer, unit=frozen_unit,
+        scale=med[frozen_layer], frozen_dose=frozen_dose,
+        instruction=base["top"], max_new=params["gen_tokens"],
+        base_cache=base_cache, cancel=cancel, progress=progress)
+    timings["pareto"] = round(time.time() - t_stage, 1)
     return ctx
 
 
 def _stage_guard(ctx):
-    eng, spec, cfg, frozen, med, out, progress, timings, seed = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["frozen"], ctx["med"], ctx["out"], ctx["progress"], ctx["timings"], ctx["seed"])
-    guard, research_mode, cards, base_cache = ctx["guard_flag"], ctx["research_mode"], ctx["cards"], ctx["base_cache"]
+    eng, frozen, med, out, progress, timings, seed = (ctx["eng"], ctx["frozen"], ctx["med"], ctx["out"], ctx["progress"], ctx["timings"], ctx["seed"])
+    guard, research_mode, base_cache = ctx["guard_flag"], ctx["research_mode"], ctx["base_cache"]
     t_stage = time.time()
     if progress is not None:
         progress("guard", 0, 1)
@@ -1400,7 +1401,7 @@ def _stage_guard(ctx):
 
 
 def _stage_verdict(ctx):
-    eng, spec, trait_name, seed, workdir, out, timings, frozen, med, fin, t0 = (ctx["eng"], ctx["spec"], ctx["trait_name"], ctx["seed"], ctx["workdir"], ctx["out"], ctx["timings"], ctx["frozen"], ctx["med"], ctx["fin"], ctx["t0"])
+    trait_name, seed, workdir, out, frozen, med, fin, t0 = (ctx["trait_name"], ctx["seed"], ctx["workdir"], ctx["out"], ctx["frozen"], ctx["med"], ctx["fin"], ctx["t0"])
     cards, gv = ctx["cards"], ctx["gv"]
     cfg = ctx["cfg"]
     elig = eligible_verbs(out["read_gate"]["pass"], cards)
