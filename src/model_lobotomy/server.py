@@ -22,6 +22,8 @@ if __name__ == "__main__":
     from model_lobotomy.config import load_env_file
     _ENV_SET = load_env_file()
 
+import re
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -40,6 +42,7 @@ from model_lobotomy.routers import (
     run as _r_run,
     tune as _r_tune,
 )
+from model_lobotomy.config import get_settings
 from model_lobotomy.server_state import STATE
 
 api = FastAPI(title="lobot", docs_url=None, redoc_url=None)
@@ -88,14 +91,43 @@ class SameOriginOnly:
             if origin is not None:
                 host = headers.get("host", "")
                 own = f"{scope.get('scheme', 'http')}://{host}".lower().rstrip("/")
-                if origin.strip().lower().rstrip("/") != own or _hostname(host) not in LOOPBACK_HOSTS:
+                # The public demo serves a real host name; its read-only
+                # list (PublicDemoOnly) is what keeps POSTs harmless there.
+                local = _hostname(host) in LOOPBACK_HOSTS or get_settings().public_demo
+                if origin.strip().lower().rstrip("/") != own or not local:
                     response = JSONResponse({"detail": "Cross-origin POST rejected."}, status_code=403)
                     await response(scope, receive, send)
                     return
         await self.app(scope, receive, send)
 
 
+# POSTs a public demo may answer: recorded runs and cached Muse results.
+# Everything else writes, loads a model or calls a paid API.
+PUBLIC_POSTS = re.compile(
+    r"^/api/(run|stop|chat/replay|traits/[^/]+/(explain|second-opinion))$")
+
+
+class PublicDemoOnly:
+    """With LOBOT_PUBLIC_DEMO=1, answer 403 to POSTs outside PUBLIC_POSTS."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if (scope["type"] == "http" and scope["method"] in ("POST", "PUT", "PATCH", "DELETE")
+                and get_settings().public_demo
+                and not PUBLIC_POSTS.match(scope["path"])):
+            response = JSONResponse(
+                {"detail": "This public demo is read-only. Run lobot on "
+                           "your own computer to use this feature."},
+                status_code=403)
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 api.add_middleware(SameOriginOnly)
+api.add_middleware(PublicDemoOnly)
 
 for _r in (_r_run, _r_create, _r_evidence, _r_drafts, _r_chat,
            _r_install, _r_reader, _r_tune):
@@ -106,7 +138,19 @@ for _r in (_r_run, _r_create, _r_evidence, _r_drafts, _r_chat,
 api.mount("/", StaticFiles(directory=STATE.web, html=True), name="web")
 
 
+def check_public_demo(settings) -> None:
+    """Refuse to start a public demo that could write or spend credits."""
+    if not settings.public_demo:
+        return
+    if not settings.replay:
+        raise SystemExit("[server] LOBOT_PUBLIC_DEMO=1 needs MODEL_LOBOTOMY_REPLAY=1.")
+    if settings.meta_api_key:
+        raise SystemExit("[server] LOBOT_PUBLIC_DEMO=1 must run without META_API_KEY. "
+                         "Cached Muse results still show.")
+
+
 if __name__ == "__main__":
+    check_public_demo(get_settings())
     if STATE.replay:
         print(f"[server] REPLAY set: no weights; {len(helpers._recordings())} recorded runs "
               "answer /api/run", flush=True)
@@ -119,5 +163,4 @@ if __name__ == "__main__":
     m = helpers._meta_api()
     print(f"[server] Meta API: {'on, ' + m['model'] if m['key'] else 'off (set META_API_KEY in .env)'}"
           f"{' (from .env)' if 'META_API_KEY' in _ENV_SET else ''}", flush=True)
-    from model_lobotomy.config import get_settings
-    uvicorn.run(api, host="127.0.0.1", port=get_settings().port)
+    uvicorn.run(api, host=get_settings().host, port=get_settings().port)

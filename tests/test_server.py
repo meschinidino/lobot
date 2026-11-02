@@ -335,6 +335,67 @@ class SameOriginTest(unittest.TestCase):
         self.assertEqual(server._hostname("LocalHost"), "localhost")
 
 
+class PublicDemoTest(unittest.TestCase):
+    """LOBOT_PUBLIC_DEMO=1: a real host name, read-only POSTs, no key, replay only."""
+
+    HOST = "https://lobot-demo.hf.space"
+
+    def setUp(self):
+        env = mock.patch.dict(os.environ, {"LOBOT_PUBLIC_DEMO": "1"})
+        env.start()
+        self.addCleanup(env.stop)
+        self.client = TestClient(server.api, base_url=self.HOST)
+
+    def _read_only(self, r):
+        return r.status_code == 403 and "read-only" in r.json().get("detail", "")
+
+    def test_write_posts_rejected(self):
+        for path, body in (("/api/model", {"model_id": "Qwen/Qwen3.5-4B"}),
+                           ("/api/drafts", {"description": "x"}),
+                           ("/api/create", {}), ("/api/tune", {}),
+                           ("/api/agent", {}), ("/api/install", {})):
+            r = self.client.post(path, json=body, headers={"Origin": self.HOST})
+            self.assertTrue(self._read_only(r), f"{path}: {r.status_code} {r.text}")
+
+    def test_read_only_posts_pass(self):
+        # Past both middlewares: the route answers, whatever its own status.
+        for path in ("/api/run", "/api/traits/none/explain",
+                     "/api/traits/none/second-opinion"):
+            r = self.client.post(path, json={}, headers={"Origin": self.HOST})
+            self.assertFalse(self._read_only(r), f"{path}: {r.text}")
+            self.assertNotIn("Cross-origin", r.text)
+
+    def test_gets_pass(self):
+        r = self.client.get("/api/state")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["public_demo"])
+
+    def test_muse_never_called(self):
+        # Even with a key in the environment, the demo serves saved answers only.
+        with mock.patch.dict(os.environ, {"META_API_KEY": "k"}):
+            with self.assertRaises(server.helpers.HTTPException) as cm:
+                server.helpers._muse()
+        self.assertEqual(cm.exception.status_code, 503)
+        self.assertIn("saved Muse Spark", cm.exception.detail)
+
+    def test_cross_origin_still_rejected(self):
+        r = self.client.post("/api/run", json={}, headers={"Origin": "https://evil.test"})
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertIn("Cross-origin", r.json()["detail"])
+
+    def test_start_check(self):
+        from model_lobotomy.config import load_settings
+        server.check_public_demo(load_settings({}))
+        server.check_public_demo(load_settings(
+            {"LOBOT_PUBLIC_DEMO": "1", "MODEL_LOBOTOMY_REPLAY": "1"}))
+        with self.assertRaises(SystemExit):
+            server.check_public_demo(load_settings({"LOBOT_PUBLIC_DEMO": "1"}))
+        with self.assertRaises(SystemExit):
+            server.check_public_demo(load_settings(
+                {"LOBOT_PUBLIC_DEMO": "1", "MODEL_LOBOTOMY_REPLAY": "1",
+                 "META_API_KEY": "k"}))
+
+
 class ReplayModeTest(unittest.TestCase):
     """Replay mode answers recorded setups only, with the run contract and no weights."""
 

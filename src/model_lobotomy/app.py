@@ -28,6 +28,7 @@ import gradio as gr
 
 from model_lobotomy import engine as engine_mod
 from model_lobotomy import steer
+from model_lobotomy.config import get_settings
 from model_lobotomy.steer import RecipeRow
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -54,7 +55,11 @@ _PRESETS = _load_presets()
 # Warm engine state lives in the Engine (D2); this module keeps UI state.
 _ENGINE = engine_mod.get_engine()
 _last_artifact: str = ""
-_active_model_id: str = steer.MODEL_ID  # Qwen default; dropdown switches
+# LOBOT_MODEL picks the startup model (Qwen when unset); the dropdown switches.
+_active_model_id: str = get_settings().model or steer.MODEL_ID
+if _active_model_id not in _PRESETS:
+    raise SystemExit(f"LOBOT_MODEL={_active_model_id} is not a preset. "
+                     f"Supported: {', '.join(sorted(_PRESETS))}.")
 
 
 

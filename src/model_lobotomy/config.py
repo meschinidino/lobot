@@ -18,6 +18,9 @@ from pathlib import Path
 # (name, default text as documented) for every variable lobot reads.
 ENV_VARS = (
     ("PORT", "7860"),
+    ("LOBOT_HOST", "127.0.0.1"),
+    ("LOBOT_PUBLIC_DEMO", "off"),
+    ("LOBOT_MODEL", "Qwen/Qwen3.5-4B"),
     ("MODEL_LOBOTOMY_REPLAY", "off"),
     ("MODEL_LOBOTOMY_REPLAY_STAGE_S", "0.4"),
     ("MODEL_LOBOTOMY_NO_MODEL", "off"),
@@ -57,6 +60,9 @@ def _gpu_slots(raw: str | None) -> int:
 @dataclass(frozen=True)
 class Settings:
     port: int = 7860
+    host: str = "127.0.0.1"
+    public_demo: bool = False
+    model: str = ""
     replay: bool = False
     replay_stage_s: float = 0.4
     no_model: bool = False
@@ -92,6 +98,9 @@ def load_settings(env=None) -> Settings:
     home = Path(get("LOBOT_HOME", Path.home() / ".lobot"))
     return Settings(
         port=int(get("PORT", 7860)),
+        host=get("LOBOT_HOST", "127.0.0.1"),
+        public_demo=get("LOBOT_PUBLIC_DEMO") == "1",
+        model=get("LOBOT_MODEL", ""),
         replay=bool(get("MODEL_LOBOTOMY_REPLAY")),
         replay_stage_s=float(get("MODEL_LOBOTOMY_REPLAY_STAGE_S", "0.4")),
         no_model=bool(get("MODEL_LOBOTOMY_NO_MODEL")),
