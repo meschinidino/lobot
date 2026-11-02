@@ -201,6 +201,8 @@ function tuneSection(R, id) {
   }).join("");
   return `${head}${x.busy ? `<p class="meta">Tuning. Each try runs 8 tuning prompts, plain and edited.</p>` : ""}${x.err ? `<p class="meta" style="color:var(--error)">${esc(x.err)}</p>` : ""}
     ${rows ? `<ol class="ruled screens">${rows}</ol>` : ""}${x.summary ? `<div class="explain"><p>${esc(x.summary).replace(/\n/g, "<br>")}</p></div><p class="meta">Final summary by Muse Spark. The local judge and the guard decided the verdict.</p>` : ""}`;
+}
+
 // Second opinion: Muse Spark re-scores the turn-up pairs. The local judge still gates the verdict.
 const opinions = {};
 function secondOpinionSection(R, id) {
