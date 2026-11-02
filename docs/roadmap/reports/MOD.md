@@ -150,6 +150,25 @@ as before. Its stage entry is a no-op placeholder in the loop.
 Tests: before 726, after 729 (`OK, skipped=5`). New: 3 tests.
 Parity: replay and live not run in this phase. Same routes.
 
-## Phases 9 to 10
+## Phase 9: Frontend modules
 
-Not started. Each phase gets its own branch and pull request.
+- CSS moves to `web/css/app.css`. It is byte-identical.
+- JS moves to native ES modules, no build step:
+  `js/api.js`, `js/state.js`, `js/components/` (dial, chart,
+  legend, strip) and `js/screens/` (workbench, evidence, library,
+  new-behavior, agent, labeling, chat, run, share, pages).
+- `web/index.html` now loads `css/app.css` and `js/app.js`.
+- Static parity: the split JS has the same lines as the old
+  inline script. Only `export` prefixes differ.
+- Replay check: the replay server returns 200 for `/`,
+  the CSS, the modules, `/api/state` and `/api/traits`.
+- No screen changed its text, look or behavior by design.
+
+Tests: before 729, after 732 (`OK, skipped=5`). New: 3 tests.
+Live parity: not run. Browser DOM parity was not run: no
+browser tool is wired in this session. Static parity and the
+replay HTTP check stand in for it. They are not a browser test.
+
+## Phase 10
+
+Not started.
