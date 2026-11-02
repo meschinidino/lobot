@@ -118,7 +118,7 @@ class TraitsApiTest(unittest.TestCase):
         self.assertEqual(set(item), {"id", "family", "model_id", "version",
                                     "verdict", "layer", "dose", "created",
                                     "cards", "guard", "patch",
-                                    "delete_eligible"})
+                                    "delete_eligible", "evidence"})
         self.assertEqual(item["id"], job_id)
         self.assertEqual(item["family"], "hostility")
         self.assertEqual(item["model_id"], MODEL_A)
@@ -194,7 +194,15 @@ class TraitsApiTest(unittest.TestCase):
         want = json.loads((job_dir / "trait" / "report.json").read_text())
         r = self.client.get(f"/api/traits/{job_id}/report")
         self.assertEqual(r.status_code, 200, r.text)
-        self.assertEqual(r.json(), want)
+        got = r.json()
+        # U4: the report gains pareto, repair, tuning.chosen, followups.
+        for key in ("pareto", "repair", "followups"):
+            self.assertIn(key, got)
+        self.assertIsNone(got.pop("pareto"))
+        self.assertIsNone(got.pop("repair"))
+        got.pop("followups")
+        self.assertIsNone(got.pop("tuning")["chosen"])
+        self.assertEqual(got, want)
         r = self.client.get(f"/api/traits/{job_id}/report.md")
         self.assertEqual(r.status_code, 200, r.text)
         self.assertTrue(r.headers["content-type"].startswith(

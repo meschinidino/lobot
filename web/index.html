@@ -27,7 +27,7 @@
   --body: "Atkinson Hyperlegible Next", "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
   --shelf: 300px;
-  --band: #2A3D33; --pen: #8DB7DA;
+  --band: #2A3D33; --pen: #8DB7DA; --pen-3: #A9ADD6; --pen-4: #C9A27E;
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -36,7 +36,7 @@
   --primary: #7B1D2B; --primary-hover: #651522; --on-primary: #FBF1EF;
   --cut: #FF4F9A; --on-cut: #1E2924;
   --ok: #2F6B4A; --ok-tint: #D3E6D8; --warn: #8A5A00; --warn-tint: #F3E6C4; --error: #B3261E; --error-tint: #F6DAD7;
-  --band: #C6D9C0; --pen: #24557A;
+  --band: #C6D9C0; --pen: #24557A; --pen-3: #5B5F8C; --pen-4: #6E4A2F;
 }
 * { box-sizing: border-box; }
 html, body { overflow-x: clip; }
@@ -222,18 +222,62 @@ button, input, textarea { font: inherit; color: inherit; }
 .ev td.verb .stroke { display: inline-block; vertical-align: middle; margin-right: 12px; }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .evwrap { overflow-x: auto; }
-/* Phones: each verb becomes a block; the column name prints before each value. */
+/* Phones: each verb becomes a block; the column name prints before each value. Point tables (.pt) scroll inside their wrap instead. */
 @media (max-width: 720px) {
-  .ev thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .ev tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid var(--grid); }
-  .ev td { border: 0; padding: 0; }
-  .ev td.verb { grid-column: 1 / -1; }
-  .ev td:nth-child(n+3)::before { display: block; font: 700 12px var(--body); color: var(--ink-muted); }
-  .ev td:nth-child(3)::before { content: "Effect (95% CI)"; }
-  .ev td:nth-child(4)::before { content: "Control bound"; }
-  .ev td:nth-child(5)::before { content: "Side effects"; }
-  .ev td:nth-child(6)::before { content: "Tested doses"; }
+  .ev:not(.pt) thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .ev:not(.pt) tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid var(--grid); }
+  .ev:not(.pt) td { border: 0; padding: 0; }
+  .ev:not(.pt) td.verb { grid-column: 1 / -1; }
+  .ev:not(.pt) td:nth-child(n+3)::before { display: block; font: 700 12px var(--body); color: var(--ink-muted); }
+  .ev:not(.pt) td:nth-child(3)::before { content: "Effect (95% CI)"; }
+  .ev:not(.pt) td:nth-child(4)::before { content: "Control bound"; }
+  .ev:not(.pt) td:nth-child(5)::before { content: "Side effects"; }
+  .ev:not(.pt) td:nth-child(6)::before { content: "Tested doses"; }
 }
+/* Evidence v2 (U4): sections, prompt chart, guard screens, repair */
+.page h2.sec { font: 800 28px/1 var(--display); font-stretch: 75%; margin: 40px 0 0; padding-top: 16px; border-top: 2px solid var(--ink); max-width: 1000px; }
+.page h3.sub { font: 700 16px var(--body); margin: 24px 0 0; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.page .verdict { margin: 12px 0 0; max-width: 72ch; font-size: 18px; }
+.page .note { margin: 12px 0 0; max-width: 90ch; font-size: 14px; }
+.pfig { margin: 16px 0 0; max-width: 720px; }
+.pchart { width: 100%; height: auto; display: block; background: var(--sheet); border: 2px solid var(--ink); }
+.pchart .ax { font: 12px var(--mono); fill: var(--ink); }
+.pchart .ax.muted { fill: var(--ink-muted); }
+.pfig figcaption { margin-top: 8px; max-width: 90ch; }
+.ev.pt { max-width: 800px; }
+.ev.pt caption { text-align: left; caption-side: bottom; padding-top: 8px; }
+.ev.pt tr.front td:first-child { font-weight: 700; }
+.ruled.screens { max-width: 1000px; margin-top: 12px; }
+.ruled.screens > li b { font: 700 16px var(--body); }
+/* 100x: dose explorer, tuning grid, library, explanation */
+.ex { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; margin-top: 16px; max-width: 1100px; align-items: start; }
+.exdial svg { width: 200px; height: 200px; display: block; touch-action: none; cursor: grab; }
+.exdial svg:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+.exdial .dl { font: 11px var(--mono); fill: var(--ink-muted); }
+.exread { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.exbig { font: 800 clamp(56px, 7vw, 88px)/.85 var(--display); font-stretch: 75%; letter-spacing: -0.02em; font-feature-settings: "tnum"; }
+.exnums { margin: 8px 0 0; font-size: 14px; }
+.exq { font: 400 18px/1.4 var(--body); margin: 16px 0 0; }
+.fork { margin-top: 8px; border-left: 2px solid var(--ink); }
+.fork .br { padding: 12px 0 12px 16px; border-bottom: 1px solid var(--grid); }
+.fork .bl { font-size: 13px; color: var(--ink-muted); }
+.fork .bt { font: 400 18px/1.45 var(--body); margin: 4px 0 0; max-width: 70ch; overflow-wrap: anywhere; }
+mark.cut { background: var(--cut); color: var(--on-cut); font-weight: 700; padding: 0 2px; }
+mark.ink { background: transparent; color: inherit; font-weight: 700; text-decoration: underline 3px var(--ink); text-underline-offset: 4px; }
+.tgrid td { min-width: 120px; font-size: 13px; line-height: 1.6; }
+.tgrid th[scope="row"] { font: 700 13px var(--mono); white-space: nowrap; padding-right: 16px; border-bottom: 1px solid var(--grid); vertical-align: top; padding-top: 12px; }
+.tgrid td.chosen { outline: 3px solid var(--ink); outline-offset: -3px; padding-left: 8px; }
+.tgrid td.rej { color: var(--ink-muted); }
+.explain { max-width: 70ch; font: 400 18px/1.5 var(--body); }
+.library > li { align-items: start; }
+.library .lib { display: grid; gap: 12px; }
+.library b.name { font: 800 28px/1 var(--display); font-stretch: 75%; }
+.vbs { display: flex; gap: 16px; flex-wrap: wrap; }
+.vb { display: inline-flex; gap: 8px; align-items: center; font: 700 14px var(--body); }
+.vb .stroke { display: inline-block; }
+.kv2.tight { margin-top: 0; }
+.shelf h2 > span { display: inline-flex; gap: 8px; }
+@media (max-width: 720px) { .ex { grid-template-columns: minmax(0, 1fr); } .exdial { justify-self: center; text-align: center; } }
 .kv2 { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 24px; margin-top: 16px; max-width: 900px; font-size: 14px; }
 .kv2 > :nth-child(odd) { color: var(--ink-muted); }
 .kv2 > :nth-child(even) { overflow-wrap: anywhere; }
@@ -254,7 +298,7 @@ dialog h2 { font: 800 28px/1 var(--display); font-stretch: 75%; margin: 0 0 12px
       <div class="head"><span class="wordmark">lobot</span><button class="btn btn-sm" id="collapse" type="button" aria-label="Collapse the shelf">◂</button></div>
       <h2>Models</h2>
       <div id="models"></div>
-      <h2>Behaviors <button class="btn btn-sm" id="newBeh" type="button">+ New</button></h2>
+      <h2>Behaviors <span><button class="btn btn-sm" id="libBtn" type="button">Library</button> <button class="btn btn-sm" id="newBeh" type="button">+ New</button></span></h2>
       <div id="behaviors"></div>
       <h2>Neurons</h2>
       <form id="findForm" role="search" style="display:flex;gap:8px;align-items:end"><label style="flex:1;min-width:0"><span class="meta">Find neurons that push…</span><input class="num" id="findIn" type="text" spellcheck="false" placeholder="a word, e.g. pirate" style="font-family:var(--body)"></label><button class="btn btn-sm" type="submit">Find</button></form>
@@ -414,12 +458,13 @@ function renderShelf() {
 }
 
 /* ---------- behaviors: saved traits (evidence API, else finished Create jobs) and running Creates ---------- */
-const STAGES = [["extract", "Contrast prompts and capture"], ["tune", "Tune layer and dose"], ["read_gate", "Read check"], ["final", "Final check"], ["baseline", "Prompt baseline"], ["verdict", "Report card"]];
+const STAGES = [["extract", "Contrast prompts and capture"], ["tune", "Tune layer and dose"], ["read_gate", "Read check"], ["final", "Final check"], ["baseline", "Prompt baseline"], ["pareto", "Compare with a prompt"], ["guard", "Guard"], ["verdict", "Report card"]];
+const NST = STAGES.length;
 const active = (j) => j.status === "queued" || j.status === "running";
 function behaviors() {
   const mine = S.jobs.filter((j) => j.model_id === S.model);
   const ver = {}, out = [];
-  if (S.traits) for (const t of S.traits) out.push({ id: t.id, name: t.family, version: t.version, verdict: t.verdict, guard: t.guard || {}, cards: t.cards || {}, dose: t.dose, layer: t.layer, patch: t.patch, created: t.created });
+  if (S.traits) for (const t of S.traits) out.push({ id: t.id, name: t.family, version: t.version, verdict: t.verdict, guard: t.guard || {}, cards: t.cards || {}, dose: t.dose, layer: t.layer, patch: t.patch, created: t.created, ev: t.evidence || {} });
   else for (const j of mine.filter((j) => j.status === "done").sort((a, b) => a.created - b.created)) {
     ver[j.trait] = (ver[j.trait] || 0) + 1;
     out.push({ id: j.id, name: j.trait, version: ver[j.trait], verdict: j.verdict, guard: j.guard || {}, cards: {}, dose: j.frozen?.dose, layer: j.frozen?.layer, patch: null, created: j.created });
@@ -440,7 +485,7 @@ function behaviors() {
 function renderBehaviors() {
   const B = behaviors(), cur = S.page && S.page.id;
   const run = B.running.map((j) => { const i = STAGES.findIndex(([k]) => k === j.stage) + 1;
-    return `<div class="beh"><button class="open" type="button" data-job="${esc(j.id)}" aria-current="${cur === j.id}"><b>${esc(j.trait)}</b><span class="state info">${j.status === "queued" ? "QUEUED" : `CREATING ${i}/6`}</span></button><span></span></div>`; });
+    return `<div class="beh"><button class="open" type="button" data-job="${esc(j.id)}" aria-current="${cur === j.id}"><b>${esc(j.trait)}</b><span class="state info">${j.status === "queued" ? "QUEUED" : `CREATING ${i}/${NST}`}</span></button><span></span></div>`; });
   const saved = B.saved.map((b) => `<div class="beh${b.usable ? "" : " dim"}"><button class="open" type="button" data-beh="${esc(b.id)}" aria-current="${cur === b.id}" aria-label="Evidence for ${esc(b.name)} v${b.version}"><b>${esc(b.name)}</b><span class="meta">v${b.version}</span> <span class="state ${b.kind}">${b.key}</span></button>
     <button class="btn btn-sm" type="button" data-use="${esc(b.id)}" ${!b.usable || S.running || S.rows.some((r) => r.trait === b.name) ? "disabled" : ""} aria-label="Use ${esc(b.name)} in the sentence">Use</button></div>`);
   const noCreate = S.state?.replay ? "Replay mode loads no weights, so Create is off." : S.state?.no_model ? "The server runs without weights, so Create is off." : "";
@@ -462,6 +507,7 @@ $("behaviors").addEventListener("click", (e) => {
   else if (t.closest("[data-new]")) openPage({ kind: "new" });
 });
 $("newBeh").addEventListener("click", () => openPage({ kind: "new" }));
+$("libBtn").addEventListener("click", () => openPage({ kind: "library" }));
 $("models").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-model]"); if (!b || b.getAttribute("aria-disabled") === "true" || b.dataset.model === S.model) return;
   b.querySelector(".meta").textContent = "switching";
@@ -888,7 +934,7 @@ async function run(fan = false) {
   if (S.running) return;
   const prompt = $("prompt").value.trim(), job = creating();
   if (!S.api) return setStatus("err", "OFFLINE", "The lobot server is not reachable. Start it with: uv run python server.py");
-  if (job) return setStatus("info", "CREATE RUNNING", `Run is off while Create builds ${job.trait} (stage ${STAGES.findIndex(([k]) => k === job.stage) + 1} of 6). Open it on the shelf to stop it.`);
+  if (job) return setStatus("info", "CREATE RUNNING", `Run is off while Create builds ${job.trait} (stage ${STAGES.findIndex(([k]) => k === job.stage) + 1} of ${NST}). Open it on the shelf to stop it.`);
   if (!prompt) { $("prompt").focus(); return setStatus("err", "ERROR", "Type a prompt first."); }
   const beh = S.rows.find(isB);
   if (fan && !beh) return;
@@ -997,7 +1043,7 @@ function renderGuard() {
   $("runBtn").disabled = !S.api || !!job || S.reading > 0;
   $("findForm").querySelector("button").disabled = !S.api || S.running || S.reading > 0;
   if (S.reading > 0 && !S.running) $("plan").textContent = "Run waits while the model reads the neurons at a word.";
-  if (job && !S.running) $("plan").textContent = `Run is off: Create is building ${job.trait}, stage ${STAGES.findIndex(([k]) => k === job.stage) + 1} of 6.`;
+  if (job && !S.running) $("plan").textContent = `Run is off: Create is building ${job.trait}, stage ${STAGES.findIndex(([k]) => k === job.stage) + 1} of ${NST}.`;
 }
 function confirmDlg(title, text, ok) {
   return new Promise((res) => {
@@ -1016,7 +1062,7 @@ document.querySelector("[data-guard-on]").addEventListener("click", () => { S.re
 const short = (m) => (m || "").split("/").pop();
 const num = (x, d = 2) => (x == null ? "n/a" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(d));
 const ci = (c) => (c ? `[${num(c[0])}, ${num(c[1])}]` : "");
-const mins = (sec) => `${Math.floor(sec / 60)} min ${String(Math.round(sec % 60)).padStart(2, "0")} s`;
+const mins = (sec) => { const t = Math.round(sec); return `${Math.floor(t / 60)} min ${String(t % 60).padStart(2, "0")} s`; };
 const STROKE = {
   read: `<line x1="0" y1="6" x2="48" y2="6" stroke="var(--ink)" stroke-width="2"/>`,
   update: `<line x1="0" y1="3" x2="48" y2="3" stroke="var(--ink-muted)" stroke-width="1.5"/><line x1="0" y1="9" x2="48" y2="9" stroke="var(--ink)" stroke-width="3"/>`,
@@ -1025,6 +1071,275 @@ const STROKE = {
 const stroke = (k) => `<svg class="stroke" viewBox="0 0 48 12" aria-hidden="true">${STROKE[k]}</svg>`;
 const RULES = { trait_ci_excludes_zero: "the effect's interval includes 0", trait_mean_ge_min: "the mean effect is under 0.30", control_upper_lt_max: "the random-direction control moved it too", paired_ci_excludes_zero: "it is not clearly above the control" };
 const reports = {};
+/* ---------- evidence v2 (U4): prompt comparison, dose rule, every guard screen, repair ---------- */
+const vecPoint = (P, d) => (P && d != null ? (P.points || []).find((q) => q.kind === "vector" && Math.abs(q.dose - d) < 1e-9) : null);
+const VERDICT = {
+  vector_dominates: ["ok", "KNOB BETTER"], prompt_dominates: ["warn", "PROMPT BETTER"], tradeoff: ["info", "NO CLEAR WINNER"],
+};
+const pointName = (q) => (q.kind === "vector" ? `patch at ${fd(q.dose)}` : q.name === "prompt:label" ? "prompt from the judge label" : q.name === "prompt+vector" ? `prompt + patch at ${fd(q.dose)}` : "drafted prompt");
+// One plain sentence for the PP verdict, built from the measured points only.
+function paretoSentence(P) {
+  const pr = (P.points || []).find((q) => q.name === P.verdict_prompt), bv = P.best_vector && (P.points || []).find((q) => q.name === P.best_vector.name);
+  if (!pr) return "The prompt points were not measured.";
+  if (P.verdict === "prompt_dominates") return `A plain prompt gives more effect with fewer side effects than the patch at every dose (${pointName(pr)}: effect ${num(pr.trait)}, cost ${pr.cost.toFixed(2)}).`;
+  if (P.verdict === "vector_dominates") return bv ? `The patch at ${fd(bv.dose)} gives more effect (${num(bv.trait)} vs ${num(pr.trait)}) with fewer side effects (cost ${bv.cost.toFixed(2)} vs ${pr.cost.toFixed(2)}) than the ${pointName(pr)}.` : "The patch beats the prompt on both effect and cost.";
+  return bv ? `Neither wins on both. The ${pointName(pr)} gives more effect (${num(pr.trait)} vs ${num(bv.trait)}); the patch at ${fd(bv.dose)} costs less (${bv.cost.toFixed(2)} vs ${pr.cost.toFixed(2)}).` : "Neither wins on both effect and cost.";
+}
+// Chart geometry: x = side-effect cost 0..1, y = effect (trait gain). Pure, so it is easy to check.
+function chartScale(P, w, h, pad = 40) {
+  const ys = (P.points || []).map((q) => q.trait), lo = Math.min(0, ...ys), hi = Math.max(1, ...ys);
+  return { x: (c) => pad + Math.max(0, Math.min(1, c)) * (w - pad * 1.5), y: (t) => h - pad - ((t - lo) / (hi - lo)) * (h - pad * 1.6), lo, hi };
+}
+function chartPoints(P, w, h, pad = 40) {
+  const sc = chartScale(P, w, h, pad);
+  return (P.points || []).map((q) => ({ ...q, x: sc.x(q.cost), y: sc.y(q.trait), front: (P.front || []).includes(q.name) }));
+}
+// Greedy label placement. Marks are obstacles too. Try right of the mark, then left, then 15px steps up and down.
+function placeLabels(items, w) {
+  const boxes = items.map((it) => ({ x: it.x - 9, y: it.y + 9, w: 18, h: 18 }));
+  const hit = (x, y, tw) => boxes.some((b) => x < b.x + b.w && b.x < x + tw && y - 12 < b.y && b.y - b.h < y + 2);
+  return items.map((it) => {
+    const tw = it.text.length * 7.3 + 4; let best = null;
+    for (const dy of [0, -15, 15, -30, 30, -45, 45, 60, 75]) for (const x of [it.x + 12, it.x - 12 - tw]) {
+      const y = it.y - 4 + dy;
+      if (!best && x > 42 && x + tw < w - 4 && y > 26 && !hit(x, y, tw)) best = { x, y };
+    }
+    best = best || { x: it.x + 12, y: it.y - 6 };
+    boxes.push({ x: best.x, y: best.y + 2, w: tw, h: 14 });
+    return { ...it, lx: best.x, ly: best.y };
+  });
+}
+function paretoChart(P, chosen, sel = chosen) {
+  const W = 640, H = 300, cp = chartPoints(P, W, H), vec = cp.filter((q) => q.kind === "vector").sort((a, b) => a.dose - b.dose);
+  const mark = (q) => { const f = q.front ? "currentColor" : "var(--sheet)";
+    if (q.kind === "vector") return `<circle cx="${q.x}" cy="${q.y}" r="6" fill="${f}" stroke="currentColor" stroke-width="2"/>`;
+    if (q.kind === "prompt") return `<rect x="${q.x - 6}" y="${q.y - 6}" width="12" height="12" fill="${f}" stroke="currentColor" stroke-width="2"/>`;
+    return `<path d="M${q.x} ${q.y - 8}L${q.x + 8} ${q.y}L${q.x} ${q.y + 8}L${q.x - 8} ${q.y}Z" fill="${f}" stroke="currentColor" stroke-width="2"/>`; };
+  const col = (q) => (q.kind === "vector" ? "var(--pen)" : q.kind === "prompt" ? "var(--pen-4)" : "var(--pen-3)");
+  const lab = (q) => (q.kind === "vector" ? fd(q.dose) + (chosen != null && Math.abs(q.dose - chosen) < 1e-9 ? " chosen" : "") : q.name === "prompt:label" ? "label prompt" : q.name === "prompt" ? "drafted prompt" : "prompt + patch");
+  const ch = cp.find((q) => q.kind === "vector" && sel != null && Math.abs(q.dose - sel) < 1e-9), sc = chartScale(P, W, H);
+  const labs = placeLabels([...cp].sort((a, b) => a.y - b.y || a.x - b.x).map((q) => ({ x: q.x, y: q.y, text: lab(q), color: col(q) })), W);
+  const yt = [0, 0.5, 1].filter((t) => t >= sc.lo && t <= sc.hi);
+  return `<svg class="pchart" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+    <line x1="40" y1="${H - 40}" x2="${W - 20}" y2="${H - 40}" stroke="var(--ink)" stroke-width="2"/><line x1="40" y1="24" x2="40" y2="${H - 40}" stroke="var(--ink)" stroke-width="2"/>
+    ${[0, 0.25, 0.5, 0.75, 1].map((t) => { const x = 40 + t * (W - 60); return `<line x1="${x}" y1="${H - 40}" x2="${x}" y2="${H - 34}" stroke="var(--ink)"/><text x="${x}" y="${H - 20}" text-anchor="middle" class="ax">${t.toFixed(2)}</text>`; }).join("")}
+    <text x="${W - 20}" y="${H - 4}" text-anchor="end" class="ax">side-effect cost →</text><text x="46" y="16" class="ax">↑ effect</text>
+    <text x="${W - 20}" y="16" text-anchor="end" class="ax muted">better: up and to the left</text>
+    <polyline points="${vec.map((q) => `${q.x},${q.y}`).join(" ")}" fill="none" stroke="var(--pen)" stroke-width="2"/>
+    ${yt.map((t) => `<line x1="34" y1="${sc.y(t)}" x2="40" y2="${sc.y(t)}" stroke="var(--ink)"/><text x="30" y="${sc.y(t) + 4}" text-anchor="end" class="ax">${t.toFixed(1)}</text>`).join("")}
+    ${cp.map((q) => `<g style="color:${col(q)}">${mark(q)}</g>`).join("")}
+    ${labs.map((l) => { const moved = Math.abs(l.ly - (l.y - 4)) > 1, left = l.lx < l.x, ax = left ? l.lx + l.text.length * 7.3 + 2 : l.lx - 2;
+      return `${moved ? `<line x1="${l.x}" y1="${l.y}" x2="${ax}" y2="${l.ly - 4}" stroke="${l.color}" stroke-width="1"/>` : ""}<text x="${l.lx}" y="${l.ly}" class="ax" style="fill:${l.color}">${esc(l.text)}</text>`; }).join("")}
+    ${ch ? `<circle cx="${ch.x}" cy="${ch.y}" r="12" fill="none" stroke="var(--ink)" stroke-width="3"/>` : ""}
+  </svg>`;
+}
+const followupKey = (st) => (!st ? null : st.status === "running" || st.status === "queued" ? ["info", st.status === "queued" ? "QUEUED" : `RUNNING ${st.done || 0}/${st.total || "?"}`] : st.status === "failed" ? ["err", "FAILED"] : st.status === "stopped" ? ["warn", "STOPPED"] : null);
+const noWeights = () => (S.state?.replay ? "Replay mode loads no weights." : S.state?.no_model ? "This server runs without weights." : "");
+function followupCtl(kind, id, R, label, est) {
+  const st = R.followups?.[kind], k = followupKey(st), live = st && (st.status === "running" || st.status === "queued"), off = noWeights();
+  return `<div class="row2">${live ? `<button class="btn" type="button" data-fu-stop="${kind}" data-id="${esc(id)}">Stop</button>` : `<button class="btn" type="button" data-fu="${kind}" data-id="${esc(id)}" ${off || creating() || S.running ? "disabled" : ""}>${label}</button>`}
+    ${k ? `<span class="state ${k[0]}">${k[1]}</span>` : ""}<span class="meta">${live ? "The server keeps working if you close this page." : off ? `${off} Start the server with weights to run it.` : creating() ? "Wait for the running Create." : est}</span></div>
+    ${st?.status === "failed" ? `<p class="meta" style="color:var(--error)">${esc((st.error || "").split("\n").filter(Boolean).pop() || "no reason given")}</p>` : ""}`;
+}
+function compareSection(R, id, fam) {
+  const P = R.pareto, base = R.prompt_baseline || {};
+  const head = `<h2 class="sec">Compared with a plain prompt</h2>`;
+  const drafted = base.card ? `<span>Drafted prompt</span><span><span class="mono">${num(base.card.trait_mean)} ${ci(base.card.trait_ci)}</span> with “${esc(base.top || "")}”${looksLikeReply(base.top) ? ` <span class="meta">this baseline is a sample line, not an instruction</span>` : ""}</span>` : "";
+  if (!P) return `${head}<p class="lead">This run has no prompt comparison yet. It scores the patch at five doses and two plain prompts on the same held-out questions, for effect and for side effects (relevance and fluency).</p>
+    <div class="kv2">${drafted}</div>${followupCtl("pareto", id, R, "Compare with a prompt", "About 2 min on the llama lane, about 8 min on torch.")}`;
+  const [kind, key] = VERDICT[P.verdict] || ["info", "NO VERDICT"];
+  const lp = (P.points || []).find((q) => q.name === "prompt:label");
+  const rows = (P.points || []).map((q) => `<tr${(P.front || []).includes(q.name) ? ' class="front"' : ""}><td>${esc(pointName(q))}${(P.front || []).includes(q.name) ? ' <span class="meta">front</span>' : ""}</td><td class="mono">${num(q.trait)}</td><td class="mono">${q.cost.toFixed(2)}</td><td class="mono">${q.relevance.toFixed(2)}</td><td class="mono">${q.fluency.toFixed(2)}</td></tr>`).join("");
+  return `${head}<p class="verdict"><span class="state ${kind}">${key}</span> ${esc(paretoSentence(P))}</p>
+    <figure class="pfig"><div id="pchartBox">${paretoChart(P, R.frozen?.dose, EXS[id]?.d ?? R.frozen?.dose)}</div><figcaption class="meta">Circles: the patch at each dose, joined in dose order. Squares: plain prompts. Diamond: prompt and patch together. Filled marks are on the front (nothing beats them on both). The ring follows the dial; "chosen" marks the dose Create picked. ${P.n} held-out questions, judge “${esc(P.labels?.trait || fam?.judge || "")}”.</figcaption></figure>
+    <div class="evwrap"><table class="ev pt"><caption class="meta">Effect is the trait gain over the unedited reply (base trait ${P.base.trait.toFixed(2)}). Cost is the mean drop in relevance and fluency (base ${P.base.relevance.toFixed(2)} and ${P.base.fluency.toFixed(2)}).</caption><thead><tr><th scope="col">Point</th><th scope="col">Effect</th><th scope="col">Cost</th><th scope="col">Relevance</th><th scope="col">Fluency</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="kv2">${drafted}${lp ? `<span>Label prompt</span><span>“${esc(lp.instruction || "")}”</span>` : ""}</div>`;
+}
+// A drafted baseline that reads like a reply (a greeting or question to the user) is not an instruction.
+const looksLikeReply = (s) => !!s && (/^(howdy|hello|hi|hey|ahoy|well|ah|oh|greetings)\b/i.test(s.trim()) || /\?\s*$/.test(s.trim()) && !/^(answer|reply|respond|speak|talk|write|use|describe)\b/i.test(s.trim()));
+function doseRuleLine(R) {
+  const rule = R.tuning?.rule, c = R.tuning?.chosen;
+  if (rule) return `<p class="meta">Dose chosen by the fluency-aware rule (<span class="mono">${esc(rule.name)}</span>): NLL rise at most ${rule.nll_max_rise}, fluency at least ${rule.fluency_floor}.${c && c.fluency != null ? ` On tuning prompts the chosen dose had fluency <span class="mono">${c.fluency.toFixed(2)}</span>.` : ""}</p>`;
+  const pt = vecPoint(R.pareto, R.frozen?.dose);
+  return `<p class="note"><span class="state warn">CHOSEN BEFORE THE FLUENCY CHECK</span> ${pt ? (pt.fluency < 0.5 ? `At this dose the replies are not fluent (fluency <span class="mono">${pt.fluency.toFixed(2)}</span>). The trait judge can still score broken text high. Create a new version to get a fluent dose.` : `Fluency at this dose is <span class="mono">${pt.fluency.toFixed(2)}</span>, so the text reads well.`) : "This dose was chosen on NLL only, which passes repeated words. Compare with a prompt to see the text quality, or create a new version."}</p>`;
+}
+const SCREEN = { refusal: "Refusal", honesty: "Honesty", privacy: "Privacy", harmful: "Harmful requests" };
+function screenMeasure(name, v) {
+  const n = v.blocked_prompts?.length ?? 0;
+  if (name === "refusal") return `${n} request${n === 1 ? "" : "s"} lost ${n === 1 ? "its" : "their"} refusal${v.min_ratio != null ? `; refusal kept at <span class="mono">${Math.round(v.min_ratio * 100)}%</span> of its usual level` : ""}`;
+  if (name === "privacy") return `${n} bait question${n === 1 ? "" : "s"} leaked a planted secret${v.control_flips ? `; random directions leaked <span class="mono">${v.control_flips.join(", ")}</span>` : ""}`;
+  return `${n} prompt${n === 1 ? "" : "s"} flipped${v.min_ratio != null ? ` (worst kept <span class="mono">${Math.round(v.min_ratio * 100)}%</span>)` : ""}`;
+}
+function guardSection(R) {
+  const g = R.guard;
+  if (!g) return `<h2 class="sec">Guard</h2><p class="meta">The guard was not recorded for this run.</p>`;
+  const screens = g.screens || { refusal: g };
+  const rows = Object.entries(screens).map(([n, v]) => `<li><div><b>${SCREEN[n] || esc(n)}</b><br><span class="meta">${screenMeasure(n, v)}${v.display_prompt && (v.blocked || v.would_block) ? ` · worst: ${esc(v.display_prompt)}` : ""}</span></div>
+    <span class="state ${v.blocked ? "err" : v.would_block ? "warn" : "ok"}">${v.blocked ? "BLOCKED" : v.would_block ? "WOULD BLOCK" : "PASSED"}</span></li>`).join("");
+  return `<h2 class="sec">Guard</h2><p class="meta">${g.verified ? "Confirmed by full generation." : "First-token check only; publishing needs a full-generation check."}${g.enforced ? " Enforced in this Create." : " Recorded, not enforced, in this Create."}${g.research_mode ? " Research mode." : ""}</p><ol class="ruled screens">${rows}</ol>`;
+}
+/* ---------- 100x: evidence you can turn ---------- */
+// Turn the dose: a printed dial with one detent per recorded dose. It shows recorded replies only; it never generates.
+const EXS = {}; // per job: { d: selected dose, qi: question index }
+const exDoses = (P) => [0, ...(P.points || []).filter((q) => q.kind === "vector").map((q) => q.dose).sort((a, b) => a - b)];
+const exQuestions = (P) => (Object.values(P.samples || {})[0] || []).map((x) => x.q);
+const sampleFor = (P, name, q) => (P.samples?.[name] || []).find((x) => x.q === q)?.reply ?? null;
+function baseFor(R, q) {
+  for (const v of ["update_up", "update_down", "delete"]) { const p = (R.final?.[v]?.pairs || []).find((x) => x.q === q); if (p && p.base) return p.base; }
+  return null;
+}
+// Index of the first word where text leaves base (null when they match to the end).
+function splitWord(base, text) {
+  const A = String(base).trim().split(/\s+/), B = String(text).trim().split(/\s+/);
+  let i = 0; while (i < A.length && i < B.length && A[i] === B[i]) i++;
+  return i < B.length ? i : null;
+}
+function markSplit(text, base, cls) {
+  const i = base == null ? null : splitWord(base, text); let w = -1;
+  return String(text).trim().split(/(\s+)/).map((t) => { if (!t || /^\s+$/.test(t)) return esc(t); w++; return w === i ? `<mark class="${cls}">${esc(t)}</mark>` : esc(t); }).join("");
+}
+function exState(R, id) {
+  const P = R.pareto, ds = exDoses(P);
+  if (!EXS[id]) EXS[id] = { d: ds.find((d) => Math.abs(d - (R.frozen?.dose ?? -1)) < 1e-9) ?? ds[1] ?? 0, qi: 0 };
+  return EXS[id];
+}
+const DIAL = { C: 100, R: 80, A0: -135, A1: 135 };
+const dialAngle = (i, n) => DIAL.A0 + (DIAL.A1 - DIAL.A0) * (n > 1 ? i / (n - 1) : 0.5);
+function exDial(ds, d) {
+  const { C, R } = DIAL, pt = (a, r) => [C + r * Math.sin(a * Math.PI / 180), C - r * Math.cos(a * Math.PI / 180)];
+  const ticks = ds.map((x, i) => { const a = dialAngle(i, ds.length), [x1, y1] = pt(a, R - 2), [x2, y2] = pt(a, R - (x === 0 ? 20 : 13)), [tx, ty] = pt(a, R + 16);
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--ink)" stroke-width="${x === 0 ? 4 : 2.5}"/><text x="${tx}" y="${ty + 4}" text-anchor="middle" class="dl">${x === 0 ? "0" : fd(x)}</text>`; }).join("");
+  const i = Math.max(0, ds.findIndex((x) => Math.abs(x - d) < 1e-9));
+  return `<svg id="exDial" viewBox="-14 -14 228 228" role="slider" tabindex="0" aria-label="Dose to show" aria-valuemin="${ds[0]}" aria-valuemax="${ds[ds.length - 1]}" aria-valuenow="${d}" aria-valuetext="${d === 0 ? "no edit" : `dose ${fd(d)}`}">
+    <circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="var(--ink)" stroke-width="2"/>${ticks}
+    <circle cx="${C}" cy="${C}" r="50" fill="var(--sheet)" stroke="var(--ink)" stroke-width="2"/>
+    <rect class="ptr" x="${C - 4}" y="${C - 48}" width="8" height="30" fill="var(--ink)" transform="rotate(${dialAngle(i, ds.length)} ${C} ${C})"/></svg>`;
+}
+function exOut(R, id) {
+  const P = R.pareto, st = exState(R, id), qs = exQuestions(P), q = qs[st.qi] ?? qs[0], d = st.d, pt = d === 0 ? null : vecPoint(P, d), chosen = R.frozen?.dose;
+  const [k, key] = d === 0 ? ["info", "NO EDIT"] : !pt ? ["info", "NOT RECORDED"] : pt.fluency < 0.5 ? ["warn", "NOT FLUENT"] : chosen != null && Math.abs(d - chosen) < 1e-9 ? ["ok", "CREATE'S DOSE"] : ["info", "TESTED DOSE"];
+  const nums = d === 0 ? `effect ${num(0)} · cost 0.00 · relevance ${P.base.relevance.toFixed(2)} · fluency ${P.base.fluency.toFixed(2)}`
+    : pt ? `effect ${num(pt.trait)} · cost ${pt.cost.toFixed(2)} · relevance ${pt.relevance.toFixed(2)} · fluency ${pt.fluency.toFixed(2)}` : "not recorded";
+  const base = q != null ? baseFor(R, q) : null, patch = d === 0 || !pt ? null : sampleFor(P, pt.name, q);
+  const pn = P.verdict_prompt || "prompt:label", pr = q != null ? sampleFor(P, pn, q) : null, prPoint = (P.points || []).find((x) => x.name === pn);
+  const branch = (label, text, html, note) => `<div class="br"><div class="bl mono">${label}${note ? ` <span class="meta">${note}</span>` : ""}</div><p class="bt">${text == null ? `<span class="meta">not recorded for this question</span>` : html}</p></div>`;
+  return `<div class="exread"><span class="exbig">${d === 0 ? "±0.00" : fd(d)}</span><div><span class="state ${k}">${key}</span><p class="mono exnums">${nums}</p>
+      ${d !== 0 && pt && pt.fluency < 0.5 ? `<p class="meta">The judge scores this text as not fluent. A trait score here can come from broken words.</p>` : ""}</div></div>
+    ${qs.length > 1 ? `<div class="row2" role="group" aria-label="Question">${qs.map((x, i) => `<button class="btn btn-sm" type="button" data-exq="${i}" aria-pressed="${i === st.qi}">Question ${i + 1}</button>`).join("")}</div>` : ""}
+    <p class="exq">“${esc(q ?? "")}”</p>
+    <div class="fork">
+      ${branch("no edit", base, esc(base ?? ""), "")}
+      ${d === 0 ? "" : branch(`patch ${fd(d)}`, patch, patch == null ? "" : markSplit(patch, base, "cut"), "first changed word in pink")}
+      ${branch(prPoint ? pointName(prPoint) : "plain prompt", pr, pr == null ? "" : markSplit(pr, base, "ink"), prPoint ? `effect ${num(prPoint.trait)} · cost ${prPoint.cost.toFixed(2)}` : "")}
+    </div>
+    <p class="meta">Recorded replies from the prompt comparison: ${P.n} held-out questions were scored; ${qs.length} are kept as samples. Greedy decoding, same seed.</p>`;
+}
+function setExDose(id, d) {
+  const R = reports[id]; if (!R?.pareto) return;
+  const ds = exDoses(R.pareto), st = exState(R, id); st.d = d;
+  const svg = $("exDial"), i = Math.max(0, ds.findIndex((x) => Math.abs(x - d) < 1e-9));
+  if (svg) { const ptr = svg.querySelector(".ptr"); ptr.style.transition = reduce ? "none" : "transform 160ms cubic-bezier(.65,0,.35,1)"; ptr.setAttribute("transform", `rotate(${dialAngle(i, ds.length)} ${DIAL.C} ${DIAL.C})`);
+    svg.setAttribute("aria-valuenow", d); svg.setAttribute("aria-valuetext", d === 0 ? "no edit" : `dose ${fd(d)}`); }
+  if ($("exOut")) $("exOut").innerHTML = exOut(R, id);
+  if ($("pchartBox")) $("pchartBox").innerHTML = paretoChart(R.pareto, R.frozen?.dose, d);
+}
+function wireExplorer(id) {
+  const svg = $("exDial"), R = reports[id]; if (!svg || !R?.pareto) return;
+  const ds = exDoses(R.pareto), idx = () => Math.max(0, ds.findIndex((x) => Math.abs(x - exState(R, id).d) < 1e-9));
+  const fromPtr = (ev) => { const b = svg.getBoundingClientRect(); let a = Math.atan2(ev.clientX - (b.left + b.width / 2), -(ev.clientY - (b.top + b.height / 2))) * 180 / Math.PI;
+    a = Math.max(DIAL.A0, Math.min(DIAL.A1, a)); const i = Math.round((a - DIAL.A0) / (DIAL.A1 - DIAL.A0) * (ds.length - 1)); if (ds[i] !== exState(R, id).d) setExDose(id, ds[i]); };
+  let drag = false;
+  svg.addEventListener("pointerdown", (e) => { drag = true; svg.setPointerCapture(e.pointerId); fromPtr(e); });
+  svg.addEventListener("pointermove", (e) => { if (drag) fromPtr(e); });
+  svg.addEventListener("pointerup", () => (drag = false));
+  svg.addEventListener("keydown", (e) => {
+    const i = idx(), j = { ArrowRight: i + 1, ArrowUp: i + 1, ArrowLeft: i - 1, ArrowDown: i - 1, Home: 0, End: ds.length - 1 }[e.key];
+    if (j == null) return; e.preventDefault(); setExDose(id, ds[Math.max(0, Math.min(ds.length - 1, j))]);
+  });
+}
+function explorerSection(R, id) {
+  const P = R.pareto; if (!P || !P.samples) return "";
+  const st = exState(R, id), ds = exDoses(P);
+  return `<h2 class="sec">Turn the dose</h2><p class="lead">Each detent is a dose that was measured. Turn the dial to read the recorded replies at that dose, next to the reply with no edit and the reply to a plain prompt.</p>
+    <div class="ex"><div class="exdial">${exDial(ds, st.d)}<span class="meta">arrows step one detent</span></div><div id="exOut" class="exout">${exOut(R, id)}</div></div>`;
+}
+
+// How Create chose the dose: the tuning grid with the rule's reason for each cell.
+function tuningSection(R) {
+  const T = R.tuning; if (!T?.table || !Object.keys(T.table).length) return "";
+  const rule = T.rule, maxRise = rule?.nll_max_rise ?? 1, floor = rule?.fluency_floor ?? 0.5, fr = R.frozen || {};
+  const layers = Object.keys(T.table), dkeys = [...new Set(layers.flatMap((L) => Object.keys(T.table[L])))].sort((a, b) => Number(a) - Number(b));
+  const zero = dkeys.find((k) => Number(k) === 0), doses = dkeys.filter((k) => Number(k) > 0);
+  const hasFl = layers.some((L) => Object.values(T.table[L]).some((c) => c.fluency != null));
+  const cell = (L, k) => {
+    const c = T.table[L][k]; if (!c) return `<td class="meta">–</td>`;
+    const b = T.table[L][zero] || {}, rise = c.nll - (b.nll ?? 0), nllOk = rise <= maxRise, flOk = c.fluency == null || c.fluency >= floor;
+    const chosen = Number(L) === fr.layer && Math.abs(Number(k) - (fr.dose ?? -1)) < 1e-9;
+    const why = chosen ? `<span class="state ok">CHOSEN</span>` : !nllOk ? `<span class="state info">NLL TOO HIGH</span>` : rule && !flOk ? `<span class="state warn">NOT FLUENT</span>` : !rule && c.fluency != null && !flOk ? `<span class="state warn">NOT FLUENT</span>` : `<span class="state info">QUALIFIED</span>`;
+    return `<td class="${chosen ? "chosen" : nllOk && flOk ? "" : "rej"}"><span class="mono">trait ${c.judge.toFixed(2)}</span><br><span class="mono">NLL ${num(rise)}</span>${c.fluency != null ? `<br><span class="mono">fluency ${c.fluency.toFixed(2)}</span>` : ""}<br>${why}</td>`;
+  };
+  const rows = layers.map((L) => `<tr><th scope="row" class="mono">layer ${esc(L)}</th>${doses.map((k) => cell(L, k)).join("")}</tr>`).join("");
+  return `<h2 class="sec">How Create chose the dose</h2>
+    <p class="lead">Create scored each candidate layer and dose on tuning prompts (never the held-out ones). ${rule ? `A cell qualifies when the reply NLL rises by at most ${maxRise} and the fluency score is at least ${floor}. The qualifying cell with the highest trait score wins.` : `This run used the older rule: a cell qualified when the reply NLL rose by at most ${maxRise}. NLL alone passes repeated words, so a broken dose could win.${hasFl ? "" : " Fluency was not measured in this run."}`}</p>
+    <div class="evwrap"><table class="ev pt tgrid"><thead><tr><th scope="col">Layer</th>${doses.map((k) => `<th scope="col" class="mono">${fd(Number(k))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+// In plain words: Muse Spark explains the report from its own numbers; the page keeps the numbers above as the source.
+const explains = {};
+function explainSection(id) {
+  const x = explains[id];
+  return `<h2 class="sec">In plain words</h2>${x?.text ? `<div class="explain"><p>${esc(x.text).replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p></div><p class="meta">Written by Muse Spark from this report's numbers only${x.cached ? " (saved earlier)" : ""}. The numbers above are the source; check them there.</p>`
+    : `<div class="row2"><button class="btn" type="button" data-explain="${esc(id)}" ${x?.busy ? "disabled" : ""}>${x?.busy ? "Writing…" : "Explain with Muse"}</button><span class="meta">${x?.err ? esc(x.err) : "Muse Spark reads only this report's numbers and writes a short explanation. It needs META_API_KEY on the server."}</span></div>`}`;
+}
+
+// Library: every behavior on this model, newest version first, with where it stands against its own prompt.
+function libraryPage() {
+  const all = behaviors().all, fams = [...new Set(all.map((b) => b.name))];
+  if (!all.length) return `<p class="empty">No behaviors for this model yet.</p>`;
+  const newest = fams.map((f) => all.filter((b) => b.name === f).sort((a, b) => b.version - a.version)[0]).sort((a, b) => (b.created || 0) - (a.created || 0));
+  const cnt = (v) => newest.filter((b) => (b.ev || {}).pareto_verdict === v).length, none = newest.filter((b) => !(b.ev || {}).pareto_verdict).length;
+  const verbs = (b) => [["Increase", "update", b.cards.update_up], ["Decrease", "update", b.cards.update_down], ["Delete", "delete", b.cards.delete]]
+    .map(([l, k, c]) => `<span class="vb">${stroke(k)}<span>${l}</span> <span class="state ${!c ? "info" : c.passed ? "ok" : "warn"}">${!c ? "NOT TESTED" : c.passed ? "PASS" : "FAIL"}</span></span>`).join("");
+  const screens = (e) => Object.entries(e.screens || {}).map(([n, s]) => `<span class="state ${s === "blocked" ? "err" : s === "would_block" ? "warn" : "ok"}">${(SCREEN[n] || n).toUpperCase()} ${s === "blocked" ? "BLOCKED" : s === "would_block" ? "FLAGGED" : "OK"}</span>`).join(" ");
+  const rows = newest.map((b) => { const e = b.ev || {}, vk = VERDICT[e.pareto_verdict], older = all.filter((x) => x.name === b.name && x !== b).sort((x, y) => y.version - x.version);
+    return `<li><div class="lib">
+      <div><button class="link" type="button" data-beh="${esc(b.id)}"><b class="name">${esc(b.name)}</b></button> <span class="meta">v${b.version}${b.dose != null ? ` · layer ${b.layer} · dose ${fd(b.dose)}` : ""}</span>
+        ${older.length ? `<br><span class="meta">older: ${older.map((o) => `<button class="link" type="button" data-beh="${esc(o.id)}">v${o.version}</button>`).join(" ")}</span>` : ""}</div>
+      <div class="vbs">${verbs(b)}</div>
+      <div class="kv2 tight"><span>Against a prompt</span><span>${vk ? `<span class="state ${vk[0]}">${vk[1]}</span>` : `<span class="meta">not compared yet</span>`}</span>
+        <span>Fluency at its dose</span><span class="mono">${e.fluency != null ? `${e.fluency.toFixed(2)}${e.fluency < 0.5 ? ' <span class="state warn">NOT FLUENT</span>' : ""}` : '<span class="meta">not measured</span>'}${e.dose_rule ? "" : b.dose != null ? ' <span class="meta">chosen before the fluency check</span>' : ""}</span>
+        <span>Guard</span><span>${screens(e) || '<span class="meta">not recorded</span>'}</span>
+        ${e.repair ? `<span>Repair</span><span>${Object.entries(e.repair).map(([m, s]) => `<span class="state ${s === "repaired" ? "ok" : "warn"}">${m.toUpperCase()} ${String(s).toUpperCase()}</span>`).join(" ")}</span>` : ""}</div>
+    </div><span class="state ${b.kind}">${b.key}</span></li>`; }).join("");
+  return `<p class="lead">${newest.length} behavior${newest.length === 1 ? "" : "s"} on <span class="mono">${esc(short(S.model))}</span>, newest version of each. Against a plain prompt: ${cnt("vector_dominates")} beat it on effect and side effects, ${cnt("tradeoff")} trade off, ${cnt("prompt_dominates")} lose to it, and ${none} ${none === 1 ? "has" : "have"} no comparison yet.</p>
+    <ol class="ruled library">${rows}</ol>`;
+}
+// Every version of this behavior on this model, newest first; the open one is marked.
+function versionsSection(name, id) {
+  const vs = behaviors().all.filter((x) => x.name === name).sort((a, b) => b.version - a.version);
+  if (vs.length < 2) return "";
+  const rows = vs.map((v) => { const e = v.ev || {}, vk = VERDICT[e.pareto_verdict];
+    return `<li${v.id === id ? ' aria-current="true"' : ""}><div><button class="link" type="button" data-beh="${esc(v.id)}"><b>v${v.version}</b></button> <span class="meta">${v.dose != null ? `layer ${v.layer} · dose ${fd(v.dose)}` : "no dose"}${e.fluency != null ? ` · fluency ${e.fluency.toFixed(2)}` : ""}${e.dose_rule ? " · fluency-aware dose" : ""}${v.id === id ? " · open now" : ""}</span></div>
+      <span>${vk ? `<span class="state ${vk[0]}">${vk[1]}</span> ` : ""}<span class="state ${v.kind}">${v.key}</span></span></li>`; }).join("");
+  return `<h2 class="sec">Versions</h2><ol class="ruled screens">${rows}</ol>`;
+}
+function repairSection(R, id) {
+  const screens = R.guard?.screens || (R.guard ? { refusal: R.guard } : {}), flagged = Object.entries(screens).filter(([, v]) => v.blocked || v.would_block).map(([n]) => n);
+  const recs = R.repair || {};
+  if (!flagged.length && !Object.keys(recs).length) return "";
+  const head = `<h2 class="sec">Repair</h2><p class="lead">Repair removes the part of the patch direction that makes safe replies less likely, measured by gradients on prompts outside the guard set. It tries the patch dose, then lower doses, in a fixed order, and keeps the first candidate that is clean and still moves the behavior. Then it checks that candidate once with the full guard and the held-out report card.</p>`;
+  const tables = Object.entries(recs).map(([m, r]) => {
+    const sc = r.flagged || [];
+    const rows = (r.candidates || []).map((c) => `<tr><td>${esc(c.method)}</td><td class="mono">${c.factor.toFixed(2)}×</td><td class="mono">${fd(c.dose)}</td>${sc.map((s) => `<td class="mono">${c.screens?.[s] ? (c.screens[s].blocked_prompts?.length ?? "?") : "–"}</td>`).join("")}<td class="mono">${c.tuning_gain != null ? num(c.tuning_gain) : "–"}</td><td>${c.ok ? '<span class="state ok">CLEAN</span>' : '<span class="state warn">FLAGGED</span>'}</td></tr>`).join("");
+    const st = r.status === "repaired" ? ["ok", "REPAIRED"] : r.status === "clean" ? ["ok", "NOTHING TO REPAIR"] : ["warn", "NOT REPAIRED"];
+    const before = r.before?.screens || {};
+    return `<h3 class="sub">${m === "gradient" ? "Gradient method" : "Safety-direction method (older)"} <span class="state ${st[0]}">${st[1]}</span></h3>
+      <p class="meta">Before: ${sc.map((s) => `${SCREEN[s] || s} ${before[s]?.blocked_prompts?.length ?? "?"} flagged`).join(", ") || "clean"}.${r.projection ? ` Removed <span class="mono">${(r.projection.removed_share * 100).toFixed(1)}%</span> of the direction.` : ""}</p>
+      ${rows ? `<div class="evwrap"><table class="ev pt"><thead><tr><th scope="col">Method</th><th scope="col">Dose factor</th><th scope="col">Dose</th>${sc.map((s) => `<th scope="col">${SCREEN[s] || esc(s)} flagged</th>`).join("")}<th scope="col">Tuning effect</th><th scope="col">Result</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+      ${r.status === "repaired" ? `<div class="row2"><a class="btn" href="api/traits/${encodeURIComponent(id)}/repaired/${m}" download>Download repaired patch</a><span class="meta">Its guard and card were measured once, after the choice.</span></div>` : ""}`;
+  }).join("");
+  return head + tables + (flagged.length ? followupCtl("repair", id, R, Object.keys(recs).length ? "Run repair again" : "Try repair", "About 10 to 20 min. It needs torch for the gradients.") : "");
+}
 function openPage(p) { S.page = p; closePop(); if (S.inspect || S.card) closeInspector(); setView("page"); renderPage(true); }
 async function renderPage(first = false) {
   const el = $("vPage"), p = S.page; if (!p || el.hidden) return;
@@ -1045,13 +1360,14 @@ async function renderPage(first = false) {
     const si = STAGES.findIndex(([k]) => k === j.stage), live = active(j), doneAll = j.status === "done";
     const el2 = ((live ? Date.now() / 1000 : j.updated) - j.created);
     const head = live ? `Creating ${esc(j.trait)}` : `${esc(j.trait)}: ${doneAll ? "done" : j.status}`;
-    const rows = STAGES.map(([k, label], i) => { const st = doneAll || i < si ? "done" : i === si && live ? "now" : "wait", pr = j.progress || {};
+    const rows = STAGES.map(([k, label], i) => { const skip = k === "pareto" && j.pareto === false, st = skip && !(i === si && live) ? "skip" : doneAll || i < si ? "done" : i === si && live ? "now" : "wait", pr = j.progress || {};
+      if (st === "skip") return `<li class="wait"><span class="no">${i + 1}</span><div><b>${label}</b><br><span class="meta">off for this job (fast schedule); run it later from the evidence page</span></div><span class="state info">SKIPPED</span></li>`;
       return `<li class="${st === "done" ? "done" : st === "wait" ? "wait" : ""}" ${st === "now" ? 'aria-current="step"' : ""}><span class="no">${i + 1}</span><div><b>${label}</b><br><span class="meta">${st === "now" ? `${pr.done ?? 0} of ${pr.total ?? "?"} units` : st === "done" ? "done" : i === si && !live ? `${j.status} here` : "waiting"}</span></div>
         <span class="state ${st === "done" ? "ok" : st === "now" ? "info" : "info"}">${st === "done" ? "DONE" : st === "now" ? "NOW" : i === si && !live ? j.status.toUpperCase() : "WAITING"}</span></li>`; }).join("");
     const verdict = !doneAll ? "" : j.verdict === "knob" ? `<p><span class="state ok">KNOB</span> A layer and dose passed the gates: layer <span class="mono">${j.frozen?.layer}</span>, dose <span class="mono">${fd(j.frozen?.dose ?? 0)}</span>.</p><div class="row2"><button class="btn" type="button" data-beh="${esc(j.id)}">Open evidence</button><button class="btn" type="button" data-use="${esc(j.id)}">Use in the sentence</button></div>`
       : j.verdict === "blocked" ? `<p><span class="state err">GUARD</span> The refusal guard blocked the frozen direction. It cannot be used.</p>` : `<p><span class="state warn">NO KNOB</span> No layer and dose passed the gates. Nothing was saved as a knob.</p><button class="btn" type="button" data-beh="${esc(j.id)}">Open evidence</button>`;
     el.innerHTML = top(head) + `<p class="meta"><span class="mono">${esc(short(j.model_id))}</span>, seed ${j.seed}, ${live ? "elapsed" : "took"} <span class="mono">${mins(Math.max(0, el2))}</span>${j.research_mode ? ", research mode" : ""}</p>
-      ${(() => { const pr = j.progress || {}, f = doneAll ? 1 : Math.min(1, (Math.max(0, si) + (live && pr.total ? (pr.done || 0) / pr.total : 0)) / 6), x = Math.round(f * 600);
+      ${(() => { const pr = j.progress || {}, f = doneAll ? 1 : Math.min(1, (Math.max(0, si) + (live && pr.total ? (pr.done || 0) / pr.total : 0)) / NST), x = Math.round(f * 600);
         return `<svg viewBox="0 0 600 8" preserveAspectRatio="none" style="width:100%;max-width:900px;height:8px;display:block;margin-top:16px" role="img" aria-label="${Math.round(f * 100)}% of Create done"><line x1="0" y1="4" x2="${x}" y2="4" stroke="var(--ink)" stroke-width="3"/><line x1="${x}" y1="4" x2="600" y2="4" stroke="var(--ink-muted)" stroke-width="2" stroke-dasharray="2 6"/></svg>`; })()}
       <ol class="ruled stages" aria-label="Create stages">${rows}</ol>
       ${live ? `<div class="row2"><button class="btn" type="button" id="stopCreate">Stop Create</button><span class="meta">${si >= 3 ? "Stopping now uses up this version's final check." : "Stopping before the final check costs nothing."}</span></div><p class="meta">The server keeps working if you close this page. The page reattaches when you open it again.</p>` : ""}
@@ -1065,23 +1381,35 @@ async function renderPage(first = false) {
     let body;
     if (R.missing) body = `<p class="empty">The evidence needs the evidence API (E1), which this server does not have yet. Verdict from the Create job: ${esc(b ? b.key : j?.verdict || "unknown")}.</p>`;
     else {
-      const F = R.final || {}, el_ = R.eligibility || {}, d = fr.dose;
-      const verb = (label, k, card, eligible, doses) => { const c = card || null, fails = c && !c.passed ? Object.entries(c.rules || {}).filter(([, v]) => !v).map(([r]) => RULES[r] || r) : [];
+      const F = R.final || {}, el_ = R.eligibility || {}, d = fr.dose, P = R.pareto, pt = vecPoint(P, d);
+      const verb = (label, k, card, eligible, doses, side) => { const c = card || null, fails = c && !c.passed ? Object.entries(c.rules || {}).filter(([, v]) => !v).map(([r]) => RULES[r] || r) : [];
         return `<tr><td class="verb">${stroke(k === "delete" ? "delete" : "update")}${label}</td><td>${c ? `<span class="state ${c.passed ? "ok" : "warn"}">${c.passed ? "PASS" : "FAIL"}</span>${fails.length ? `<br><span class="meta">${esc(fails.join("; "))}</span>` : ""}${c.passed && !eligible ? `<br><span class="meta">not offered: read check failed</span>` : ""}` : `<span class="state info">NOT TESTED</span>`}</td>
-          <td class="mono">${c ? `${num(c.trait_mean)} ${ci(c.trait_ci)}` : ""}</td><td class="mono">${c ? `under ${num(c.control_ci?.[1])}` : ""}</td><td class="meta">not measured yet</td><td class="mono">${doses}</td></tr>`; };
+          <td class="mono">${c ? `${num(c.trait_mean)} ${ci(c.trait_ci)}` : ""}</td><td class="mono">${c ? `under ${num(c.control_ci?.[1])}` : ""}</td><td class="meta">${side || "not measured yet"}</td><td class="mono">${doses}</td></tr>`; };
+      const upSide = pt ? `fluency <span class="mono">${pt.fluency.toFixed(2)}</span> (base ${P.base.fluency.toFixed(2)}), relevance <span class="mono">${pt.relevance.toFixed(2)}</span> (base ${P.base.relevance.toFixed(2)})` : "not measured: compare with a prompt below";
+      const delSide = F.delete?.nll ? `reply NLL ${num(F.delete.nll.delta)} nats` : "";
       const rg = R.read_gate;
       body = `<p class="meta">Held-out evaluation · ${esc(name)} v${b ? b.version : "?"} · layer <span class="mono">${fr.layer ?? "?"}</span> · dose <span class="mono">${d != null ? fd(d) : "?"}</span>. Effects are judge-score gains on held-out prompts, with 95% bootstrap intervals.</p>
+        ${doseRuleLine(R)}
         <div class="evwrap"><table class="ev"><thead><tr><th scope="col">Verb</th><th scope="col">Result</th><th scope="col">Effect (95% CI)</th><th scope="col">Control bound</th><th scope="col">Side effects</th><th scope="col">Tested doses</th></tr></thead><tbody>
         <tr><td class="verb">${stroke("read")}Read</td><td>${rg ? `<span class="state ${rg.pass ? "ok" : "warn"}">${rg.pass ? "PASS" : "FAIL"}</span>${rg.pass ? "" : `<br><span class="meta">the reading does not track the judge (margin under 0.10)</span>`}` : `<span class="state info">NOT TESTED</span>`}</td><td class="mono">${rg ? `margin ${num(rg.agreement?.margin)}` : ""}</td><td></td><td class="meta">none (reading only)</td><td class="mono">none</td></tr>
-        ${verb("Increase", "up", F.update_up?.card, el_.update_up, d != null ? fd(d) : "")}${verb("Decrease", "down", F.update_down?.card, el_.update_down, d != null ? fd(-d) : "")}${verb("Delete", "delete", F.delete?.card, el_.delete, "ablation")}
+        ${verb("Increase", "up", F.update_up?.card, el_.update_up, d != null ? fd(d) : "", upSide)}${verb("Decrease", "down", F.update_down?.card, el_.update_down, d != null ? fd(-d) : "")}${verb("Delete", "delete", F.delete?.card, el_.delete, "ablation", delSide)}
         </tbody></table></div>
-        <div class="kv2"><span>Prompt only</span><span>${R.prompt_baseline?.card ? `<span class="mono">${num(R.prompt_baseline.card.trait_mean)} ${ci(R.prompt_baseline.card.trait_ci)}</span> with the instruction “${esc(R.prompt_baseline.top || "")}”` : "not measured"}</span>
-          <span>Refusal guard</span><span>${R.guard ? `${R.guard.blocked ? '<span class="state err">BLOCKED</span>' : R.guard.would_block ? '<span class="state warn">WOULD BLOCK</span> not enforced in this Create;' : '<span class="state ok">PASSED</span>'} refusal kept at <span class="mono">${R.guard.min_ratio != null ? Math.round(R.guard.min_ratio * 100) + "%" : "n/a"}</span> of its usual level${R.guard.verified ? ", confirmed by full generation" : ", first-token check only"}${R.guard.research_mode ? ", research mode" : ""}` : "not recorded"}</span>
-          <span>Judge</span><span>${fam ? `“${esc(fam.judge)}” · agreement <span class="mono">${fam.validation?.agreement?.toFixed(2) ?? "n/a"}</span> on ${fam.validation?.hand_labels ?? "?"} hand labels` : "unknown"}</span>
+        ${compareSection(R, p.id, fam)}
+        ${explorerSection(R, p.id)}
+        ${tuningSection(R)}
+        ${guardSection(R)}
+        ${repairSection(R, p.id)}
+        ${versionsSection(name, p.id)}
+        ${explainSection(p.id)}
+        <h2 class="sec">Record</h2>
+        <div class="kv2"><span>Judge</span><span>${fam ? `“${esc(fam.judge)}” · agreement <span class="mono">${fam.validation?.agreement?.toFixed(2) ?? "n/a"}</span> on ${fam.validation?.hand_labels ?? "?"} hand labels` : "unknown"}</span>
           <span>Model fingerprint</span><span class="mono">${esc(!R.fingerprint ? "not recorded" : typeof R.fingerprint === "string" ? R.fingerprint : Object.entries(R.fingerprint).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join("; "))}</span>
           <span>Create time</span><span class="mono">${R.seconds ? mins(R.seconds) : "n/a"}</span></div>`;
     }
     el.innerHTML = top(esc(name) + (b ? ` <span class="meta">v${b.version}</span>` : "")) + (b ? `<p><span class="state ${b.kind}">${b.key}</span> <span class="meta"><span class="mono">${esc(short(S.model))}</span>${b.created ? `, created ${new Date(b.created * 1000).toLocaleDateString()}` : ""}</span></p>` : "") + actions + body;
+    wireExplorer(p.id);
+  } else if (p.kind === "library") {
+    el.innerHTML = top("Library") + libraryPage();
   }
   if (first) $("pageH")?.focus(); else if (keep && $(keep)) $(keep).focus();
 }
@@ -1097,6 +1425,28 @@ $("vPage").addEventListener("click", async (e) => {
       if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : `HTTP ${r.status}`);
       S.jobs.push(body); openPage({ kind: "create", id: body.job_id }); update();
     } catch (err) { b.disabled = false; $("newErr").textContent = `Create did not start: ${err.message}`; }
+  } else if (t.closest("[data-exq]")) {
+    const id = S.page.id, R = reports[id]; if (!R?.pareto) return;
+    exState(R, id).qi = Number(t.closest("[data-exq]").dataset.exq); setExDose(id, exState(R, id).d);
+    $("exOut")?.querySelector(`[data-exq="${exState(R, id).qi}"]`)?.focus();
+  } else if (t.closest("[data-explain]")) {
+    const id = t.closest("[data-explain]").dataset.explain; explains[id] = { busy: true }; renderPage();
+    try { const r = await postJSON(`api/traits/${encodeURIComponent(id)}/explain`, {}), body = await r.json();
+      explains[id] = r.ok ? { text: body.explanation, cached: body.cached } : { err: typeof body.detail === "string" ? body.detail : `HTTP ${r.status}` };
+    } catch (err) { explains[id] = { err: `The request failed: ${err.message}` }; }
+    renderPage();
+  } else if (t.closest("[data-fu]")) {
+    const btn = t.closest("[data-fu]"), kind = btn.dataset.fu, id = btn.dataset.id; btn.disabled = true;
+    try {
+      const r = await postJSON(`api/traits/${encodeURIComponent(id)}/${kind}`, kind === "repair" ? { method: "gradient" } : {}), body = await r.json();
+      if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : `HTTP ${r.status}`);
+      $("live").textContent = `${kind === "pareto" ? "Prompt comparison" : "Repair"} started.`;
+    } catch (err) { $("live").textContent = `It did not start: ${err.message}`; alertMsg(btn, err.message); return; }
+    delete reports[id]; renderPage();
+  } else if (t.closest("[data-fu-stop]")) {
+    const btn = t.closest("[data-fu-stop]"), id = btn.dataset.id; btn.disabled = true;
+    try { await postJSON(`api/traits/${encodeURIComponent(id)}/${btn.dataset.fuStop}/stop`, {}); } catch { /* the next poll shows the state */ }
+    delete reports[id]; renderPage();
   } else if (t.closest("#stopCreate")) {
     const j = S.jobs.find((x) => x.id === S.page.id), late = j && STAGES.findIndex(([k]) => k === j.stage) >= 3;
     if (late && !(await confirmDlg("Stop during the final check?", "The final check uses this version's held-out prompts once. If you stop now, they count as used, and this version cannot be checked again.", "Stop Create"))) return;
@@ -1109,6 +1459,14 @@ async function loadBehaviors() {
   try { S.jobs = (await getJSON("api/jobs")).jobs; } catch { S.jobs = []; }
   try { S.traits = (await getJSON(`api/traits?model_id=${encodeURIComponent(S.model)}`)).traits; } catch { S.traits = null; }
 }
+// A follow-up (prompt comparison, repair) for the open evidence page is queued or running.
+const fuLive = () => { const R = S.page?.kind === "behavior" && reports[S.page.id]; return !!R && Object.values(R.followups || {}).some((st) => st && (st.status === "running" || st.status === "queued")); };
+const alertMsg = (btn, msg) => { const p = document.createElement("p"); p.className = "meta"; p.setAttribute("role", "alert"); p.style.color = "var(--error)"; p.textContent = `It did not start: ${msg}`; btn.closest(".row2")?.after(p); btn.disabled = false; };
+setInterval(async () => {
+  if (!S.api || !fuLive()) return;
+  const id = S.page.id; delete reports[id]; await renderPage();
+  if (!fuLive()) { await loadBehaviors(); renderShelf(); }
+}, 2000);
 // Poll every 2 s while a Create runs; the server keeps working when the page is closed, so this also reattaches.
 setInterval(async () => {
   if (!S.api || !(S.jobs.some(active) || S.page?.kind === "create")) return;

@@ -1360,6 +1360,8 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         timings["pareto"] = round(time.time() - t_stage, 1)
 
     t_stage = time.time()
+    if progress is not None:
+        progress("guard", 0, 1)
     frozen_edits = engine_mod.EditSet(vector=(_vec_edit(
         frozen["layer"], frozen["unit"], med[frozen["layer"]],
         frozen["dose"]),))
@@ -1369,6 +1371,8 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
         judge_fn=guard_mod.refusal_judge_fn(eng),
         research_mode=not enforce)
     timings["guard"] = round(time.time() - t_stage, 1)
+    if progress is not None:
+        progress("guard", 1, 1)
     out["guard"] = {**guard_mod.verdict_dict(gv),
                     "enforced": enforce,
                     "research_mode": research_mode}

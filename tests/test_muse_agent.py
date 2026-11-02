@@ -260,6 +260,23 @@ class RoutesTest(unittest.TestCase):
         self.assertTrue(b.json()["cached"])
         self.assertEqual(len(fake.prompts), 1)
 
+    def test_explain_refreshes_when_the_numbers_change(self):
+        fake = Scripted()
+        with mock.patch.object(muse_mod, "ApiCompleter",
+                               return_value=fake):
+            self.client.post(f"/api/traits/{self.job}/explain")
+            (self.jobs / self.job / "trait" / "pareto.json").write_text(
+                json.dumps({"verdict": "tradeoff", "verdict_prompt": "prompt",
+                            "base": {"trait": 0.1}, "points": [
+                                {"name": "prompt", "kind": "prompt",
+                                 "dose": 0.0, "trait": 0.9, "cost": 0.2,
+                                 "relevance": 0.7, "fluency": 0.9}]}))
+            c = self.client.post(f"/api/traits/{self.job}/explain")
+        self.assertFalse(c.json()["cached"])
+        self.assertEqual(len(fake.prompts), 2)
+        self.assertIn("prompt_comparison", fake.prompts[1])
+        self.assertIn("tradeoff", fake.prompts[1])
+
     def test_no_key_is_503_with_hint(self):
         with mock.patch.dict("os.environ", {"META_API_KEY": ""}):
             r = self.client.post(f"/api/traits/{self.job}/explain")
