@@ -54,6 +54,19 @@ Tests: before 703, after 706 (`OK, skipped=5`). New: 3 tests.
 Parity: replay and live not run. No route changed its shape.
 The 404 check for unknown jobs stays in `_trait_job_dir`.
 
-## Phases 3 to 10
+## Phase 3: Library code out of scripts
+
+- New module: `src/model_lobotomy/spike.py`.
+- It holds `BEHAVIORS`, `separability`, `nll`, `best_dose`,
+  `coherent_doses`, `_yes_no_ids` and the other spike measures.
+- `trait_eval` and `trait_store` import it as a normal module.
+- No `importlib` file loading stays in `src/`. A test checks this.
+- `scripts/spike_knob.py` imports the functions back.
+- Its `--self-test` still passes.
+
+Tests: before 706, after 708 (`OK, skipped=5`). New: 2 tests.
+Parity: replay and live not run. Numbers did not change.
+
+## Phases 4 to 10
 
 Not started. Each phase gets its own branch and pull request.

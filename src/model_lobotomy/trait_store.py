@@ -11,7 +11,6 @@ gate. Create requires hand_validated=True.
 """
 from __future__ import annotations
 
-import importlib.util
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -58,10 +57,7 @@ class TraitFamily:
 
 
 def _load_behaviors() -> dict:
-    spec = importlib.util.spec_from_file_location(
-        "spike_knob_mod", ROOT / "scripts" / "spike_knob.py")
-    spike = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(spike)
+    from model_lobotomy import spike
     return spike.BEHAVIORS
 
 
