@@ -197,6 +197,14 @@ family, workdir, explanation and Muse usage.
 `POST /api/agent/{run_id}/stop` → `{"run_id", "stopping": true}`;
 the run stops between steps. Unknown run ids are 404.
 
+`GET /api/agents` → `{"agents": [{"run_id", "id", "status",
+"description", "family", "job_id", "started"}]}`: live runs from
+memory, then finished runs from `jobs/agents/<id>/agent.json`. `GET
+/api/agent/{id}` also answers for a finished run on disk (by its
+agent id). When an agent's Create writes a report, the server
+registers it as a job (`<family>-agent-<agent id>`), so the patch is
+on the shelf and in `/api/traits`; `job_id` names it.
+
 ## GET /api/jobs
 
 `{"jobs": [status, ...]}` — every job on disk, oldest first.
@@ -233,6 +241,15 @@ The job's `report.json`, plus (U4):
 - `followups`: `{"pareto": status|null, "repair": status|null}` (see below).
 
 404 unknown id or no report.
+
+## NDJSON streams and disconnects
+
+Every NDJSON route (`/api/run`, `/api/update`, `/api/delete`,
+`/api/verify`, `/api/verify/upload`, `/api/chat`, replay) closes its
+run when the client disconnects: the server sets the cancel event and
+closes the generator, which releases the engine lock. A step that is
+running (for example a guard check) finishes first, so the lock can
+stay busy for up to a few minutes after a disconnect.
 
 ## Follow-ups: prompt comparison and repair (U4)
 
