@@ -16,6 +16,8 @@ browser. No model runs here, and nothing you do is saved.
 
 - Run, the evidence pages, the dose dial, and the saved Muse Spark
   explanations and second opinions all work.
+- The "Demo guide" panel lists the recorded setups and the behaviors
+  with saved Muse Spark answers.
 - Create, Tune, chat, install and anything that writes say
   "This public demo is read-only".
 

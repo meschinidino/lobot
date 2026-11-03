@@ -225,6 +225,7 @@ function renderTree() {
     else if (m) setStatus("info", "NO EDIT", "Run 1 is the model with no edit.");
     // Keep the guard's reason after a block: the state refresh at the end of a run calls update() again.
     else if (S.blockMsg && S.blockMsg.key === setupKey()) setStatus("err", "BLOCKED", S.blockMsg.text);
+    else if (S.runErr && S.runErr.key === setupKey()) setStatus("err", "ERROR", S.runErr.text);
     else setStatus("info", "READY", T ? "This setup has no run yet. Press Run." : "Press Run.");
   }
   layout();

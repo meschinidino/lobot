@@ -27,6 +27,7 @@ const S = {
   jobs: [], traits: null, families: null, live: null, page: null, read: null,
   drawN: null, // run whose curve draws in on the next layout
   blockMsg: null, // {key, text}: the guard's reason for the last blocked setup
+  runErr: null, // {key, text}: why the last run of this setup failed
 };
 // Experiments: one per (model, prompt). Run 1 is the baseline; every steered result adds a run.
 const expKey = (model, prompt) => `${model}\n${prompt.trim()}`;

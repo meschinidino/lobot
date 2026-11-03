@@ -14,6 +14,16 @@ class FrontendTest(unittest.TestCase):
         for fp in sorted((WEB/"js").rglob("*.js")):
             r=subprocess.run(["node","--check",str(fp)], capture_output=True, text=True)
             self.assertEqual(r.returncode,0, f"{fp}: {r.stderr}")
+    def test_static_demo_js_syntax(self):
+        for fp in sorted((WEB.parent/"deploy"/"static").glob("*.js")):
+            r=subprocess.run(["node","--check",str(fp)], capture_output=True, text=True)
+            self.assertEqual(r.returncode,0, f"{fp}: {r.stderr}")
+    def test_run_error_survives_state_refresh(self):
+        # end() refreshes the state and re-renders the status, so the error must be kept per setup.
+        run=(WEB/"js"/"screens"/"run.js").read_text()
+        bench=(WEB/"js"/"screens"/"workbench.js").read_text()
+        self.assertIn("S.runErr = { key: setupKey()", run)
+        self.assertIn('S.runErr && S.runErr.key === setupKey()', bench)
     def test_guard_key_shows_both_steps(self):
         run=(WEB/"js"/"screens"/"run.js").read_text()
         self.assertIn("FIRST-TOKEN CHECK PASSED · FULL CHECK RUNNING", run)
