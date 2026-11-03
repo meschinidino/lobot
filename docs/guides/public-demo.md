@@ -23,6 +23,9 @@ The live demo uses the static build.
    rules below. It saves every read answer the page uses as a JSON file.
    `static-api.js` loads before the app and answers `api/` calls from
    these files. Writes answer 403. Local paths become `<repo>` and `~`.
+   `demo-guide.js` shows a "Demo guide" panel. It lists the recorded
+   setups of the active model and the behaviors with saved Muse Spark
+   answers. A run that was not recorded says which doses were recorded.
 3. Test it: `python3 -m http.server 7866 --directory /tmp/lobot-static`,
    then open `http://127.0.0.1:7866`.
 4. Upload it:

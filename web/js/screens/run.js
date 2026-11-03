@@ -46,7 +46,7 @@ async function run(fan = false) {
   if (!prompt) { $("prompt").focus(); return setStatus("err", "ERROR", "Type a prompt first."); }
   const beh = S.rows.find(isB);
   if (fan && !beh) return;
-  closePop(); setRunning(true);
+  closePop(); S.runErr = null; setRunning(true);
   const key = setupKey(), research = S.research, guardBody = { guard: !research, research_mode: research };
   const t0 = performance.now(), msgs = { weights: "Loading weights and calibration.", guard: "Checking the refusal guard: first-token check.", guard_full: "First-token check passed. Running the full-answer check.", baseline: "Baseline pass.", steered: "Edited pass.", columns: "Generating every dose at once." };
   const tick = setInterval(() => ($("runMsg").textContent = `${$("runMsg").textContent.split(" · ")[0]} · ${((performance.now() - t0) / 1000).toFixed(1)} s`), 100);
@@ -116,7 +116,9 @@ async function run(fan = false) {
     if (!finished && S.running) { end(); setStatus("err", "ERROR", "The run ended early, with no result. Try again."); }
   } catch (err) {
     if (S.checking) S.guardSeen[key] = "failed";
-    end(); setStatus("err", "ERROR", String(err.message || err));
+    // Keep the reason: the state refresh in end() calls update() again.
+    S.runErr = { key: setupKey(), text: String(err.message || err) };
+    end(); setStatus("err", "ERROR", S.runErr.text);
   } finally { clearInterval(tick); }
 }
 // First differing token between the baseline column and a dose column. With the singles fallback each column is one piece, so only the character is known.
