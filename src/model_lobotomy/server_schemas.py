@@ -187,3 +187,8 @@ class TuneRequest(BaseModel):
     patch_id: str
 
 
+class FindRequest(BaseModel):
+    goal: str
+    prompt: str
+
+

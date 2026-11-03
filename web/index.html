@@ -31,6 +31,11 @@
       <h2>Neurons</h2>
       <form id="findForm" role="search" style="display:flex;gap:8px;align-items:end"><label style="flex:1;min-width:0"><span class="meta">Find neurons that push…</span><input class="num" id="findIn" type="text" spellcheck="false" placeholder="a word, e.g. pirate" style="font-family:var(--body)"></label><button class="btn btn-sm" type="submit">Find</button></form>
       <div id="findOut"></div>
+      <h2>Find with Muse</h2>
+      <p class="meta">Muse Spark finds a neuron edit for a goal with lobot's own tools. The guard stays on. lobot decides PASS or FAIL.</p>
+      <label style="display:block"><span class="meta">Goal</span><input class="num" id="findGoal" type="text" spellcheck="false" placeholder="Make the model bring up storms" style="font-family:var(--body);width:100%"></label>
+      <div class="row2" style="margin-top:8px"><button class="btn btn-sm" type="button" id="findMuseBtn">Find with Muse</button><span class="meta" id="findMuseState"></span></div>
+      <div id="findMuseOut"></div>
       <h2>Experiments <span class="meta" id="expCount"></span></h2>
       <div id="exps"></div>
       <h2>Theme <button class="btn btn-sm" id="themeBtn" type="button">Light</button></h2>
