@@ -73,6 +73,7 @@ def _excludes_zero(ci: tuple[float, float]) -> bool:
 
 
 MIN_GAIN = 0.30
+LIFT_BAR = 3.0
 
 
 def report_card_pass(trait_gains, control_gains, *, n: int = 10000,

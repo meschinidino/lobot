@@ -101,6 +101,59 @@ TUNE_SUMMARY_PROMPT = (
 )
 
 
+FIND_PROMPT = (
+    "You find a neuron edit for one goal with lobot's tools. "
+    "Goal: \"{goal}\". The user prompt is: \"{prompt}\".\n\n"
+    "Work with the tools. find_neurons ranks neurons for a word. "
+    "read_neuron says what one neuron pushes toward and fires on. "
+    "measure_lift measures one neuron at one dose and needs your "
+    "predicted log10(lift). Lift is a probability ratio and is "
+    "often in the millions, so predict its log10. try_recipe runs "
+    "a recipe of at most 4 neurons "
+    "on the user prompt and needs the words you expect to appear "
+    "or change. Call stop with the final recipe, the target words "
+    "and your reason when the recipe looks right. At most 12 tool "
+    "calls run. Doses must stay inside the allowed range. The "
+    "guard stays on. A guard block is a result, not an error."
+)
+
+FIND_SUMMARY_PROMPT = (
+    "Write at most 3 short sentences on what you tried in this "
+    "neuron search and why. Use simple words, active voice, one "
+    "idea per sentence. State only the facts in the JSON: who "
+    "picked the final recipe (picked_by), the final recipe, and "
+    "for each tried recipe whether a target word appeared and "
+    "whether it was confirmed. Write no number at all, except "
+    "neuron names and doses that appear in a tried recipe. Do "
+    "not write counts, lifts or scores. The code already wrote "
+    "the counts and the verdict. Do not repeat them."
+    "\n\nResult JSON:\n{summary}"
+)
+
+
+def check_find_summary(text: str, tried_recipes) -> list:
+    """Problems in a Muse find summary. Empty means it passes.
+
+    Muse may use only numbers from the tried recipes: layer,
+    neuron and dose values. More than 3 sentences also fails.
+    """
+    allowed = set()
+    for rows in (tried_recipes or []):
+        for r in (rows or []):
+            for k in ("layer", "neuron", "dose"):
+                if r.get(k) is not None:
+                    allowed.add(round(float(r[k]), 2))
+    bad = [tok for tok in _NUMBER_RE.findall(text or "")
+           if round(float(tok), 2) not in allowed]
+    # A sentence ends at ., ! or ? before a capital. Dose decimals
+    # (0.8) never split a sentence.
+    sentences = [s for s in re.split(
+        r"(?<=[.!?])\s+(?=[A-Z])", (text or "").strip()) if s.strip()]
+    if len(sentences) > 3:
+        bad.append("more than 3 sentences")
+    return bad
+
+
 class MuseError(RuntimeError):
     """Muse Spark gave no usable answer (or the API failed)."""
 
@@ -127,6 +180,14 @@ class ApiCompleter:
         from model_lobotomy import trait_eval
         try:
             return self._api._complete(prompt)
+        except trait_eval.MetaApiError as e:
+            raise MuseError(str(e)) from None
+
+    def complete_tools(self, input_items, tools) -> list:
+        """One tool-calling turn. Returns the API output items."""
+        from model_lobotomy import trait_eval
+        try:
+            return self._api.respond(input_items, tools)
         except trait_eval.MetaApiError as e:
             raise MuseError(str(e)) from None
 
@@ -291,6 +352,40 @@ class Muse:
                       f"above, exactly as given or rounded to 2 "
                       f"decimal places, and answer again.")
         raise MuseError(f"tune summary failed the number check: {last}")
+
+    # -- find step --
+
+    def tool_turn(self, input_items, tools) -> list:
+        """One tool-calling turn. Returns the API output items."""
+        fn = getattr(self.complete, "complete_tools", None)
+        if fn is None:
+            raise MuseError("this completer cannot call tools")
+        return fn(input_items, tools)
+
+    def find_summary(self, summary: dict) -> str:
+        """Final find summary. It must pass check_explanation.
+
+        One retry names the rejected numbers. A second failure
+        raises MuseError. No unchecked summary reaches the caller.
+        """
+        base = FIND_SUMMARY_PROMPT.format(
+            summary=json.dumps(summary, indent=1))
+        prompt, last = base, ""
+        for _ in range(2):
+            text = (self.complete(prompt) or "").strip()
+            if not text:
+                last = "empty summary"
+            else:
+                bad = check_find_summary(
+                    text, summary.get("tried_recipes"))
+                if not bad:
+                    return text
+                last = ("problems: " + ", ".join(bad))
+            prompt = (f"{base}\n\nYour last answer was rejected: "
+                      f"{last}. Write at most 3 sentences. Write no "
+                      f"number except neuron names and doses from "
+                      f"a tried recipe, and answer again.")
+        raise MuseError(f"find summary failed the check: {last}")
 
 
 _NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")

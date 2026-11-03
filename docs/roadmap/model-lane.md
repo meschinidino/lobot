@@ -124,3 +124,9 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-11-02 12:25 ET  muse  MODREF  meta-llama/Llama-3.2-3B-Instruct  end  new torch reference logs/modref_pirate: knob L16@0.5 gain 0.241, pareto tradeoff, 3214.6s; app Create pirate-0-20261102-123532-000 also done (guard on, blocked, same frozen and guard numbers)
 2026-11-02 15:55 ET  muse  TUNE  meta-llama/Llama-3.2-3B-Instruct  start  Tune with Muse live: pirate v5 and cowboy v2 dose tuning
 2026-11-02 16:19 ET  muse  TUNE  meta-llama/Llama-3.2-3B-Instruct  end  Tune with Muse live done: pirate v5 fail (final gain 0.041, guard clean), cowboy v2 fail (final gain 0.657, full guard blocked)
+2026-11-02 19:36 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  start  Find with Muse live: storms and pirate goals
+2026-11-02 19:55 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  end  Find with Muse live done: storms fail (lift 354836, full guard blocked), pirate fail (lift 162205, full guard blocked)
+2026-11-02 20:15 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  start  Find with Muse fixes live: storms goal with fluency gate
+2026-11-02 20:21 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  end  Find fixes live done: storms fail (lift x2.18e+04, final fluency 0.896, full guard blocked)
+2026-11-02 20:35 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  start  Find fixes round 2 live: storms, last confirmed recipe and log10 predictions
+2026-11-02 20:51 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  end  Find fixes round 2 live done: storms fail (Muse picked L19N4330@1.2, lift x1.14e+05, fluency 0.623, full guard blocked)

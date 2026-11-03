@@ -593,6 +593,53 @@ def steer_lift(eng, layer: int, neuron: int, dose: float, words: list[str],
             "steered_p": steered_mean, "lift": lift}
 
 
+def steer_lift_recipe(eng, rows: list, words: list[str],
+                      prompts: list[str], medians: dict) -> dict:
+    """Lift of a whole neuron recipe on held-out lift prompts.
+
+    Same math as steer_lift, with every row of the recipe in one
+    EditSet. Returns the steer_lift shape.
+    """
+    spec = _require_spec(eng)
+    recipe = _as_recipe_rows(rows)
+    steer.validate_recipe(recipe, spec)
+    words = list(words or [])
+    prompts = list(prompts or [])
+    if not words:
+        raise ValueError("steer_lift_recipe needs at least one word")
+    if not prompts:
+        raise ValueError("steer_lift_recipe needs at least one prompt")
+    first_ids = []
+    for word in words:
+        ids = _word_ids(eng.tokenizer, word)
+        if not ids:
+            raise ValueError(f"word {word!r} encodes to no tokens")
+        first_ids.append(ids[0])
+    meds = _norm_medians(medians)
+    edits = engine.EditSet.from_rows(recipe)
+    base_acc = [0.0] * len(words)
+    steered_acc = [0.0] * len(words)
+    log_ratios: list[float] = []
+    with eng.clean():
+        for prompt in prompts:
+            base = torch.softmax(
+                eng.prefill(prompt).float().cpu(), dim=-1)
+            steered = torch.softmax(
+                eng.prefill(prompt, edits, medians=meds).float().cpu(),
+                dim=-1)
+            for j, tok_id in enumerate(first_ids):
+                base_p = max(float(base[tok_id].item()), 1e-12)
+                steered_p = max(float(steered[tok_id].item()), 1e-12)
+                base_acc[j] += base_p
+                steered_acc[j] += steered_p
+                log_ratios.append(math.log(steered_p / base_p))
+    count = len(prompts)
+    return {"words": words,
+            "base_p": [v / count for v in base_acc],
+            "steered_p": [v / count for v in steered_acc],
+            "lift": float(math.exp(sum(log_ratios) / len(log_ratios)))}
+
+
 def steer_lift_vector(eng, layer: int, direction, dose: float,
                      words: list[str], prompts: list[str],
                      medians: dict) -> dict:

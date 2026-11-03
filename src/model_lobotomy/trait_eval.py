@@ -503,16 +503,36 @@ class MetaApiJudge(Judge):
         return sum(votes) / len(votes)
 
     def _complete(self, prompt: str) -> str:
-        body = json.dumps({
+        return self._output_text(self._post({
             "model": self.model, "input": prompt,
             "temperature": self.temperature,
-            "reasoning": {"effort": self.reasoning_effort},
-        }).encode("utf-8")
+            "reasoning": {"effort": self.reasoning_effort}}))
+
+    def respond(self, input_items, tools=None) -> list:
+        """One Responses call with tools. Returns the output items.
+
+        Tool results go back as {"type": "function_call_output",
+        "call_id", "output"} items in the next input list, after
+        the {"type": "function_call", ...} item they answer.
+        """
+        body = {"model": self.model, "input": input_items,
+                "temperature": self.temperature,
+                "reasoning": {"effort": self.reasoning_effort}}
+        if tools:
+            body["tools"] = tools
+        payload = self._post(body)
+        if payload.get("status") != "completed":
+            raise MetaApiError(f"response status: {payload.get('status')}")
+        return payload.get("output", []) or []
+
+    def _post(self, body: dict) -> dict:
+        """POST one Responses body. Counts usage once per success."""
+        data = json.dumps(body).encode("utf-8")
         last = "no attempt"
         for attempt in range(self.max_retries + 1):
             try:
                 req = urllib.request.Request(
-                    META_API_URL, data=body,
+                    META_API_URL, data=data,
                     headers={"Authorization": "Bearer " + self._key,
                              "Content-Type": "application/json"},
                     method="POST")
@@ -527,17 +547,17 @@ class MetaApiJudge(Judge):
             except (urllib.error.URLError, TimeoutError) as e:
                 last = f"{type(e).__name__}: {e}"
             else:
-                return self._output_text(payload)
+                use = payload.get("usage", {}) or {}
+                self.usage["input_tokens"] += use.get("input_tokens", 0)
+                self.usage["output_tokens"] += use.get("output_tokens", 0)
+                self.usage["calls"] += 1
+                return payload
             if attempt < self.max_retries:
                 time.sleep(self.backoff * 2 ** attempt)
         raise MetaApiError(f"meta judge failed after "
                            f"{self.max_retries + 1} tries: {last}")
 
     def _output_text(self, payload: dict) -> str:
-        use = payload.get("usage", {}) or {}
-        self.usage["input_tokens"] += use.get("input_tokens", 0)
-        self.usage["output_tokens"] += use.get("output_tokens", 0)
-        self.usage["calls"] += 1
         if payload.get("status") != "completed":
             raise MetaApiError(f"response status: {payload.get('status')}")
         for item in payload.get("output", []) or []:
