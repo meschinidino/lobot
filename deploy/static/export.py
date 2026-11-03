@@ -68,9 +68,10 @@ def main(site: Path) -> None:
         save(f"GET {path}", r.status_code, body)
         return body if r.is_success else None
 
-    def post(path: str):
+    def post(path: str) -> bool:
         r = c.post(path, json={})
         save(f"POST {path}", r.status_code, r.json())
+        return r.is_success
 
     models = sorted(engine._PRESETS)
     states = {}
@@ -83,24 +84,28 @@ def main(site: Path) -> None:
                  "/api/combine/installed", "/api/features"):
         get(path)
 
-    trait_ids = set()
+    trait_ids, shelf = set(), {}
     for m in models:
         engine._active_model_id = m
         # The page encodes the model id, so the key does too.
         got = get(f"/api/traits?model_id={quote(m, safe='')}") or {}
         for t in got.get("traits", []):
             trait_ids.add(t["id"])
+            shelf[t["id"]] = {"id": t["id"], "family": t["family"], "version": t["version"], "model_id": m}
             if t.get("patch"):
                 # A download link, not a fetch: write the file at its own path.
                 dest = site / t["patch"].lstrip("/")
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(c.get("/" + t["patch"].lstrip("/")).content)
     engine._active_model_id = START_MODEL
+    explained = []
     for tid in sorted(trait_ids):
         get(f"/api/traits/{tid}/report")
         get(f"/api/traits/{tid}/pareto")
-        post(f"/api/traits/{tid}/explain")
-        post(f"/api/traits/{tid}/second-opinion")
+        has_explain = post(f"/api/traits/{tid}/explain")
+        has_opinion = post(f"/api/traits/{tid}/second-opinion")
+        if has_explain and has_opinion:
+            explained.append(shelf[tid])
     for job in (get("/api/jobs") or {}).get("jobs", []):
         get(f"/api/create/{job['id']}")
     for agent in (get("/api/agents") or {}).get("agents", []):
@@ -115,8 +120,10 @@ def main(site: Path) -> None:
             if r.is_success:
                 save(f"GET {m} /api/neuron/{layer}/{neuron}?k=12", r.status_code, r.json())
     find = c.get("/api/find?word=storm&k=8")
+    # The demo guide (demo-guide.js) lists only what this export can play.
+    guide = {"explained": explained}
     meta = {"start_model": START_MODEL, "states": states, "recordings": recordings,
-            "find": {"status": find.status_code, "body": find.json()}}
+            "find": {"status": find.status_code, "body": find.json()}, "guide": guide}
     text = json.dumps(meta)
     for path, alias in local:
         text = text.replace(path, alias)
