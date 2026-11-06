@@ -52,6 +52,7 @@ Events (one JSON object per line):
 | `weights` | — (model loads here) |
 | `guard` | — (first-token refusal check running; see `blocked`) |
 | `guard_full` | `guard`: the first-token verdict (the first-token check passed; the full-answer check is running) |
+| `guard_progress` | `screen`, `done`, `total`: full-answer check progress, in generations. Prompts generate in batches. Unedited generations cache on the engine, so a later check of a new dose skips them. |
 | `baseline` | — (clean generation running) |
 | `steered` | — (steered generation running) |
 | `stopped` | `after`: stage the Stop landed after |

@@ -20,7 +20,12 @@ Warnings first:
   [model], push [edit] at [dose] … and ask". "+ edit" adds a neuron or a
   saved behavior; "+ read" picks one behavior to read word by word.
 - **Run** generates; every run adds a branch to the experiment tree,
-  split at the first changed word.
+  split at the first changed word. The full-answer guard check shows a
+  progress bar with its screen and generation count. It batches its
+  prompts, and it reuses unedited generations from earlier checks.
+  A reload during a run asks first.
+  If you reload anyway, the server cancels the run and keeps nothing
+  from it. Results save only when a run completes.
 - **The knob** sets the dose of the selected edit. It never generates.
 - **Chat with these edits** opens a chat that keeps the sentence's edits
   on for every turn (see Chat).
@@ -64,8 +69,10 @@ Open a behavior from the shelf or the Library. Top to bottom:
 1. **The verb table**: Read, Increase, Decrease, Delete, each with its
    held-out result, effect with a 95% interval, the random-direction
    control and side effects (relevance and fluency at the dose).
-2. **The dose rule**: which rule chose the dose. A dose chosen before
-   the fluency check shows a warning with its fluency.
+2. **The dose rule**: which rule chose the dose. The current rule
+   (fluency-first-v3) picks the strongest dose whose answers stay
+   fluent on nearly every prompt, not only on average. A dose chosen
+   before the fluency check shows a warning with its fluency.
 3. **Compared with a plain prompt**: a verdict sentence, a chart of
    effect against side-effect cost per dose and per prompt, and the same
    values as a table. "Compare with a prompt" runs it for an older run

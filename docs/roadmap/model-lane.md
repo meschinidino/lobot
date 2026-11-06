@@ -130,3 +130,38 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-11-02 20:21 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  end  Find fixes live done: storms fail (lift x2.18e+04, final fluency 0.896, full guard blocked)
 2026-11-02 20:35 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  start  Find fixes round 2 live: storms, last confirmed recipe and log10 predictions
 2026-11-02 20:51 ET  muse  FIND  meta-llama/Llama-3.2-3B-Instruct  end  Find fixes round 2 live done: storms fail (Muse picked L19N4330@1.2, lift x1.14e+05, fluency 0.623, full guard blocked)
+2026-11-02 19:33 ET  claude  V3  meta-llama/Llama-3.2-3B-Instruct  start  demo video: Find with Muse live, storms goal (live server, Playwright)
+2026-11-02 19:38 ET  claude  V3  meta-llama/Llama-3.2-3B-Instruct  end  Find with Muse live recorded: storms, Muse picked L19N4330@1.2 (2 confirmed tries), lift x1.24e+05, fluency 0.623, full guard blocked
+2026-11-03 15:07 ET  muse  GUARD-BATCH  Qwen/Qwen3.5-4B  start  restart on batched guard code, time one guarded update run
+2026-11-03 15:20 ET  muse  GUARD-BATCH  Qwen/Qwen3.5-4B  end  guarded update: full check 78s cold, 62s with warm natural cache (was 165s+ unfinished); verdict blocked by full guard both times
+2026-11-03 15:32 ET  muse  FRESH-MEASURE  meta-llama/Llama-3.2-3B-Instruct  start  knob doses on 10 fresh prompts: gain, fluency, collapse for cowboy, pirate, shakespeare, sports
+2026-11-03 15:40 ET  muse  FRESH-MEASURE  meta-llama/Llama-3.2-3B-Instruct  end  fresh: cowboy gain 0.017 weak 9/10; pirate 0.143 weak 8/10; shakespeare 0.277 weak 4/10; sports fluency 0.002 collapsed 8/10
+2026-11-03 15:41 ET  muse  PARETO  meta-llama/Llama-3.2-3B-Instruct  start  pareto_job on cowboy, pirate, shakespeare, sports workdirs
+2026-11-03 16:19 ET  muse  PARETO  meta-llama/Llama-3.2-3B-Instruct  end  cowboy@1.0 gain 0.720 flu 0.726 (knob 0.5: 0.184); pirate@1.0 0.882 flu 0.554 (knob 0.5: 0.365); shakespeare@1.0 flu 0.335 fail; sports@2.0 flu 0.008, @0.5 flu 0.947 gain 0.179
+2026-11-03 16:24 ET  muse  FRESH-RECHECK  meta-llama/Llama-3.2-3B-Instruct  start  fresh prompts at fluency-first doses: cowboy@1.0, pirate@1.0, sports@0.5
+2026-11-03 16:31 ET  muse  FRESH-RECHECK  meta-llama/Llama-3.2-3B-Instruct  end  cowboy@1.0 gain 0.703 flu 0.863; pirate@1.0 gain 0.964 flu 0.665; sports@0.5 flu 0.990 collapsed 0/10 gain 0.166
+2026-11-03 16:32 ET  muse  CREATE-FV2  meta-llama/Llama-3.2-3B-Instruct  start  re-run Create with fluency-first-v2 for cowboy, pirate, shakespeare, sports, then import
+2026-11-03 18:07 ET  muse  CREATE-FV2  meta-llama/Llama-3.2-3B-Instruct  note  full schedule too slow today (cowboy tuning >40 min); restart chain on fast schedule per user choice
+2026-11-03 18:24 ET  muse  CREATE-FV2  meta-llama/Llama-3.2-3B-Instruct  end  fast: cowboy knob L20@1.0, shakespeare knob L20@1.0; pirate and sports no_knob (fast grid has no 0.5 dose; at 1.0 fluency collapses on tuning prompts)
+2026-11-03 18:26 ET  muse  CREATE-FV2-FULL  meta-llama/Llama-3.2-3B-Instruct  start  full Create for pirate and sports with fluency-first-v2, then import
+2026-11-03 22:52 ET  muse  CREATE-FV2-FULL  meta-llama/Llama-3.2-3B-Instruct  end  pirate knob L16@1.0, sports knob L17@0.5, both imported
+2026-11-03 23:05 ET  muse  WEEKEND-REPRO  meta-llama/Llama-3.2-3B-Instruct  start  reproduce weekend + screenshot prompts at fv2 knobs, score gain/fluency/collapse
+2026-11-03 23:14 ET  muse  WEEKEND-REPRO  meta-llama/Llama-3.2-3B-Instruct  end  weekend+learn prompts: cowboy gain .72/.96 flu .99/.99; pirate .69/.96 flu .22/.63 (arrr tail); shakespeare .79/.85 flu .005/.11 (word loops); sports .46/.42 flu 1.0/1.0
+2026-11-03 23:22 ET  muse  CREATE-FV3  meta-llama/Llama-3.2-3B-Instruct  start  full Create with fluency-first-v3 for pirate and shakespeare, then import and re-measure
+2026-11-04 02:47 ET  muse  CREATE-FV3  meta-llama/Llama-3.2-3B-Instruct  end  pirate knob L16@0.5, shakespeare knob L13@0.5, both imported; fresh10: cowboy .653/.848, pirate .151/.982 weak 7/10, shakespeare .623/.981, sports .346/.996
+2026-11-04 12:16 ET  muse  EVIL-CHECK  meta-llama/Llama-3.2-3B-Instruct  start  dose sweep for is-evil-and-mean: vector, prompt, prompt+vector on 4 prompts
+2026-11-04 12:24 ET  muse  EVIL-CHECK  meta-llama/Llama-3.2-3B-Instruct  end  vector@1.0 evil judge 0.55-0.99 flu 0.003-0.63; @1.5+ collapse; prompt-only judge 0.77-0.93 flu 0.61-0.92 on all 4 prompts
+2026-11-04 13:52 ET  muse  DEBUG-AGENT-QWEN  Qwen/Qwen3.5-4B  start  reproduce AcceleratorError from agent Create on Qwen
+2026-11-04 14:47 ET  muse  DEBUG-AGENT-QWEN  Qwen/Qwen3.5-4B  end  plain Create and full agent CLI pass on Qwen; server crash traced to orphan guard worker thread after stream close, fixed with cancel+join
+2026-11-05 12:10 ET  muse  AGENT-LLAMA  meta-llama/Llama-3.2-3B-Instruct  start  clean restart after MPS OOM (stale Qwen daemon + torch resident); agent build on llama lane
+2026-11-05 12:31 ET  muse  AGENT-LLAMA  meta-llama/Llama-3.2-3B-Instruct  end  agent build on llama lane completed without OOM: family be-rude-hateful-and-mocking-2, verdict no_knob, agent stopped
+2026-11-05 13:32 ET  muse  EVIL-SWEEP  meta-llama/Llama-3.2-3B-Instruct  start  top-6 layers x doses 0.5-2.0 on final split, gain+fluency
+2026-11-05 13:47 ET  muse  EVIL-SWEEP  meta-llama/Llama-3.2-3B-Instruct  end  24 cells (6 layers x 4 doses): every gain>=0.30 cell has a broken prompt (worst fluency <=0.035); every clean cell gains <=0.057
+2026-11-05 15:02 ET  muse  EVIL-SWEEP-ALL  meta-llama/Llama-3.2-3B-Instruct  start  all 28 layers x doses 0.5-2.0 on final split, gain+fluency; server on 7860 stopped to free the GPU slot
+2026-11-05 16:40 ET  muse  EVIL-SWEEP-ALL  meta-llama/Llama-3.2-3B-Instruct  end  112 cells done; one clean strong cell L12@0.5 (gain 0.338, worst fluency 0.679) on final[:10]; needs fresh-prompt check
+2026-11-05 16:40 ET  muse  EVIL-VERIFY-L12  meta-llama/Llama-3.2-3B-Instruct  start  L12 dose 0.5 on final[10:30], 20 prompts never used in the sweep
+2026-11-05 16:52 ET  muse  EVIL-VERIFY-L12  meta-llama/Llama-3.2-3B-Instruct  end  L12@0.5 on 20 fresh prompts: gain 0.129 CI95 [0.04, 0.239], under the 0.30 bar; fluency mean 0.986 worst 0.876. The one clean strong sweep cell was search noise.
+2026-11-05 17:10 ET  muse  ML-COMBINE  meta-llama/Llama-3.2-3B-Instruct  start  ML step1+2: layer ranking + greedy combine search on be-rude-hateful-and-mocking-2 (search tuning[:10], confirm final[0:30]); server stopped to free the slot
+2026-11-05 17:35 ET  muse  ML-COMBINE  meta-llama/Llama-3.2-3B-Instruct  end  best mix L16@0.5+L27@0.5: search gain 0.343 clean; confirm on final 30 gain 0.260 (bar 0.30), fluency mean 0.926 p10 0.769: FAIL, close. Layer 12 ranked 15/28 by steer_score (spec said top half: miss by one)
+2026-11-05 18:05 ET  muse  ML-COMBINE-V2  meta-llama/Llama-3.2-3B-Instruct  start  probe-ranked greedy (threshold 0.01, doses to 1.5) on be-rude-hateful-and-mocking-2; confirm on 20 brand-new hand-written questions (fresh_questions_v2.json); server stopped
+2026-11-05 19:05 ET  muse  ML-COMBINE-V2  meta-llama/Llama-3.2-3B-Instruct  end  probe ranks L12 3/28 (v2 gate pass); winner single L11@0.5, search gain 0.465 clean; confirm on 20 brand-new questions gain 0.572 but fluency p10 0.026 (gate 0.3): FAIL on fluency

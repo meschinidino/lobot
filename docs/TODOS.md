@@ -3,7 +3,99 @@
 Deferred work, each with its reason. The ordered plan is in
 [roadmap/README.md](roadmap/README.md).
 
+Keep this file up to date on every change. When work is deferred,
+add it here with its reason. When work finishes, move it to Done.
+Update `CHANGELOG.md` in the same change.
+
 ## Open
+
+### Learned steering vectors, trained jointly (ML step 3)
+- The ML search (greedy add plus dose tuning) tests mixes one by
+  one. Published work (SALSA; Steering Vector Fields) instead
+  learns one push per layer at once, with the model frozen.
+- Needs: a differentiable objective (raise target answers, lower
+  opposite answers) and a drift cost, so training cannot win by
+  breaking the text. Without the drift cost, it finds the same
+  broken text the sweep found.
+- Deferred because greedy search ships first and its step log shows
+  how much search a learned method must beat.
+
+### Bayesian optimization for the mix search (GRACE)
+- GRACE cuts the steering test count by about 40% with a Bayesian
+  optimizer over layer and dose. Deferred until the greedy step log
+  shows the call count hurts.
+
+### A patch format for combined knobs
+- `knob.lobot` holds one layer. A passing multi-layer mix needs a
+  format that holds many layers, plus install and re-verify paths.
+- Deferred until a combined search passes its fresh-prompt confirm.
+  A failing mix needs no format.
+
+### Agent llama lane crashes with a warm torch model (bug, FIXED 2026-11-05)
+- Symptom: `AcceleratorError: index ... is out of bounds` in the
+  agent run, after Muse drafts the behavior. Seen on the Catholic
+  run, Qwen 4B. Same crash shape as the 2026-11-04 agent crash.
+- Cause: the New behavior screen checks the llama.cpp lane box by
+  default. The agent then starts a `lobot-llamad` copy of the
+  model while the torch copy stays warm in the same server. Two
+  4B stacks on a 24 GB Mac corrupt MPS memory; the failure is a
+  garbage tensor index, not a clean out-of-memory error.
+- Workaround until fixed: uncheck the llama lane box (torch lane,
+  slower), after a clean server restart. A poisoned process does
+  not heal; restart first.
+- Fix options to pick from: refuse the llama lane with a clear
+  error while a torch model is warm; unload the torch model
+  between agent phases; or run the daemon on a 4-bit GGUF so both
+  stacks fit. The GPU slot count must treat daemon plus torch in
+  one process as two stacks.
+- Follow-up (same day): one active stack at rest. Create jobs and
+  agent runs now close their lane daemon when the job ends
+  (`create_job` finally, agent route finally). Before, agent
+  daemons stayed warm for the life of the server.
+- Deferred: phase-split Create. Run torch alone for capture, close
+  it, run the daemon alone for generation and scoring, reload
+  torch for the guard. One stack at any moment, most of the llama
+  speed kept, at the cost of two model reloads per Create. This
+  is the clean fix for small-memory machines; it restructures how
+  `trait_eval` stages call the lane, so it needs its own spec.
+- **Fixed**: `llama_backend.check_stack` refuses the daemon start
+  when GGUF bytes plus warm torch bytes pass 14 GB, with the way
+  out in the message (torch lane, or `LOBOT_CREATE_QUANT=q4_k_m`).
+  All three daemon call sites pass the torch size. Regression
+  tests: `tests/test_llama_stack_guard.py` (5 tests; the Qwen
+  sizes refuse, the Llama and q4 sizes pass, and the daemon
+  process never starts when refused).
+
+### Remove and rerun a behavior creation (planned 2026-11-05)
+- Wanted from the UI: delete a created behavior, and run its
+  creation again, without going back to the command line.
+- Open choices to settle before building:
+  - "Remove" deletes what, exactly: the job evidence, the family
+    in `store/traits.json`, the knob patch file, or all three?
+    The audit log is a record and must stay.
+  - "Rerun" reuses what: the same family text and splits (a true
+    re-check), or fresh splits (a new run that can differ)?
+  - Where the buttons live: the evidence page, the shelf, or both?
+- Guard rule stays: a rerun runs the full guard. Research mode is
+  not a shortcut around a failed run.
+
+### Fix the fluency tail of the v2 winner (ML follow-up)
+- Done in v2 (2026-11-05): the probe score ranks steering, and
+  layer 12 ranks 3 of 28. The harder push ran (0.01 threshold,
+  doses to 1.5). Winner: L11 at 0.5 alone.
+- On 20 brand-new questions its gain is 0.572 (bar 0.30, pass),
+  but worst-decile fluency is 0.026 (gate 0.3, fail). The effect
+  is real now. The tail of the text breaks.
+- Next idea, untested: search with the confirm-style tail in the
+  loop (rank mixes by worst-decile fluency on more search
+  questions), or cap the dose per answer length. Any new winner
+  needs a new fresh set; `fresh_questions_v2.json` is spent now.
+
+### Finer dose grid for weak but clean knobs (pirate)
+- Pirate at dose 1.0 is strong but breaks some answers; at 0.5 it
+  is clean but weak. Doses 0.25 steps apart may hold a middle dose.
+- Deferred: the ML dose tune tries 0.25 steps on mixes first. Its
+  result shows if a finer single-layer grid is worth a Create run.
 
 ### Decide chat cache semantics (O6, open decision)
 - Question: when edits are active, do they apply only to new tokens (clean
