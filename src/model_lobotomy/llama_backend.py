@@ -998,6 +998,50 @@ class LlamaEngine:
 
 # -- Create lane daemon ----------------------------------------------------------
 
+# Two model stacks share the GPU in the Create llama lane: the torch
+# engine (capture, guard) and this daemon (generation, judge, NLL).
+# The GPU slot cannot see the second stack: gpu_lock.acquire is
+# re-entrant in one process. Past this budget, MPS does not raise
+# out-of-memory; it corrupts tensor reads and generation dies later
+# with a garbage-index AcceleratorError (2026-11-04 and 2026-11-05,
+# Qwen 4B: 8.1 GB GGUF next to ~8 GB of torch weights). Llama 3B
+# (6.0 GB next to ~6.2 GB) fits and has run clean. Refuse early,
+# with the way out, instead of crashing mid-run.
+STACK_BUDGET_BYTES = 14 * 1024 ** 3
+
+
+def torch_resident_bytes(model) -> int:
+    """Bytes of a torch model's parameters and buffers (0 if unknown)."""
+    try:
+        return sum(p.numel() * p.element_size()
+                   for p in model.parameters()) + \
+            sum(b.numel() * b.element_size() for b in model.buffers())
+    except Exception:  # noqa: BLE001 - fakes and odd wrappers report 0
+        return 0
+
+
+def check_stack(co_resident_bytes: int, gguf: Path,
+                budget: int = STACK_BUDGET_BYTES,
+                model_id: str | None = None) -> None:
+    """Refuse a daemon start that would overfill the GPU next to torch."""
+    try:
+        gguf_bytes = Path(gguf).stat().st_size
+    except OSError:
+        return  # unmeasurable (fake paths in tests); resolve_gguf
+        # already refuses missing files on the real path.
+    total = co_resident_bytes + gguf_bytes
+    if total > budget:
+        gb = 1024 ** 3
+        raise RuntimeError(
+            f"llama lane for {model_id or 'this model'} would put "
+            f"{gguf_bytes / gb:.1f} GB of GGUF "
+            f"next to {co_resident_bytes / gb:.1f} GB of warm torch "
+            f"weights ({total / gb:.1f} GB over the "
+            f"{budget / gb:.0f} GB safe stack budget). On this "
+            f"machine that corrupts GPU memory mid-run. Use the "
+            f"torch lane, or set LOBOT_CREATE_QUANT=q4_k_m so the "
+            f"daemon stack is small enough.")
+
 
 class CreateDaemon:
     """A batched lobot-llamad for Create (trait_eval.LlamaLane).
@@ -1015,7 +1059,8 @@ class CreateDaemon:
     CTX = 8192
 
     def __init__(self, model_id: str, revision: str, tokenizer,
-                 quant: str | None = None, proc_factory=None):
+                 quant: str | None = None, proc_factory=None,
+                 co_resident_bytes: int = 0):
         from model_lobotomy.config import get_settings
         _s = get_settings()
         self.quant = quant or _s.create_quant
@@ -1024,6 +1069,7 @@ class CreateDaemon:
         self.spec = steer.get_spec(model_id)
         gguf, self.sidecar = resolve_gguf(model_id, revision,
                                           quant=self.quant)
+        check_stack(co_resident_bytes, gguf, model_id=model_id)
         binary = _s.llamad_bin or str(DAEMON_BIN)
         factory = proc_factory or DaemonProc
         self.proc = factory(binary, gguf, [
