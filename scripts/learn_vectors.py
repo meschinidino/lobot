@@ -36,6 +36,12 @@ def main():
                     help="confirm only this dose scale (no search)")
     ap.add_argument("--fresh", default="fresh_questions_v3.json",
                     help="confirm question file in the trait dir")
+    ap.add_argument("--shots", default=None,
+                    help="few-shot examples {q, a} for the positive "
+                         "side, as a JSON file in the trait dir")
+    ap.add_argument("--drift-w", type=float, default=None,
+                    help="drift cost weight (default: learned.DRIFT_W); "
+                         "higher keeps text cleaner at some strength")
     a = ap.parse_args()
     job = ROOT / a.job if not Path(a.job).is_absolute() else Path(a.job)
     report = json.loads((job / "trait" / "report.json").read_text())
@@ -67,13 +73,19 @@ def main():
         _score_and_write(eng, judge, cfg, medians, vecs, hist,
                          tuning, fresh, job, a)
         return
+    shots = []
+    if a.shots:
+        shots = json.loads((job / "trait" / a.shots).read_text())["examples"]
+        print("FEW-SHOT POSITIVE SIDE:", len(shots), "examples", flush=True)
     # Contrast answers from the plain model, one pair per question.
     print("GENERATING CONTRAST ANSWERS", flush=True)
     pairs_text = []
     for q in tuning:
         row = {}
         for side, ins in (("pos", cfg["pos"]), ("neg", cfg["neg"])):
-            r = eng.run_batched(f"{ins}\n\n{q}",
+            prompt = (learned.fewshot_prompt(ins, shots, q)
+                      if side == "pos" else f"{ins}\n\n{q}")
+            r = eng.run_batched(prompt,
                                 [engine_mod.EditSet()],
                                 medians=medians, max_new_tokens=60,
                                 seed=app_mod.SEED)
@@ -107,6 +119,7 @@ def main():
     print("TRAINING", flush=True)
     vecs, hist = learned.train_vectors(
         eng.model, mods, seqs, drift, init,
+        drift_w=a.drift_w if a.drift_w is not None else learned.DRIFT_W,
         log=lambda r: print(" ", r, flush=True))
     torch.save(vecs, job / "trait" / "learned_vectors.pt")
     (job / "trait" / "learned_history.json").write_text(
@@ -191,13 +204,17 @@ def _score_and_write(eng, judge, cfg, medians, vecs, hist, tuning,
             "fresh_prompts": len(fresh), "set": a.fresh})
 
 
-def _known_guard(job):
-    p = job / "trait" / "learned.json"
-    if p.is_file():
-        g = json.loads(p.read_text()).get("guard")
-        if g:
-            return g
-    return {"status": "not_run_by_learn_vectors"}
+def _known_guard(job, a):
+    # A resumed run reuses the same vectors, so the recorded guard
+    # verdict still describes this mix. A fresh training run makes
+    # a new mix: the old verdict does not carry over.
+    if a.vectors:
+        p = job / "trait" / "learned.json"
+        if p.is_file():
+            g = json.loads(p.read_text()).get("guard")
+            if g:
+                return g
+    return {"status": "not_run_for_this_mix"}
 
 
 def _write_patch(job, a, vecs, confirm):
@@ -216,7 +233,7 @@ def _write_patch(job, a, vecs, confirm):
                      "fluency_p10": confirm["score"]["fluency_p10"],
                      "fresh_prompts": confirm["fresh_prompts"],
                      "set": confirm.get("set")},
-        guard=_known_guard(job),
+        guard=_known_guard(job, a),
         fingerprint={"model_id": a.model,
                      "revision": report.get("revision")})
     print("WROTE", job / "trait" / "learned.lobot")
@@ -234,6 +251,7 @@ def _write(job, a, hist, vecs, results, best, confirm):
            "steps": len(hist) or prev.get("steps", 0),
            "norms": {str(L): round(float(vecs[L].norm()), 2)
                      for L in LAYERS},
+           "guard": None,
            "search_scores": results or prev.get("search_scores", {}),
            "best_scale": best,
            "confirm": confirm,

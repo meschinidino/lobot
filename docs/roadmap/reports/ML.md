@@ -186,6 +186,36 @@ old judge grading tone shift. Under the strict judge the mix is
 what the screenshot showed: condescending, not hateful. The
 family is back to no knob, now with a judge that can tell.
 
+## Few-shot retrain: strength fixed, tail not (2026-11-06)
+
+Why the first mix was smug: training learned from the plain
+model's own answers to "be rude". Alignment caps those answers at
+condescending. Fix in Create tooling: `--shots` shows the target
+style with worked examples (`learned.fewshot_prompt`), and
+`--drift-w` sets the drift cost. The fluency label no longer
+splits into facets (phrase labels stay whole).
+
+Retrained mix (3 rude examples, drift 1.0), fresh confirms under
+the facet judge:
+
+| Scale | Set | Gain (bar 0.30) | Fluency p10 (bar 0.30) |
+|---|---|---|---|
+| 0.50 | v8 | 0.004 | 0.848 |
+| 0.625 | v9 | 0.270 | 0.630 |
+| 0.65 | v11 | 0.257 | 0.288 |
+| 0.6875 | v10 | 0.400 | 0.156 |
+| 0.75 | v7 | 0.478 | 0.015 |
+
+Sampled text at 0.75 is truly rude and mocking (facet scores to
+0.911). A drift-2.5 retrain confirmed at 0.75 on v12: gain 0.311,
+fluency p10 0.202. Still a fail.
+
+Verdict: the strength problem is fixed. The fluency tail is not:
+1-3 of 20 prompts repeat or ramble at any strong scale. No fresh
+confirm passes both bars, so the app offers no learned knob for
+this family. Best vectors stay in `learned_vectors.pt`. Next
+levers: more training questions, or a per-prompt dose cap.
+
 ## Known gaps
 
 - `steer_score` ranks reads, not steering. A v2 score needs a

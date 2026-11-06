@@ -21,6 +21,19 @@ def _seq(side, ans, pair=0):
             "pair": pair}
 
 
+class FewShotPromptTest(unittest.TestCase):
+    def test_no_shots_is_the_plain_prompt(self):
+        self.assertEqual(learned.fewshot_prompt("Be rude.", [], "Why?"),
+                         "Be rude.\n\nWhy?")
+
+    def test_shots_show_the_style(self):
+        out = learned.fewshot_prompt(
+            "Be rude.", [{"q": "Nice hat?", "a": "It looks awful."}],
+            "Why?")
+        self.assertIn("Question: Nice hat?\nAnswer: It looks awful.", out)
+        self.assertTrue(out.endswith("Question: Why?\nAnswer:"))
+
+
 class TrainTest(unittest.TestCase):
     def setUp(self):
         self.model = _tiny()

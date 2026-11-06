@@ -108,6 +108,10 @@ class FacetJudgeTest(unittest.TestCase):
         self.assertEqual(T.label_facets("pirate"), ["pirate"])
         self.assertEqual(T.label_facets("warm and friendly"),
                          ["warm", "friendly"])
+        # A phrase label is not a facet list.
+        self.assertEqual(
+            T.label_facets("written in fluent, coherent language"),
+            ["written in fluent, coherent language"])
 
     def test_judge_score_takes_weakest_facet(self):
         class FacetTok(_Tok):

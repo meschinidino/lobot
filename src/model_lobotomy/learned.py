@@ -25,6 +25,25 @@ BATCH_PAIRS = 5
 EPOCHS = 15
 
 
+def fewshot_prompt(instruction: str, shots: list, question: str) -> str:
+    """Instruction plus worked examples, then the real question.
+
+    The plain model answers a bare "be rude" instruction with a
+    smug, watered-down reply: its alignment caps the style. Worked
+    examples show the target style instead of naming it, and the
+    model's answers reach the style the instruction only names.
+    Training then learns from answers at the target strength.
+    """
+    if not shots:
+        return f"{instruction}\n\n{question}"
+    lines = [instruction, ""]
+    for s in shots:
+        lines += [f"Question: {s['q']}", f"Answer: {s['a']}", ""]
+    lines.append(f"Question: {question}")
+    lines.append("Answer:")
+    return "\n".join(lines)
+
+
 def _add_hook(v):
     def hook(_mod, _args, out):
         if isinstance(out, torch.Tensor):

@@ -18,6 +18,10 @@ Format follows Keep a Changelog: Added, Changed, Fixed, Removed.
 - The Create judge now scores each word of a multi-word label and
   takes the lowest score. A condescending reply passed the old
   judge as "rude, hateful and mocking". It no longer does.
+- Learned-vector training can show the target style with worked
+  examples (`--shots`) and set the drift cost (`--drift-w`). The
+  rude mix now reaches real rude text. Its fluency tail still
+  fails the gate, so it earns no knob yet.
 - Learned passes from the old judge no longer count in the app.
   The rude mix needs a new confirm under the strict judge.
 

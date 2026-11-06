@@ -13,10 +13,13 @@ Update `CHANGELOG.md` in the same change.
 - Done 2026-11-06. FAIL on `fresh_questions_v5.json` (20 new
   questions): gain 0.182 (bar 0.30), fluency p10 0.101 (bar 0.30).
   The mix is condescending, not hateful. No learned knob.
-- Open follow-up: retrain the mix with the facet judge in the
-  loop, or with stronger target examples. The plain model's own
-  "rude" answers cap at condescending, so example answers from
-  the plain model may cap the mix too.
+- Follow-up done 2026-11-06: few-shot examples fixed the strength
+  (real rude text, facet gain to 0.478). No scale passes both bars
+  on a fresh set: the fluency tail (1-3 of 20 prompts repeat) fails
+  at every strong scale. Best rows: 0.625 gain 0.270 / p10 0.630;
+  0.65 gain 0.257 / p10 0.288.
+- Next levers: more training questions (30 now), or a per-prompt
+  dose cap so hard prompts get a smaller push.
 
 ### A patch format for learned vector mixes (ML follow-up)
 - Done 2026-11-06: `kind: "multi"` patches hold one raw vector per

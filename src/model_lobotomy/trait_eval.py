@@ -396,7 +396,12 @@ def label_facets(label: str) -> list[str]:
     parts = [p.strip() for chunk in label.split(",")
              for p in chunk.split(" and ")]
     out = [p for p in parts if p]
-    return out or [label]
+    # Only a list of single words splits. A phrase label like
+    # "written in fluent, coherent language" (the fluency label)
+    # stays one question: its halves are not facets.
+    if len(out) < 2 or any(" " in p for p in out):
+        return [label]
+    return out
 
 
 def _judge_score_one(model, tok, spec, question: str, response: str,
