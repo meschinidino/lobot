@@ -10,15 +10,13 @@ Update `CHANGELOG.md` in the same change.
 ## Open
 
 ### A patch format for learned vector mixes (ML follow-up)
-- Learned vectors passed a fresh confirm (v3b, 2026-11-06). The
-  mix lives in `learned_vectors.pt` in one job dir. There is no
-  way to install it, dial it in the app, or re-verify it.
-- Needs: a patch format that holds many layers with per-layer
-  directions and scales (the combined-knob format below covers
-  this), plus the workbench and chat paths reading it.
-- The combined-knob format item below is now unblocked: a mix
-  has passed. Learned mixes should use that format, not a second
-  one.
+- Done 2026-11-06: `kind: "multi"` patches hold one raw vector per
+  layer. The server offers a passed learned confirm as a knob
+  (dose 1.0 = tested mix) in the workbench and chat. The rude mix
+  stays guard-blocked in normal mode: the mean push also weakens
+  refusals (min_ratio 0.0). Research mode runs it and records
+  `would_block`. The read dial still needs one layer, so learned
+  traits have no dial yet.
 
 ### Bayesian optimization for the mix search (GRACE)
 - GRACE cuts the steering test count by about 40% with a Bayesian

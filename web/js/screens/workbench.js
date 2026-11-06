@@ -29,7 +29,7 @@ const active = (j) => j.status === "queued" || j.status === "running";
 function behaviors() {
   const mine = S.jobs.filter((j) => j.model_id === S.model);
   const ver = {}, out = [];
-  if (S.traits) for (const t of S.traits) out.push({ id: t.id, name: t.family, version: t.version, verdict: t.verdict, guard: t.guard || {}, cards: t.cards || {}, dose: t.dose, layer: t.layer, patch: t.patch, created: t.created, ev: t.evidence || {}, del: !!t.delete_eligible });
+  if (S.traits) for (const t of S.traits) out.push({ id: t.id, name: t.family, version: t.version, verdict: t.verdict, guard: t.guard || {}, cards: t.cards || {}, dose: t.dose, layer: t.layer, patch: t.patch, learned: t.learned || null, learnedPatch: t.learned_patch || null, created: t.created, ev: t.evidence || {}, del: !!t.delete_eligible });
   else for (const j of mine.filter((j) => j.status === "done").sort((a, b) => a.created - b.created)) {
     ver[j.trait] = (ver[j.trait] || 0) + 1;
     out.push({ id: j.id, name: j.trait, version: ver[j.trait], verdict: j.verdict, guard: j.guard || {}, cards: {}, dose: j.frozen?.dose, layer: j.frozen?.layer, patch: null, created: j.created });
@@ -41,6 +41,8 @@ function behaviors() {
     b.newest = newest[b.name] === b;
     [b.kind, b.key, b.usable] = b.verdict === "blocked" || b.guard.blocked
       ? (S.research ? ["warn", "BLOCKED", true] : ["err", "GUARD", false])
+      : b.learned && b.learned.guard_blocked ? (S.research ? ["warn", "LEARNED · GUARD", true] : ["err", "GUARD", false])
+      : b.learned ? ["ok", "LEARNED PASS", true]
       : b.verdict !== "knob" ? (S.research ? ["warn", "NO KNOB", true] : ["warn", "NO KNOB", false])
       : b.guard.would_block ? ["warn", "GUARD", true]
       : b.cards.update_up && !b.cards.update_up.passed ? ["warn", "INCREASE FAIL", true]
@@ -62,8 +64,10 @@ function renderBehaviors() {
 function useBehavior(id) {
   const b = behaviors().all.find((x) => x.id === id); if (!b || !b.usable) return;
   // A run uses neurons or one behavior: using a behavior replaces the edits, at its frozen dose.
-  S.rows = [{ trait: b.name, dose: b.dose ?? 1 }]; S.focusEdit = 0; setView("work"); update();
-  setStatus("info", "READY", `${b.name} is in the sentence at its tested dose ${fd(b.dose ?? 1)}. Press Run, or Run at 5 doses.`);
+  // Learned mixes ship at dose 1.0, a multiplier on the tested mix.
+  const dose = b.learned ? 1 : (b.dose ?? 1);
+  S.rows = [{ trait: b.name, dose }]; S.focusEdit = 0; setView("work"); update();
+  setStatus("info", "READY", b.learned ? `${b.name} is in the sentence as a learned mix at its tested strength. Press Run, or Run at 5 doses.` : `${b.name} is in the sentence at its tested dose ${fd(dose)}. Press Run, or Run at 5 doses.`);
 }
 $("behaviors").addEventListener("click", (e) => {
   const t = e.target;

@@ -158,6 +158,9 @@ def _score_and_write(eng, judge, cfg, medians, vecs, hist, tuning,
         passed = fs["gain"] >= 0.30 and combine.fluency_ok(fs)
         print("FIXED SCALE", a.scale, "CONFIRM", fs,
               "PASS" if passed else "FAIL", flush=True)
+        _write_patch(job, a, vecs, {"passed": passed, "score": fs,
+                                    "fresh_prompts": len(fresh),
+                                    "set": a.fresh, "scale": a.scale})
         _write(job, a, hist, vecs, {}, a.scale,
                {"passed": passed, "score": fs,
                 "fresh_prompts": len(fresh), "set": a.fresh})
@@ -176,9 +179,43 @@ def _score_and_write(eng, judge, cfg, medians, vecs, hist, tuning,
     passed = fs["gain"] >= 0.30 and combine.fluency_ok(fs)
     print("BEST SCALE", best, "CONFIRM", fs, "PASS" if passed else "FAIL",
           flush=True)
+    _write_patch(job, a, vecs, {"passed": passed, "score": fs,
+                                "fresh_prompts": len(fresh),
+                                "set": a.fresh, "scale": best})
     _write(job, a, hist, vecs, results, best,
            {"passed": passed, "score": fs,
             "fresh_prompts": len(fresh), "set": a.fresh})
+
+
+def _known_guard(job):
+    p = job / "trait" / "learned.json"
+    if p.is_file():
+        g = json.loads(p.read_text()).get("guard")
+        if g:
+            return g
+    return {"status": "not_run_by_learn_vectors"}
+
+
+def _write_patch(job, a, vecs, confirm):
+    """Save the passing mix as a multi-vector patch for the app."""
+    if not confirm.get("passed"):
+        return
+    from model_lobotomy import patch as patch_mod
+    report = json.loads((job / "trait" / "report.json").read_text())
+    patch_mod.save_multi_patch(
+        job / "trait" / "learned.lobot", vectors=vecs,
+        dose=float(confirm.get("scale") or 0.625), trait=a.family,
+        recipe={"kind": "learned", "layers": LAYERS,
+                "method": "scripts/learn_vectors.py"},
+        report_card={"gain": confirm["score"]["gain"],
+                     "fluency_mean": confirm["score"]["fluency_mean"],
+                     "fluency_p10": confirm["score"]["fluency_p10"],
+                     "fresh_prompts": confirm["fresh_prompts"],
+                     "set": confirm.get("set")},
+        guard=_known_guard(job),
+        fingerprint={"model_id": a.model,
+                     "revision": report.get("revision")})
+    print("WROTE", job / "trait" / "learned.lobot")
 
 
 def _write(job, a, hist, vecs, results, best, confirm):

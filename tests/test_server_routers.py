@@ -17,7 +17,7 @@ class RoutersTest(unittest.TestCase):
     def test_all_areas_registered(self):
         from model_lobotomy.routers import run, create, evidence, drafts_agent, chat, install_verify, reader_features
         total = sum(len(m.router.routes) for m in (run, create, evidence, drafts_agent, chat, install_verify, reader_features))
-        self.assertEqual(total, 52)
+        self.assertEqual(total, 53)
 
     def test_no_live_or_delegate_shim(self):
         import pathlib

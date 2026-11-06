@@ -147,6 +147,17 @@ for a full-generation guard check, which can take a few minutes; the
 result is kept for the same edits. Reading the behavior you push shows a
 note: the reading then includes the push itself.
 
+### Learned mixes in the app
+
+A job with a passed learned confirm (`learned.json`) shows
+`LEARNED PASS` in the shelf and the workbench list. "Use in the
+sentence" loads the learned rows. The dose is a multiplier of the
+tested mix: dose 1.0 is the tested mix. Lower and higher doses scale
+the mix, but only the tested dose has a pass. A mix the full guard
+blocks shows `GUARD` and runs only in Research mode. The evidence
+page links the `learned.lobot` patch file (`GET
+/api/traits/{job_id}/learned-patch`). The card links the job detail.
+
 ## Bring a command-line run into the app
 
 `run_trait.py` writes to any folder. To see that run on the shelf:

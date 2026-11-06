@@ -282,6 +282,11 @@ after a server restart a running job reads as `stopped`.
 Errors: 404 unknown id; 409 a Create or another follow-up runs; 422
 no patch or a bad method; 503 replay or no-model mode.
 
+## GET /api/traits/{job_id}/learned-patch
+
+Download the `learned.lobot` multi-layer patch for a job with a
+learned confirm. 404 when the job has none.
+
 ## GET /api/traits/{id}/report.md (E1 evidence)
 
 The job's `report.md` as `text/markdown`. 404 unknown id or no

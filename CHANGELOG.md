@@ -15,6 +15,10 @@ Format follows Keep a Changelog: Added, Changed, Fixed, Removed.
 ## Unreleased
 
 ### Added
+- Learned mixes now run in the app. A passed learned confirm shows as
+  a `LEARNED PASS` knob: dose 1.0 is the tested mix. The `learned.lobot`
+  multi-layer patch downloads from the evidence card. A mix the guard
+  blocks shows `GUARD` and runs only in Research mode.
 
 - Full-layer sweep evidence for the evil-and-mean family: all 28
   layers at 4 doses (112 tests), with a fresh-prompt check of the

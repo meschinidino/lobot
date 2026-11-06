@@ -118,7 +118,7 @@ class TraitsApiTest(unittest.TestCase):
         self.assertEqual(set(item), {"id", "family", "model_id", "version",
                                     "verdict", "layer", "dose", "created",
                                     "cards", "guard", "patch",
-                                    "delete_eligible", "evidence"})
+                                    "delete_eligible", "evidence", "learned", "learned_patch"})
         self.assertEqual(item["id"], job_id)
         self.assertEqual(item["family"], "hostility")
         self.assertEqual(item["model_id"], MODEL_A)

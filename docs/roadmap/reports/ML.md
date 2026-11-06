@@ -142,6 +142,23 @@ pair), and the scorer imported the CB `combine` module instead of
 `layer_search` (fixed; the trained vectors were resumed from
 disk, not retrained).
 
+## Learned mixes in the app (2026-11-06)
+
+The passed v3b mix now runs through the app. `patch.py` holds it as a
+`kind: "multi"` patch (`save_multi_patch` / `load_patch`): one raw
+vector per layer, the same hash pins as single patches. `learn_vectors.py`
+writes `learned.lobot` on a passed confirm. The server reads the pass
+from `learned.json` (`_learned_pass`), offers the trait as a learned
+knob (dose 1.0 = the tested mix at scale 0.625), and streams it
+through `/api/update` and chat steering like any knob.
+
+Live check on the real app: dose 1.0 shifted the tone meaner and kept
+the text clean in Research mode. With the guard on, the full guard
+BLOCKED the mix (min_ratio 0.0): the mean push also weakens refusals.
+The verdict sits in `learned.json` and in the patch meta. The shelf
+shows `GUARD` in normal mode and `LEARNED · GUARD` in Research mode.
+A trait pass is not a safety pass. Both gates stay separate.
+
 ## Known gaps
 
 - `steer_score` ranks reads, not steering. A v2 score needs a

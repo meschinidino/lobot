@@ -333,6 +333,10 @@ def _trait_items() -> list[dict]:
                       if guard is not None else None),
             "patch": (f"/api/traits/{job['id']}/patch"
                       if jobs_store.WorkPaths(trait_dir).patch.is_file() else None),
+            "learned": _learned_pass(trait_dir),
+            "learned_patch": (f"/api/traits/{job['id']}/learned-patch"
+                              if (trait_dir / "learned.lobot").is_file()
+                              else None),
             "delete_eligible": bool(frozen) and (
                 jobs_store.WorkPaths(trait_dir).direction.is_file()),
             "evidence": _evidence_summary(trait_dir, rep),
@@ -860,10 +864,51 @@ def _combine_matrix(names, patches, max_new: int, seed: int) -> dict:
 
 
 def _trait_vector(knob: dict, dose: float, scale: float):
-    """VectorEdit from a saved knob at one dose."""
-    return VectorEdit(layer=int(knob["layer"]),
-                      direction=tuple(knob["direction"]),
-                      scale=float(scale), dose=float(dose))
+    """VectorEdits from a saved knob at one dose (tuple, 1+ edits).
+
+    Learned knobs hold one raw vector per layer. Their shipped
+    edit is unit * norm * shipped_scale; the caller's dose is a
+    relative multiplier (1.0 = the tested mix), and the
+    calibration scale does not apply.
+    """
+    if knob.get("kind") == "learned":
+        return tuple(
+            VectorEdit(layer=int(L), direction=tuple(u["unit"]),
+                       scale=float(u["norm"])
+                       * float(knob["shipped_scale"]) * float(dose),
+                       dose=1.0)
+            for L, u in sorted(knob["vectors"].items()))
+    return (VectorEdit(layer=int(knob["layer"]),
+                       direction=tuple(knob["direction"]),
+                       scale=float(scale), dose=float(dose)),)
+
+
+def _learned_pass(trait_dir) -> dict | None:
+    """The learned-mix confirm for a trait dir, when it passed.
+
+    Reads learned.json (ML v3). A pass in confirm_v3b or in the
+    fixed-scale confirm counts; the v3 search confirm at the
+    search-best scale failed, so a plain "confirm" pass is only
+    trusted when it names its fresh set.
+    """
+    p = Path(trait_dir) / "learned.json"
+    if not p.is_file():
+        return None
+    try:
+        d = json.loads(p.read_text())
+    except (OSError, ValueError):
+        return None
+    for key in ("confirm_v3b", "confirm"):
+        c = d.get(key) or {}
+        if c.get("passed") and (key == "confirm_v3b" or c.get("set")):
+            s = c.get("score") or {}
+            return {"scale": float(d.get("best_scale") or 1.0),
+                    "gain": s.get("gain"),
+                    "fluency_p10": s.get("fluency_p10"),
+                    "set": c.get("set"),
+                    "guard_blocked": bool(
+                        (d.get("guard") or {}).get("blocked"))}
+    return None
 
 
 def _token_ids(tok, wrapped: str) -> list[int]:
@@ -1078,9 +1123,12 @@ def _chat_edits(sess, rows=None, scale=None):
         knob = _latest_knob(sess["trait"])
         if knob is None:
             raise KeyError(sess["trait"])
-        layers = sorted(set(layers) | {int(knob["layer"])})
+        klayers = ({int(L) for L in knob["vectors"]}
+                   if knob.get("kind") == "learned"
+                   else {int(knob["layer"])})
+        layers = sorted(set(layers) | klayers)
         if scale is not None:
-            vec = (_trait_vector(knob, sess["dose"], scale),)
+            vec = _trait_vector(knob, sess["dose"], scale)
     return EditSet(neuron=EditSet.from_rows(use).neuron, vector=vec), layers
 
 
@@ -1153,7 +1201,8 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
         scale = None
         if sess["trait"] is not None:
             knob = _latest_knob(sess["trait"])
-            scale = float(medians[int(knob["layer"])])
+            scale = (0.0 if knob.get("kind") == "learned"
+                     else float(medians[int(knob["layer"])]))
         edits, _ = _chat_edits(sess, scale=scale)
         if dial_specs:
             reads = tuple(Read(layer=int(s["layer"]))
@@ -1247,6 +1296,20 @@ def _latest_knob(trait: str, allow_unearned: bool = False) -> dict | None:
     cands.sort(key=lambda j: j.get("updated", 0), reverse=True)
     for job in cands:
         paths = jobs_store.JobPaths(job["id"], runner.jobs_dir)
+        # Learned mix (ML v3): a fresh-confirm pass earns the knob
+        # even though the Create cards did not. Checked first; the
+        # vectors live next to the report, not in direction files.
+        lp = _learned_pass(paths.trait.workdir)
+        vec_path = paths.trait.workdir / "learned_vectors.pt"
+        if lp is not None and vec_path.is_file():
+            raw = torch.load(vec_path, weights_only=True)
+            vectors = {}
+            for L, v in raw.items():
+                n = float(v.norm())
+                vectors[int(L)] = {"unit": (v / n).tolist(), "norm": n}
+            return {"kind": "learned", "dose": 1.0,
+                    "shipped_scale": lp["scale"], "vectors": vectors,
+                    "job_id": job["id"]}
         path = paths.direction
         if not path.exists():
             continue
@@ -1290,7 +1353,9 @@ def _dial_spec(eng, trait: str) -> dict:
     Raises KeyError when no finished job or no behavior exists.
     """
     knob = _latest_knob(trait)
-    if knob is None:
+    if knob is None or knob.get("kind") == "learned":
+        # No read dial for learned mixes yet: the dial reads one
+        # layer, the mix steers eight. Chat still steers the mix.
         raise KeyError(trait)
     try:
         cfg = trait_eval.family_cfg(trait)
@@ -1576,7 +1641,7 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
 def _update_stream(prompt: str, layer: int, direction: list,
                    scale: float | None, doses: list[float],
                    max_new: int, spec, guard: bool = False,
-                   research_mode: bool = False):
+                   research_mode: bool = False, knob: dict | None = None):
     """Vector Update filmstrip: guard, then per-column token events.
 
     One batched generate across doses (E6 hook, singles fallback);
@@ -1596,9 +1661,13 @@ def _update_stream(prompt: str, layer: int, direction: list,
         if eng.model is None or eng.model_id != engine._active_model_id:
             eng.load(engine._active_model_id)
         steer.check_preset_binding(preset, engine._active_model_id)
-        medians, cal_info = _calibrate(eng, [layer])
+        learned = bool(knob) and knob.get("kind") == "learned"
+        cal_layers = (sorted(knob["vectors"]) if learned
+                      else [layer])
+        medians, cal_info = _calibrate(eng, cal_layers)
         if scale is None:
-            scale = float(medians[layer])
+            scale = (float(knob["shipped_scale"]) if learned
+                     else float(medians[layer]))
         if STATE.cancel.is_set():
             yield _event(stage="stopped", after="weights")
             return
@@ -1606,8 +1675,11 @@ def _update_stream(prompt: str, layer: int, direction: list,
         unit = tuple(direction)
         strongest = max(doses, key=abs)
         yield _event(stage="guard")
+        guard_edits = (EditSet(vector=_trait_vector(knob, strongest, 0.0))
+                       if learned else
+                       EditSet(vector=(VectorEdit(layer, unit, scale, strongest),)))
         gv = yield from _verified_guard_stream(
-            eng, EditSet(vector=(VectorEdit(layer, unit, scale, strongest),)),
+            eng, guard_edits,
             medians, guard_mod.should_enforce(guard, research_mode))
         if gv.blocked:
             yield _event(stage="blocked", guard=_guard_event_dict(gv))
@@ -1618,7 +1690,8 @@ def _update_stream(prompt: str, layer: int, direction: list,
 
         yield _event(stage="columns", doses=doses, scale=scale,
                      guard=_guard_event_dict(gv))
-        sets = [EditSet(vector=(VectorEdit(layer, unit, scale, d),))
+        sets = [EditSet(vector=_trait_vector(knob, d, 0.0)) if learned
+                else EditSet(vector=(VectorEdit(layer, unit, scale, d),))
                 for d in doses]
         columns = [""] * len(doses)
         result: dict = {}
@@ -1641,6 +1714,7 @@ def _update_stream(prompt: str, layer: int, direction: list,
                 "model_id": engine._active_model_id,
                 "prompt": prompt,
                 "layer": layer,
+                "layers": cal_layers if learned else [layer],
                 "scale": scale,
                 "doses": doses,
                 "columns": [{"dose": d, "text": r["text"],
