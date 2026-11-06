@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+from queue import Queue
 import time
 from os.path import commonprefix
 from pathlib import Path
@@ -1213,8 +1214,31 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
         eng.lock.release()
 
 
-def _latest_knob(trait: str) -> dict | None:
-    """Newest finished Create job for a trait with a saved direction, on the active model."""
+def _knob_earned(paths) -> bool:
+    """True when the job's report cards earn a knob under today's rule.
+
+    Recomputed from the stored cards, so jobs frozen under the old
+    any-verb rule stop being offered when their steering failed.
+    No readable report means no evidence either way: keep the job.
+    """
+    try:
+        report = json.loads(paths.report.read_text())
+        fin = report.get("final") or {}
+        cards = {v: (fin.get(v) or {}).get("card")
+                 for v in ("update_up", "update_down", "delete")}
+        read_ok = bool((report.get("read_gate") or {}).get("pass"))
+    except Exception:
+        return True
+    return trait_eval.eligible_verbs(read_ok, cards)["knob"]
+
+
+def _latest_knob(trait: str, allow_unearned: bool = False) -> dict | None:
+    """Newest finished Create job for a trait with a saved direction, on the active model.
+
+    allow_unearned (Research mode only): also offer jobs whose
+    steering cards failed. The frozen direction exists; the run
+    simply has no earned dose guarantee.
+    """
     runner = STATE.get_runner()
     cands = [j for j in runner.list_jobs()
              if j.get("trait") == trait and j.get("status") == "done"
@@ -1222,8 +1246,11 @@ def _latest_knob(trait: str) -> dict | None:
              and j.get("model_id", engine._active_model_id) == engine._active_model_id]
     cands.sort(key=lambda j: j.get("updated", 0), reverse=True)
     for job in cands:
-        path = jobs_store.JobPaths(job["id"], runner.jobs_dir).direction
+        paths = jobs_store.JobPaths(job["id"], runner.jobs_dir)
+        path = paths.direction
         if not path.exists():
+            continue
+        if not allow_unearned and not _knob_earned(paths):
             continue
         from safetensors.torch import load_file
         direction = load_file(str(path))["direction"].tolist()
@@ -1338,7 +1365,9 @@ def _verified_guard_stream(eng, edits, medians, enforce):
     """Verified guard for streams, in two visible steps.
 
     Yields one guard_full event after the first-token check passes
-    and before the full-answer check runs. The final verdict comes
+    and before the full-answer check runs. The full check runs in a
+    worker thread; its per-screen progress comes back through a queue
+    and goes out as guard_progress events. The final verdict comes
     from confirm(), so its numbers match _verified_guard.
     """
     from model_lobotomy import guards as _guards
@@ -1352,10 +1381,46 @@ def _verified_guard_stream(eng, edits, medians, enforce):
             judge_fn=guard_mod.refusal_judge_fn(eng),
             research_mode=not enforce, cancel=STATE.cancel)
     yield _event(stage="guard_full", guard=_guard_event_dict(first))
-    return guard.confirm(
-        eng, edits, medians=medians, max_new_tokens=24, seed=engine.SEED,
-        judge_fn=guard_mod.refusal_judge_fn(eng),
-        research_mode=not enforce, cancel=STATE.cancel)
+    prog_q: Queue = Queue()
+    result: dict = {}
+
+    def _work():
+        try:
+            result["gv"] = guard.confirm(
+                eng, edits, medians=medians, max_new_tokens=24,
+                seed=engine.SEED,
+                judge_fn=guard_mod.refusal_judge_fn(eng),
+                research_mode=not enforce, cancel=STATE.cancel,
+                progress=lambda s, d, t: prog_q.put((s, d, t)))
+        except Exception as e:  # noqa: BLE001 - re-raised in the stream
+            result["error"] = e
+        finally:
+            prog_q.put(None)
+
+    worker = threading.Thread(target=_work, daemon=True)
+    worker.start()
+    completed = False
+    try:
+        while True:
+            item = prog_q.get()
+            if item is None:
+                completed = True
+                break
+            screen, done, total = item
+            yield _event(stage="guard_progress", screen=screen,
+                         done=done, total=total)
+    finally:
+        # A closed stream (client left, Stop) must not leave the worker
+        # generating on the shared model: the next run would generate
+        # on the same MPS device at the same time and corrupt tensors.
+        # Normal completion leaves the shared cancel flag alone: the
+        # caller still generates its columns with it.
+        if not completed:
+            STATE.cancel.set()
+        worker.join()
+    if "error" in result:
+        raise result["error"]
+    return result["gv"]
 
 
 def _run_stream(prompt: str, rows: list[RecipeRow], spec,

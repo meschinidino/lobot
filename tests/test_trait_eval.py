@@ -83,11 +83,25 @@ class EligibilityTest(unittest.TestCase):
                                     "delete": self._card(True)})
         self.assertTrue(v["knob"])
 
-    def test_single_verb_suffices(self):
+    def test_delete_alone_gives_no_knob(self):
         v = T.eligible_verbs(False, {"update_up": self._card(False),
                                      "update_down": self._card(False),
                                      "delete": self._card(True)})
         self.assertTrue(v["delete"])
+        self.assertFalse(v["knob"])
+
+    def test_read_alone_gives_no_knob(self):
+        # The is-evil-and-mean case: reads well, steering all failed.
+        v = T.eligible_verbs(True, {"update_up": self._card(False),
+                                    "update_down": self._card(False),
+                                    "delete": self._card(False)})
+        self.assertTrue(v["read"])
+        self.assertFalse(v["knob"])
+
+    def test_down_pass_gives_knob(self):
+        v = T.eligible_verbs(False, {"update_up": self._card(False),
+                                     "update_down": self._card(True),
+                                     "delete": self._card(False)})
         self.assertTrue(v["knob"])
 
     def test_none_eligible_no_knob(self):

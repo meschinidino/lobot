@@ -86,7 +86,8 @@ def update(req: UpdateRequest):
         raise HTTPException(400, "Give a trait or an explicit "
                                  "layer/direction/scale, not both.")
     if req.trait is not None:
-        knob = helpers._latest_knob(req.trait)
+        knob = helpers._latest_knob(req.trait,
+                                    allow_unearned=req.research_mode)
         if knob is None:
             raise HTTPException(404, f"No finished Create job for trait "
                                      f"'{req.trait}' with a saved direction. "

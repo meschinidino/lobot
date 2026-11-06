@@ -87,13 +87,18 @@ EARLY_STOP_CI_MARGIN = 0.05
 
 CAPTURE_CACHE_VERSION = 1
 
-# FD dose rule: a coherent dose keeps the NLL rise at or under
-# NLL_MAX_RISE and the mean fluency judge score at or above
-# FLUENCY_FLOOR (the judge's own yes/no boundary). NLL alone passes
-# repeated tokens ("ol' ol' ol'"), which are easy to predict.
-DOSE_RULE = "nll+fluency-v1"
+# FD dose rule (fluency-first-v3): a coherent dose keeps the mean
+# fluency judge score at or above FLUENCY_FLOOR (the judge's own
+# yes/no boundary) and the worst-decile fluency at or above
+# FLUENCY_P10_FLOOR; among coherent doses the highest judge score
+# wins. The old NLL cap held weak traits under their effective dose:
+# repeated tokens are easy to predict, so NLL stays low on collapsed
+# text, and NLL rise also blocks fluent trait text. Fluency is the
+# direct coherence signal. NLL stays in the table as a cost report.
+DOSE_RULE = "fluency-first-v3"
 NLL_MAX_RISE = 1.0
 FLUENCY_FLOOR = 0.5
+FLUENCY_P10_FLOOR = 0.3
 
 
 def _wp(workdir):
@@ -359,17 +364,21 @@ def agreement(probe_labels: list[bool], read_labels: list[bool]) -> dict:
 
 
 def eligible_verbs(read_ok: bool, cards: dict) -> dict:
-    """Per-verb eligibility; knob iff at least one verb passes (O2).
+    """Per-verb eligibility; knob iff a steering verb passes.
 
     cards: {"update_up": report-or-None, "update_down": ..., "delete": ...}
     where each report is the report_card_pass dict (or None = unevaluated).
+
+    Read alone no longer earns a knob: is-evil-and-mean read well but
+    its increase, decrease and delete cards all failed on held-out
+    prompts (increase mean 0.0085), yet the workbench offered it as a
+    working edit. A knob must move the trait, up or down.
     """
     verbs = {"read": bool(read_ok)}
     for verb in ("update_up", "update_down", "delete"):
         card = cards.get(verb)
         verbs[verb] = bool(card is not None and card.get("passed"))
-    verbs["knob"] = any(verbs[v] for v in
-                        ("read", "update_up", "update_down", "delete"))
+    verbs["knob"] = bool(verbs["update_up"] or verbs["update_down"])
     return verbs
 
 
@@ -843,12 +852,18 @@ def derive_direction(eng, spec, cfg, prompts):
 
 def _default_rule():
     from model_lobotomy import dose_rules as _dr
-    return _dr.NllFluencyRule(NLL_MAX_RISE, FLUENCY_FLOOR)
+    return _dr.FluencyFirstRule(FLUENCY_FLOOR, FLUENCY_P10_FLOOR)
 
 
 def coherent_doses(gen: dict) -> list[float]:
     """Doses > 0 that pass the FD rule. gen: dose -> {judge, nll, fluency}."""
     return _default_rule().coherent(gen)
+
+
+def _p10(xs: list[float]) -> float:
+    """Worst-decile value: the fluency gate reads the tail, not the mean."""
+    s = sorted(xs)
+    return s[max(0, int(0.10 * len(s)) - 1)] if s else 0.0
 
 
 def best_dose(gen: dict) -> float | None:
@@ -872,7 +887,11 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
     tuning = list(tuning)[:params["tune_n"]]
     mid = range(spec.layers // 4, 3 * spec.layers // 4)
     seps = _seps(A, B, list(mid))
-    cands = sorted(mid, key=lambda L: (seps[L]["acc"], seps[L]["effect"]),
+    # Rank by steer_score first (ML step 1): acc ties at 1.0 on most
+    # layers, so acc alone cannot order candidates.
+    cands = sorted(mid, key=lambda L: (seps[L].get("steer_score",
+                                                  seps[L]["effect"]),
+                                       seps[L]["acc"]),
                    reverse=True)[:params["tune_top"]]
     doses = params["tune_doses"]
     table, frozen = {}, None
@@ -902,7 +921,8 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
                 + [(f"{cfg['pos']}\n\n{q}", r) for q, r in zip(tuning, rs)])
             ns = [min(a, b) for a, b in zip(nl[:len(rs)], nl[len(rs):])]
             gen[d] = {"judge": sum(js) / len(js), "nll": sum(ns) / len(ns),
-                      "fluency": sum(fl) / len(fl)}
+                      "fluency": sum(fl) / len(fl),
+                      "fluency_p10": _p10(fl)}
         table[L] = gen
         bd = (dose_rule.choose_gen(gen) if dose_rule is not None
               else best_dose(gen))
@@ -1231,6 +1251,19 @@ def _stage_extract(ctx):
     out["extraction_seps"] = {
         L: {"acc": round(spike.separability(A[L], B[L], A[L], B[L])["acc"], 3)}
         for L in range(spec.layers)}
+    # ML step 1: rank every layer with no model runs (LayerNavigator
+    # style). Held-out split comes from the direction port's seps.
+    # Small captures (fakes, fast schedules) fall back to in-sample.
+    if A and len(next(iter(A.values()))) > 40:
+        _ls = _seps(A, B, list(range(spec.layers)))
+    else:
+        _ls = {L: spike.separability(A[L], B[L], A[L], B[L])
+               for L in range(spec.layers)}
+    out["layer_scores"] = {
+        L: {"acc": round(s["acc"], 3), "d_prime": round(s["d_prime"], 3),
+            "consistency": round(s["consistency"], 3),
+            "steer_score": round(s["steer_score"], 3)}
+        for L, s in _ls.items()}
     ctx["A"], ctx["B"] = A, B
     ctx["timings"]["extract"] = round(time.time() - t_stage, 1)
     return ctx
@@ -1545,7 +1578,8 @@ def open_lane(eng, kind: str, model_id: str):
         return None
     from model_lobotomy import llama_backend
     return LlamaLane(eng, eng.spec, llama_backend.CreateDaemon(
-        model_id, eng.revision, eng.tokenizer))
+        model_id, eng.revision, eng.tokenizer,
+        co_resident_bytes=llama_backend.torch_resident_bytes(eng.model)))
 
 
 def load_job(workdir) -> dict:
