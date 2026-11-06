@@ -160,6 +160,8 @@ button, input, textarea { font: inherit; color: inherit; }
 .doseIn { font: 800 clamp(48px, 6vw, 80px)/.9 var(--display); font-stretch: 75%; width: 5ch; background: transparent; color: var(--ink); border: 0; border-bottom: 2px solid var(--ink); }
 .control .spacer { flex: 1; }
 .status { max-width: 52ch; }
+.guardbar { margin-top: 8px; height: 6px; background: var(--sheet); }
+.guardbar > div { height: 100%; width: 0; background: var(--ink-muted); transition: width 0.2s; }
 
 /* Share card */
 .page h1 { font: 800 40px/1 var(--display); font-stretch: 75%; margin: 8px 0 0; }

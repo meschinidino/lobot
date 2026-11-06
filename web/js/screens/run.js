@@ -51,8 +51,14 @@ async function run(fan = false) {
   const t0 = performance.now(), msgs = { weights: "Loading weights and calibration.", guard: "Checking the refusal guard: first-token check.", guard_full: "First-token check passed. Running the full-answer check.", baseline: "Baseline pass.", steered: "Edited pass.", columns: "Generating every dose at once." };
   const tick = setInterval(() => ($("runMsg").textContent = `${$("runMsg").textContent.split(" · ")[0]} · ${((performance.now() - t0) / 1000).toFixed(1)} s`), 100);
   setStatus("info", "RUNNING", msgs.weights);
-  const end = () => { clearInterval(tick); S.live = null; S.checking = false; S.guardStep = null; setRunning(false); refreshState(); };
+  const end = () => { clearInterval(tick); S.live = null; S.checking = false; S.guardStep = null; $("guardBar").hidden = true; setRunning(false); refreshState(); };
   const onCommon = (ev) => {
+    if (ev.stage === "guard_progress") {
+      $("guardBar").hidden = false;
+      $("guardBarFill").style.width = `${ev.total ? Math.round(100 * ev.done / ev.total) : 0}%`;
+      $("runMsg").textContent = `Full-answer check: ${ev.screen} screen, ${ev.done} of ${ev.total} generations`;
+      return false;
+    }
     if (ev.stage === "weights") { S.checking = !research; S.guardStep = research ? null : "first"; renderGuard(); }
     if (ev.stage === "guard" && !research) { S.checking = true; S.guardStep = "first"; renderGuard(); }
     if (ev.stage === "guard_full" && !research) { S.guardStep = "full"; S.guardSeen[key] = "first-passed"; renderGuard(); }
@@ -132,6 +138,9 @@ async function stop() {
   $("stopBtn").disabled = true; setStatus("info", "STOPPING", "Stops after the current token.");
   try { await fetch("api/stop", { method: "POST" }); } catch { setStatus("err", "ERROR", "The stop request did not reach the server."); $("stopBtn").disabled = false; }
 }
+// A reload closes the stream, and the server then cancels the run (streaming.ndjson).
+// Results save only on the complete event, so a reload mid-run loses the whole run.
+window.addEventListener("beforeunload", (e) => { if (S.running) e.preventDefault(); });
 $("runBtn").addEventListener("click", () => run());
 $("fanBtn").addEventListener("click", () => run(true));
 $("stopBtn").addEventListener("click", stop);

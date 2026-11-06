@@ -41,7 +41,7 @@ function behaviors() {
     b.newest = newest[b.name] === b;
     [b.kind, b.key, b.usable] = b.verdict === "blocked" || b.guard.blocked
       ? (S.research ? ["warn", "BLOCKED", true] : ["err", "GUARD", false])
-      : b.verdict !== "knob" ? ["warn", "NO KNOB", false]
+      : b.verdict !== "knob" ? (S.research ? ["warn", "NO KNOB", true] : ["warn", "NO KNOB", false])
       : b.guard.would_block ? ["warn", "GUARD", true]
       : b.cards.update_up && !b.cards.update_up.passed ? ["warn", "INCREASE FAIL", true]
       : b.cards.update_down && !b.cards.update_down.passed ? ["warn", "DECREASE FAIL", true] : ["ok", "PASS", true];
