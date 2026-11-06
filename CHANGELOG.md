@@ -33,6 +33,12 @@ Format follows Keep a Changelog: Added, Changed, Fixed, Removed.
   L16+L27 at dose 0.5: search gain 0.343, fresh confirm 0.260
   against the 0.30 bar, so no knob, but closer than any single
   layer. Full result in `docs/roadmap/reports/ML.md`.
+- Learned steering vectors (ML v3): `learned.py` plus
+  `scripts/learn_vectors.py`. One trainable push per layer, model
+  frozen, drift cost on. On the evil family the trained mix at
+  scale 0.625 is the first method to pass a fresh confirm:
+  gain 0.402, mean fluency 0.837, worst-decile 0.392 on 20
+  brand-new questions.
 - Steering probe score (ML v2): layers rank by clean single-dose
   gain, not read strength. On the evil family the probe ranks
   layer 12 third of 28. The v2 winner (L11 at 0.5) confirms at

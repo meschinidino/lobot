@@ -181,6 +181,62 @@ v2 results (2026-11-05, `reports/ML.md`): probe gate **passed**
 brand-new questions: gain 0.572 (bar 0.30, pass), worst-decile
 fluency 0.026 (gate 0.3, **fail**). Verdict: FAIL on fluency.
 
+## v3 amendment: learned vectors (2026-11-06, written before the run)
+
+Step 3 from the ML follow-ups. Instead of searching mixes, train
+one push per layer. The model stays frozen. This follows SALSA
+(layer-wise learned steering vectors) and Steering Vector Fields
+(coordinated multi-layer pushes).
+
+Method, fixed before the live run:
+
+- Layers: the probe top 8 from the v2 run (11, 9, 12, 10, 13, 14,
+  15, 16). One trainable vector per layer, added to the block
+  output at every position, the same place engine hooks add.
+- Start point: each vector starts at the family direction for its
+  layer, dose 0.25 (weak and clean in the sweep).
+- Data: the 30 tuning questions. For each, the plain model writes
+  two answers: one under the positive instruction, one under the
+  negative instruction. Training input is the plain question with
+  no instruction. The search never sees the confirm questions.
+- Loss, per pair: the negative log-likelihood of the positive
+  answer, minus 0.1 times the negative answer's likelihood
+  (capped, so pushing down cannot run away), plus a drift cost.
+- Drift cost: KL from the plain model to the steered model on the
+  plain question tokens, weight 1.0, measured on the first 5
+  tuning questions each step. Its job is to keep text clean.
+  That it does so is a hypothesis: no drift-off ablation has run.
+- Scale scoring after training uses the first 10 tuning
+  questions, the same search subset as the combine search.
+- Training: Adam, learning rate 0.05, batches of 5 pairs, 15
+  passes over the data. Model weights never move.
+- After training: score the learned mix at dose scales 0.5, 0.75,
+  1.0, 1.25 on the tuning questions. Pick the best scale by the
+  v1 gates (gain, then fluency floors).
+- Confirm: 20 brand-new hand-written questions
+  (`fresh_questions_v3.json`, written before the run). Pass gates
+  unchanged: gain at least 0.30, mean fluency at least 0.5,
+  worst-decile fluency at least 0.3.
+
+Deliverables: `src/model_lobotomy/learned.py` (pure torch,
+tokenizer-free: it takes tokenized sequences), unit tests on a
+tiny model, `scripts/learn_vectors.py`, `learned.json` plus
+`learned_vectors.pt` in the job dir, and this spec's report.
+
+### v3 results and the v3b confirm (2026-11-06)
+
+v3 confirm at the search-best scale (0.75) FAILED: gain 0.819 and
+mean fluency 0.637 on the v3 fresh set, but worst-decile fluency
+0.113 (gate 0.3). Two exploratory scores on that now-spent set:
+scale 0.5 gained 0.118 with clean text; scale 0.625 gained 0.530
+with worst-decile fluency 0.531 (all gates pass there).
+
+v3b, fixed before its run: confirm the same trained vectors at
+scale 0.625, and only that scale, on 20 brand-new questions
+(`fresh_questions_v4.json`, written before the run). Pass gates
+unchanged. The v3 set is exploration data now; it decides
+nothing.
+
 ## Out of scope
 
 - Learned steering vectors trained by gradient (step 3). It needs a

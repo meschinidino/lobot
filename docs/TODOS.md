@@ -9,16 +9,16 @@ Update `CHANGELOG.md` in the same change.
 
 ## Open
 
-### Learned steering vectors, trained jointly (ML step 3)
-- The ML search (greedy add plus dose tuning) tests mixes one by
-  one. Published work (SALSA; Steering Vector Fields) instead
-  learns one push per layer at once, with the model frozen.
-- Needs: a differentiable objective (raise target answers, lower
-  opposite answers) and a drift cost, so training cannot win by
-  breaking the text. Without the drift cost, it finds the same
-  broken text the sweep found.
-- Deferred because greedy search ships first and its step log shows
-  how much search a learned method must beat.
+### A patch format for learned vector mixes (ML follow-up)
+- Learned vectors passed a fresh confirm (v3b, 2026-11-06). The
+  mix lives in `learned_vectors.pt` in one job dir. There is no
+  way to install it, dial it in the app, or re-verify it.
+- Needs: a patch format that holds many layers with per-layer
+  directions and scales (the combined-knob format below covers
+  this), plus the workbench and chat paths reading it.
+- The combined-knob format item below is now unblocked: a mix
+  has passed. Learned mixes should use that format, not a second
+  one.
 
 ### Bayesian optimization for the mix search (GRACE)
 - GRACE cuts the steering test count by about 40% with a Bayesian
@@ -152,5 +152,9 @@ Update `CHANGELOG.md` in the same change.
 
 ## Done
 
+- **Learned steering vectors** (ML step 3, done 2026-11-06):
+  `learned.py` trains one push per layer with a drift cost. First
+  fresh-confirm pass for the evil family (gain 0.402, worst-decile
+  fluency 0.392 at scale 0.625). Report: `roadmap/reports/ML.md`.
 - **Open-ended Create** (deferred 2026-10-29): built as C3 open
   descriptions; noir and cowboy passed; the Muse Spark agent automates it.

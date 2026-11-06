@@ -104,6 +104,44 @@ the gain bar on fresh questions. This one reaches the gain bar
 and breaks text. The remaining problem is the fluency tail, not
 the effect.
 
+## v3 run: learned vectors (2026-11-06)
+
+Method: the v3 amendment in the spec. 8 layers, 30 tuning
+questions, 90 training steps. Positive NLL fell from 2.98 to
+0.95. Drift KL fell from 4.40 to 0.28. Full curve:
+`learned_history.json` in the job dir.
+
+Search scores (10 tuning questions): scale 0.5 gained 0.305 with
+clean text; scale 0.75 gained 0.881, worst fluency 0.719.
+
+Confirm at scale 0.75 on the v3 fresh set: gain 0.819, mean
+fluency 0.637, worst-decile fluency 0.113. **FAIL** on the tail.
+
+Exploration on that spent set: scale 0.5 gained 0.118 clean;
+scale 0.625 gained 0.530, worst decile 0.531.
+
+v3b confirm, scale fixed at 0.625 before the run, 20 brand-new
+questions (`fresh_questions_v4.json`):
+
+- Gain 0.402 (bar 0.30). **Pass.**
+- Mean fluency 0.837 (gate 0.5). **Pass.**
+- Worst-decile fluency 0.392 (gate 0.3). **Pass.**
+- Worst single answer 0.162. The gate reads the decile, so this
+  shows in the data without failing the run.
+
+Verdict: **PASS.** Learned vectors are the first method to pass a
+fresh confirm for this family. Searching (v1, v2) never did. The
+drift cost is the likely reason, but that is a hypothesis: no
+drift-off ablation has run. What the data does show: training
+pushed hard, stayed clean in the mean, and at scale 0.625 the
+tail held on new questions.
+
+Two bugs found on the way, both fixed before the scored runs:
+batches could hold only one side of a pair (fixed: batch by
+pair), and the scorer imported the CB `combine` module instead of
+`layer_search` (fixed; the trained vectors were resumed from
+disk, not retrained).
+
 ## Known gaps
 
 - `steer_score` ranks reads, not steering. A v2 score needs a
