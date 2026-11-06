@@ -159,6 +159,25 @@ The verdict sits in `learned.json` and in the patch meta. The shelf
 shows `GUARD` in normal mode and `LEARNED · GUARD` in Research mode.
 A trait pass is not a safety pass. Both gates stay separate.
 
+## Judge fix: condescending is not hateful (2026-11-06)
+
+Live use showed the flaw: the learned mix at dose 1.0 produced a
+condescending reply, not a rude or hateful one. The old judge asked
+one question, "Is this reply rude, hateful and mocking?", and a
+smug reply earned a yes. The gain number measured tone shift, not
+the words in the label.
+
+Fix: `label_facets` splits the label. `judge_score` (torch and
+llama lanes) and the Meta judge score each facet and take the
+minimum. A reply is only as strong as its weakest required facet.
+Single-facet labels do not change.
+
+Consequence, stated plainly: the v3b confirm ran under the old
+judge, so it no longer counts. `_learned_pass` requires a confirm
+with a `facets` marker. The mix needs a new confirm under the
+strict judge, on a fresh question set (v4 is spent). Until then
+the app offers no learned knob for this family.
+
 ## Known gaps
 
 - `steer_score` ranks reads, not steering. A v2 score needs a

@@ -890,6 +890,11 @@ def _learned_pass(trait_dir) -> dict | None:
     fixed-scale confirm counts; the v3 search confirm at the
     search-best scale failed, so a plain "confirm" pass is only
     trusted when it names its fresh set.
+
+    The confirm must carry "facets": it must have run under the
+    facet-min judge (each label word scored, weakest counts).
+    Passes from the old single-question judge do not count: a
+    condescending reply passed that judge as "hateful".
     """
     p = Path(trait_dir) / "learned.json"
     if not p.is_file():
@@ -900,7 +905,8 @@ def _learned_pass(trait_dir) -> dict | None:
         return None
     for key in ("confirm_v3b", "confirm"):
         c = d.get(key) or {}
-        if c.get("passed") and (key == "confirm_v3b" or c.get("set")):
+        if (c.get("passed") and c.get("facets")
+                and (key == "confirm_v3b" or c.get("set"))):
             s = c.get("score") or {}
             return {"scale": float(d.get("best_scale") or 1.0),
                     "gain": s.get("gain"),

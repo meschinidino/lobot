@@ -14,6 +14,13 @@ Format follows Keep a Changelog: Added, Changed, Fixed, Removed.
 
 ## Unreleased
 
+### Changed
+- The Create judge now scores each word of a multi-word label and
+  takes the lowest score. A condescending reply passed the old
+  judge as "rude, hateful and mocking". It no longer does.
+- Learned passes from the old judge no longer count in the app.
+  The rude mix needs a new confirm under the strict judge.
+
 ### Added
 - Learned mixes now run in the app. A passed learned confirm shows as
   a `LEARNED PASS` knob: dose 1.0 is the tested mix. The `learned.lobot`

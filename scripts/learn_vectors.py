@@ -159,10 +159,12 @@ def _score_and_write(eng, judge, cfg, medians, vecs, hist, tuning,
         print("FIXED SCALE", a.scale, "CONFIRM", fs,
               "PASS" if passed else "FAIL", flush=True)
         _write_patch(job, a, vecs, {"passed": passed, "score": fs,
+                                    "facets": trait_eval.label_facets(cfg["judge"]),
                                     "fresh_prompts": len(fresh),
                                     "set": a.fresh, "scale": a.scale})
         _write(job, a, hist, vecs, {}, a.scale,
                {"passed": passed, "score": fs,
+                "facets": trait_eval.label_facets(cfg["judge"]),
                 "fresh_prompts": len(fresh), "set": a.fresh})
         return
     results = {}
@@ -180,10 +182,12 @@ def _score_and_write(eng, judge, cfg, medians, vecs, hist, tuning,
     print("BEST SCALE", best, "CONFIRM", fs, "PASS" if passed else "FAIL",
           flush=True)
     _write_patch(job, a, vecs, {"passed": passed, "score": fs,
+                                "facets": trait_eval.label_facets(cfg["judge"]),
                                 "fresh_prompts": len(fresh),
                                 "set": a.fresh, "scale": best})
     _write(job, a, hist, vecs, results, best,
            {"passed": passed, "score": fs,
+            "facets": trait_eval.label_facets(cfg["judge"]),
             "fresh_prompts": len(fresh), "set": a.fresh})
 
 

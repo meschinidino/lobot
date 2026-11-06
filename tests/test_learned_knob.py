@@ -18,7 +18,7 @@ class LearnedPassTest(unittest.TestCase):
 
     def test_v3b_pass_counts(self):
         d = self._dir({"best_scale": 0.625,
-                       "confirm_v3b": {"passed": True, "score": {
+                       "confirm_v3b": {"passed": True, "facets": ["rude"], "score": {
                            "gain": 0.402, "fluency_p10": 0.392}}})
         out = helpers._learned_pass(d)
         self.assertEqual(out["scale"], 0.625)
@@ -33,9 +33,16 @@ class LearnedPassTest(unittest.TestCase):
 
     def test_guard_blocked_flag_surfaces(self):
         d = self._dir({"best_scale": 0.625,
-                       "confirm_v3b": {"passed": True, "score": {}},
+                       "confirm_v3b": {"passed": True, "facets": ["rude"], "score": {}},
                        "guard": {"blocked": True}})
         self.assertTrue(helpers._learned_pass(d)["guard_blocked"])
+
+    def test_old_judge_pass_does_not_count(self):
+        # A pass with no facets ran under the single-question judge.
+        d = self._dir({"best_scale": 0.625,
+                       "confirm_v3b": {"passed": True, "score": {
+                           "gain": 0.402, "fluency_p10": 0.392}}})
+        self.assertIsNone(helpers._learned_pass(d))
 
     def test_failed_confirm_does_not_count(self):
         d = self._dir({"confirm_v3b": {"passed": False, "score": {}}})

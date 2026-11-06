@@ -385,6 +385,31 @@ def eligible_verbs(read_ok: bool, cards: dict) -> dict:
 # -- model stages --------------------------------------------------------------
 
 
+def label_facets(label: str) -> list[str]:
+    """Split a judge label into its required facets.
+
+    "rude, hateful and mocking" -> ["rude", "hateful", "mocking"].
+    A reply must show every facet, not just one: a condescending
+    reply is rude and mocking but not hateful, and it passed the
+    old single-question judge. Single-facet labels pass through.
+    """
+    parts = [p.strip() for chunk in label.split(",")
+             for p in chunk.split(" and ")]
+    out = [p for p in parts if p]
+    return out or [label]
+
+
+def _judge_score_one(model, tok, spec, question: str, response: str,
+                     facet: str) -> float:
+    y, n = spike._yes_no_ids(tok)
+    wrapped = steer.wrap_prompt_notk(
+        tok, judge_prompt(question, response, facet), spec)
+    ids = tok(wrapped, return_tensors="pt")["input_ids"].to(steer.DEVICE)
+    with torch.no_grad():
+        logits = model(ids).logits[0, -1].float()
+    return torch.softmax(logits[[y, n]], dim=0)[0].item()
+
+
 def judge_score(model, tok, spec, question: str, response: str,
                 label: str) -> float:
     """O3 frozen judge: refusal -> 0.0, else P(yes) with context.
@@ -394,16 +419,14 @@ def judge_score(model, tok, spec, question: str, response: str,
     ' Yes' but _yes_no_ids resolves 'Yes'), pinning every score at
     0.999. Templated, the assistant turn starts with Yes/No and the
     probe separates (measured POS 0.94 / NEG 0.36 on Llama 3.2 3B).
+
+    Multi-facet labels score each facet and take the minimum: the
+    reply is only as strong as its weakest required facet.
     """
     if refusal_gate(response):
         return 0.0
-    y, n = spike._yes_no_ids(tok)
-    wrapped = steer.wrap_prompt_notk(
-        tok, judge_prompt(question, response, label), spec)
-    ids = tok(wrapped, return_tensors="pt")["input_ids"].to(steer.DEVICE)
-    with torch.no_grad():
-        logits = model(ids).logits[0, -1].float()
-    return torch.softmax(logits[[y, n]], dim=0)[0].item()
+    return min(_judge_score_one(model, tok, spec, question, response, f)
+               for f in label_facets(label))
 
 
 # -- judges (J1) ---------------------------------------------------------------
@@ -501,7 +524,11 @@ class MetaApiJudge(Judge):
     def score(self, question: str, reply: str, rubric: str) -> float:
         if refusal_gate(reply):
             return 0.0
-        prompt = judge_prompt(question, reply, rubric)
+        return min(self._score_facet(question, reply, facet)
+                   for facet in label_facets(rubric))
+
+    def _score_facet(self, question: str, reply: str, facet: str) -> float:
+        prompt = judge_prompt(question, reply, facet)
         votes, attempts = [], 0
         while len(votes) < self.n_samples and attempts < 3 * self.n_samples:
             attempts += 1
@@ -813,19 +840,22 @@ class LlamaLane(TorchLane):
     def _judge_raw(self, keys) -> list[float]:
         import math
         y, n = spike._yes_no_ids(self.tok)
-        scores = [0.0] * len(keys)
+        best: dict[int, float] = {}
         idx, items = [], []
         for i, (q, r, label) in enumerate(keys):
             if refusal_gate(r):
+                best[i] = 0.0
                 continue
-            idx.append(i)
-            items.append({"ids": self._wrap(judge_prompt(q, r, label)),
-                          "last_ids": [y, n]})
+            for facet in label_facets(label):
+                idx.append(i)
+                items.append({"ids": self._wrap(judge_prompt(q, r, facet)),
+                              "last_ids": [y, n]})
         self._free_torch_cache()
         for i, res in zip(idx, self.daemon.score_many(items)):
             ly, ln = res["last"]
-            scores[i] = 1.0 / (1.0 + math.exp(ln - ly))
-        return scores
+            s = 1.0 / (1.0 + math.exp(ln - ly))
+            best[i] = min(best.get(i, 1.0), s)
+        return [best.get(i, 0.0) for i in range(len(keys))]
 
     def _nll_raw(self, keys) -> list[float]:
         out = [float("nan")] * len(keys)

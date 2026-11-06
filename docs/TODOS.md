@@ -9,6 +9,14 @@ Update `CHANGELOG.md` in the same change.
 
 ## Open
 
+### Re-confirm the learned rude mix under the facet judge
+- The v3b pass used the old single-question judge. A condescending
+  reply passed as "hateful". The judge now takes the weakest facet.
+- Needs: a fresh question set (v5; v2-v4 are spent), a fixed-scale
+  confirm at 0.625 with `scripts/learn_vectors.py --vectors`, and
+  the model lane. Expect a lower gain. Report it either way.
+- The app server needs a restart to pick up the facet judge.
+
 ### A patch format for learned vector mixes (ML follow-up)
 - Done 2026-11-06: `kind: "multi"` patches hold one raw vector per
   layer. The server offers a passed learned confirm as a knob

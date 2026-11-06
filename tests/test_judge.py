@@ -101,6 +101,41 @@ def _http_error(code, body=b'{"error": {"message": "x"}}'):
     return urllib.error.HTTPError("https://x", code, "err", {}, io.BytesIO(body))
 
 
+class FacetJudgeTest(unittest.TestCase):
+    def test_facets_split(self):
+        self.assertEqual(T.label_facets("rude, hateful and mocking"),
+                         ["rude", "hateful", "mocking"])
+        self.assertEqual(T.label_facets("pirate"), ["pirate"])
+        self.assertEqual(T.label_facets("warm and friendly"),
+                         ["warm", "friendly"])
+
+    def test_judge_score_takes_weakest_facet(self):
+        class FacetTok(_Tok):
+            def __call__(self, text, return_tensors="pt"):
+                # -2.0 logit for the hateful facet, +2.0 for the rest:
+                # encode the choice in the token ids the model sees.
+                mark = 9 if "hateful" in text else 1
+                return {"input_ids": torch.tensor([[mark, 2]])}
+
+        class MarkModel:
+            def __call__(self, ids):
+                from types import SimpleNamespace
+                logits = torch.zeros(1, 3, 10)
+                logits[0, -1, 5] = -2.0 if ids[0, 0].item() == 9 else 2.0
+                return SimpleNamespace(logits=logits)
+
+        with mock.patch.object(T.steer, "DEVICE", "cpu"), \
+                mock.patch.object(T.steer, "wrap_prompt_notk",
+                                  lambda tok, text, spec: text):
+            got = T.judge_score(MarkModel(), FacetTok(), None, "q?",
+                                "Oh no, classic problem.",
+                                "rude, hateful and mocking")
+            want = T.judge_score(MarkModel(), FacetTok(), None, "q?",
+                                 "Oh no, classic problem.", "hateful")
+        self.assertAlmostEqual(got, want, places=6)
+        self.assertLess(got, 0.2)
+
+
 class MetaJudgeParseTest(unittest.TestCase):
     def _judge(self, **kw):
         args = {"key": "fake-key", "model": "fake-model"}
