@@ -10,12 +10,13 @@ Update `CHANGELOG.md` in the same change.
 ## Open
 
 ### Re-confirm the learned rude mix under the facet judge
-- The v3b pass used the old single-question judge. A condescending
-  reply passed as "hateful". The judge now takes the weakest facet.
-- Needs: a fresh question set (v5; v2-v4 are spent), a fixed-scale
-  confirm at 0.625 with `scripts/learn_vectors.py --vectors`, and
-  the model lane. Expect a lower gain. Report it either way.
-- The app server needs a restart to pick up the facet judge.
+- Done 2026-11-06. FAIL on `fresh_questions_v5.json` (20 new
+  questions): gain 0.182 (bar 0.30), fluency p10 0.101 (bar 0.30).
+  The mix is condescending, not hateful. No learned knob.
+- Open follow-up: retrain the mix with the facet judge in the
+  loop, or with stronger target examples. The plain model's own
+  "rude" answers cap at condescending, so example answers from
+  the plain model may cap the mix too.
 
 ### A patch format for learned vector mixes (ML follow-up)
 - Done 2026-11-06: `kind: "multi"` patches hold one raw vector per

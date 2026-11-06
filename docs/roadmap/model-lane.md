@@ -171,3 +171,6 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-11-06 03:28 ET  muse  ML-LEARN-V3B-REPRO  meta-llama/Llama-3.2-3B-Instruct  end  shipped fixed-scale path reproduces the v3b confirm exactly: gain 0.402, fluency 0.837/0.392, PASS
 2026-11-06 03:50 ET  muse  LEARNED-IN-APP  meta-llama/Llama-3.2-3B-Instruct  start  verify learned mix through the app run path with guard on (server run, Llama warm)
 2026-11-06 04:05 ET  muse  LEARNED-IN-APP  meta-llama/Llama-3.2-3B-Instruct  end  learned mix runs through the app update path (research mode text shifts meaner, clean); full guard BLOCKS it at dose 1.0 (min_ratio 0.0, refusal loss) - recorded in learned.json; normal mode stays blocked, research only
+2026-11-06 12:20 ET  muse  FACET-RECONFIRM  meta-llama/Llama-3.2-3B-Instruct  start  fixed-scale 0.625 confirm of learned vectors on fresh_questions_v5 under the facet-min judge
+2026-11-06 12:20 ET  muse  FACET-RECONFIRM  meta-llama/Llama-3.2-3B-Instruct  start  fixed-scale 0.625 confirm of learned vectors on fresh_questions_v5 under the facet-min judge
+2026-11-06 12:26 ET  muse  FACET-RECONFIRM  meta-llama/Llama-3.2-3B-Instruct  end  FAIL: gain 0.182 (bar 0.30), fluency mean 0.500, p10 0.101 (bar 0.30) on fresh_questions_v5; the mix is condescending, not hateful, and the strict judge sees it

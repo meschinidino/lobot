@@ -178,6 +178,14 @@ with a `facets` marker. The mix needs a new confirm under the
 strict judge, on a fresh question set (v4 is spent). Until then
 the app offers no learned knob for this family.
 
+Re-confirm result (2026-11-06, model lane FACET-RECONFIRM):
+scale 0.625 on 20 brand-new questions (`fresh_questions_v5.json`)
+under the facet judge. FAIL: gain 0.182 (bar 0.30), fluency mean
+0.500, fluency p10 0.101 (bar 0.30). The old gain 0.402 was the
+old judge grading tone shift. Under the strict judge the mix is
+what the screenshot showed: condescending, not hateful. The
+family is back to no knob, now with a judge that can tell.
+
 ## Known gaps
 
 - `steer_score` ranks reads, not steering. A v2 score needs a
