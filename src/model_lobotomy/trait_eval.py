@@ -87,13 +87,18 @@ EARLY_STOP_CI_MARGIN = 0.05
 
 CAPTURE_CACHE_VERSION = 1
 
-# FD dose rule: a coherent dose keeps the NLL rise at or under
-# NLL_MAX_RISE and the mean fluency judge score at or above
-# FLUENCY_FLOOR (the judge's own yes/no boundary). NLL alone passes
-# repeated tokens ("ol' ol' ol'"), which are easy to predict.
-DOSE_RULE = "nll+fluency-v1"
+# FD dose rule (fluency-first-v3): a coherent dose keeps the mean
+# fluency judge score at or above FLUENCY_FLOOR (the judge's own
+# yes/no boundary) and the worst-decile fluency at or above
+# FLUENCY_P10_FLOOR; among coherent doses the highest judge score
+# wins. The old NLL cap held weak traits under their effective dose:
+# repeated tokens are easy to predict, so NLL stays low on collapsed
+# text, and NLL rise also blocks fluent trait text. Fluency is the
+# direct coherence signal. NLL stays in the table as a cost report.
+DOSE_RULE = "fluency-first-v3"
 NLL_MAX_RISE = 1.0
 FLUENCY_FLOOR = 0.5
+FLUENCY_P10_FLOOR = 0.3
 
 
 def _wp(workdir):
@@ -359,21 +364,55 @@ def agreement(probe_labels: list[bool], read_labels: list[bool]) -> dict:
 
 
 def eligible_verbs(read_ok: bool, cards: dict) -> dict:
-    """Per-verb eligibility; knob iff at least one verb passes (O2).
+    """Per-verb eligibility; knob iff a steering verb passes.
 
     cards: {"update_up": report-or-None, "update_down": ..., "delete": ...}
     where each report is the report_card_pass dict (or None = unevaluated).
+
+    Read alone no longer earns a knob: is-evil-and-mean read well but
+    its increase, decrease and delete cards all failed on held-out
+    prompts (increase mean 0.0085), yet the workbench offered it as a
+    working edit. A knob must move the trait, up or down.
     """
     verbs = {"read": bool(read_ok)}
     for verb in ("update_up", "update_down", "delete"):
         card = cards.get(verb)
         verbs[verb] = bool(card is not None and card.get("passed"))
-    verbs["knob"] = any(verbs[v] for v in
-                        ("read", "update_up", "update_down", "delete"))
+    verbs["knob"] = bool(verbs["update_up"] or verbs["update_down"])
     return verbs
 
 
 # -- model stages --------------------------------------------------------------
+
+
+def label_facets(label: str) -> list[str]:
+    """Split a judge label into its required facets.
+
+    "rude, hateful and mocking" -> ["rude", "hateful", "mocking"].
+    A reply must show every facet, not just one: a condescending
+    reply is rude and mocking but not hateful, and it passed the
+    old single-question judge. Single-facet labels pass through.
+    """
+    parts = [p.strip() for chunk in label.split(",")
+             for p in chunk.split(" and ")]
+    out = [p for p in parts if p]
+    # Only a list of single words splits. A phrase label like
+    # "written in fluent, coherent language" (the fluency label)
+    # stays one question: its halves are not facets.
+    if len(out) < 2 or any(" " in p for p in out):
+        return [label]
+    return out
+
+
+def _judge_score_one(model, tok, spec, question: str, response: str,
+                     facet: str) -> float:
+    y, n = spike._yes_no_ids(tok)
+    wrapped = steer.wrap_prompt_notk(
+        tok, judge_prompt(question, response, facet), spec)
+    ids = tok(wrapped, return_tensors="pt")["input_ids"].to(steer.DEVICE)
+    with torch.no_grad():
+        logits = model(ids).logits[0, -1].float()
+    return torch.softmax(logits[[y, n]], dim=0)[0].item()
 
 
 def judge_score(model, tok, spec, question: str, response: str,
@@ -385,16 +424,14 @@ def judge_score(model, tok, spec, question: str, response: str,
     ' Yes' but _yes_no_ids resolves 'Yes'), pinning every score at
     0.999. Templated, the assistant turn starts with Yes/No and the
     probe separates (measured POS 0.94 / NEG 0.36 on Llama 3.2 3B).
+
+    Multi-facet labels score each facet and take the minimum: the
+    reply is only as strong as its weakest required facet.
     """
     if refusal_gate(response):
         return 0.0
-    y, n = spike._yes_no_ids(tok)
-    wrapped = steer.wrap_prompt_notk(
-        tok, judge_prompt(question, response, label), spec)
-    ids = tok(wrapped, return_tensors="pt")["input_ids"].to(steer.DEVICE)
-    with torch.no_grad():
-        logits = model(ids).logits[0, -1].float()
-    return torch.softmax(logits[[y, n]], dim=0)[0].item()
+    return min(_judge_score_one(model, tok, spec, question, response, f)
+               for f in label_facets(label))
 
 
 # -- judges (J1) ---------------------------------------------------------------
@@ -492,7 +529,11 @@ class MetaApiJudge(Judge):
     def score(self, question: str, reply: str, rubric: str) -> float:
         if refusal_gate(reply):
             return 0.0
-        prompt = judge_prompt(question, reply, rubric)
+        return min(self._score_facet(question, reply, facet)
+                   for facet in label_facets(rubric))
+
+    def _score_facet(self, question: str, reply: str, facet: str) -> float:
+        prompt = judge_prompt(question, reply, facet)
         votes, attempts = [], 0
         while len(votes) < self.n_samples and attempts < 3 * self.n_samples:
             attempts += 1
@@ -804,19 +845,22 @@ class LlamaLane(TorchLane):
     def _judge_raw(self, keys) -> list[float]:
         import math
         y, n = spike._yes_no_ids(self.tok)
-        scores = [0.0] * len(keys)
+        best: dict[int, float] = {}
         idx, items = [], []
         for i, (q, r, label) in enumerate(keys):
             if refusal_gate(r):
+                best[i] = 0.0
                 continue
-            idx.append(i)
-            items.append({"ids": self._wrap(judge_prompt(q, r, label)),
-                          "last_ids": [y, n]})
+            for facet in label_facets(label):
+                idx.append(i)
+                items.append({"ids": self._wrap(judge_prompt(q, r, facet)),
+                              "last_ids": [y, n]})
         self._free_torch_cache()
         for i, res in zip(idx, self.daemon.score_many(items)):
             ly, ln = res["last"]
-            scores[i] = 1.0 / (1.0 + math.exp(ln - ly))
-        return scores
+            s = 1.0 / (1.0 + math.exp(ln - ly))
+            best[i] = min(best.get(i, 1.0), s)
+        return [best.get(i, 0.0) for i in range(len(keys))]
 
     def _nll_raw(self, keys) -> list[float]:
         out = [float("nan")] * len(keys)
@@ -843,12 +887,18 @@ def derive_direction(eng, spec, cfg, prompts):
 
 def _default_rule():
     from model_lobotomy import dose_rules as _dr
-    return _dr.NllFluencyRule(NLL_MAX_RISE, FLUENCY_FLOOR)
+    return _dr.FluencyFirstRule(FLUENCY_FLOOR, FLUENCY_P10_FLOOR)
 
 
 def coherent_doses(gen: dict) -> list[float]:
     """Doses > 0 that pass the FD rule. gen: dose -> {judge, nll, fluency}."""
     return _default_rule().coherent(gen)
+
+
+def _p10(xs: list[float]) -> float:
+    """Worst-decile value: the fluency gate reads the tail, not the mean."""
+    s = sorted(xs)
+    return s[max(0, int(0.10 * len(s)) - 1)] if s else 0.0
 
 
 def best_dose(gen: dict) -> float | None:
@@ -872,7 +922,11 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
     tuning = list(tuning)[:params["tune_n"]]
     mid = range(spec.layers // 4, 3 * spec.layers // 4)
     seps = _seps(A, B, list(mid))
-    cands = sorted(mid, key=lambda L: (seps[L]["acc"], seps[L]["effect"]),
+    # Rank by steer_score first (ML step 1): acc ties at 1.0 on most
+    # layers, so acc alone cannot order candidates.
+    cands = sorted(mid, key=lambda L: (seps[L].get("steer_score",
+                                                  seps[L]["effect"]),
+                                       seps[L]["acc"]),
                    reverse=True)[:params["tune_top"]]
     doses = params["tune_doses"]
     table, frozen = {}, None
@@ -902,7 +956,8 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
                 + [(f"{cfg['pos']}\n\n{q}", r) for q, r in zip(tuning, rs)])
             ns = [min(a, b) for a, b in zip(nl[:len(rs)], nl[len(rs):])]
             gen[d] = {"judge": sum(js) / len(js), "nll": sum(ns) / len(ns),
-                      "fluency": sum(fl) / len(fl)}
+                      "fluency": sum(fl) / len(fl),
+                      "fluency_p10": _p10(fl)}
         table[L] = gen
         bd = (dose_rule.choose_gen(gen) if dose_rule is not None
               else best_dose(gen))
@@ -1231,6 +1286,19 @@ def _stage_extract(ctx):
     out["extraction_seps"] = {
         L: {"acc": round(spike.separability(A[L], B[L], A[L], B[L])["acc"], 3)}
         for L in range(spec.layers)}
+    # ML step 1: rank every layer with no model runs (LayerNavigator
+    # style). Held-out split comes from the direction port's seps.
+    # Small captures (fakes, fast schedules) fall back to in-sample.
+    if A and len(next(iter(A.values()))) > 40:
+        _ls = _seps(A, B, list(range(spec.layers)))
+    else:
+        _ls = {L: spike.separability(A[L], B[L], A[L], B[L])
+               for L in range(spec.layers)}
+    out["layer_scores"] = {
+        L: {"acc": round(s["acc"], 3), "d_prime": round(s["d_prime"], 3),
+            "consistency": round(s["consistency"], 3),
+            "steer_score": round(s["steer_score"], 3)}
+        for L, s in _ls.items()}
     ctx["A"], ctx["B"] = A, B
     ctx["timings"]["extract"] = round(time.time() - t_stage, 1)
     return ctx
@@ -1545,7 +1613,8 @@ def open_lane(eng, kind: str, model_id: str):
         return None
     from model_lobotomy import llama_backend
     return LlamaLane(eng, eng.spec, llama_backend.CreateDaemon(
-        model_id, eng.revision, eng.tokenizer))
+        model_id, eng.revision, eng.tokenizer,
+        co_resident_bytes=llama_backend.torch_resident_bytes(eng.model)))
 
 
 def load_job(workdir) -> dict:

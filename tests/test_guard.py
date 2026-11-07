@@ -253,6 +253,84 @@ class VerifiedTest(unittest.TestCase):
         self.assertEqual(g.cache_size, 0)
 
 
+class BatchFakeEngine(FakeEngine):
+    """FakeEngine plus run_many: records batch calls, same texts."""
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.many_calls: list = []
+
+    def run_many(self, prompts, edits, medians, max_new_tokens, seed,
+                 cancel=None, wrapped_list=None):
+        self.many_calls.append((list(prompts), self._tag(edits)))
+        return [{"text": self.texts[(p, self._tag(edits))]}
+                for p in prompts]
+
+
+class BatchCacheProgressTest(unittest.TestCase):
+    def _texts(self):
+        return {(p, t): "REFUSE this"
+                for p in PROMPTS for t in ("natural", "steered")}
+
+    def test_check_full_batches_and_matches_sequential(self):
+        texts = self._texts()
+        texts[(PROMPTS[1], "steered")] = "SURE here's how"
+        judge = lambda t: 1.0 if t.startswith("REFUSE") else 0.0
+        seq = guard.Guard(refusal_set=PROMPTS).check_full(
+            make_engine(texts=texts), edits(), medians={},
+            max_new_tokens=8, seed=1, judge_fn=judge)
+        beng = BatchFakeEngine(make_engine(texts=texts).probs, texts)
+        bat = guard.Guard(refusal_set=PROMPTS).check_full(
+            beng, edits(), medians={}, max_new_tokens=8,
+            seed=1, judge_fn=judge)
+        self.assertEqual(bat.blocked, seq.blocked)
+        self.assertEqual(bat.blocked_prompts, seq.blocked_prompts)
+        # Two batch calls (natural, steered), no sequential runs.
+        self.assertEqual(len(beng.many_calls), 2)
+        self.assertFalse([c for c in beng.calls if c[0] == "run"])
+
+    def test_short_batch_result_fails_loud(self):
+        class ShortEngine(BatchFakeEngine):
+            def run_many(self, prompts, edits, medians, max_new_tokens,
+                         seed, cancel=None, wrapped_list=None):
+                return [{"text": "x"}]  # one text for many prompts
+
+        eng = ShortEngine(make_engine(texts=self._texts()).probs,
+                          self._texts())
+        with self.assertRaises(RuntimeError):
+            guard.Guard(refusal_set=PROMPTS).check_full(
+                eng, edits(), medians={}, max_new_tokens=8, seed=1,
+                judge_fn=lambda t: 1.0)
+
+    def test_naturals_cached_across_edit_sets(self):
+        eng = BatchFakeEngine(make_engine(texts=self._texts()).probs,
+                              self._texts())
+        eng.model_id, eng.revision = "fake", "r1"
+        judge = lambda t: 1.0
+        g = guard.Guard(refusal_set=PROMPTS)
+        g.check_full(eng, edits(1.0), medians={}, max_new_tokens=8,
+                     seed=1, judge_fn=judge)
+        first = len(eng.many_calls)
+        g.check_full(eng, edits(2.0), medians={}, max_new_tokens=8,
+                     seed=1, judge_fn=judge)
+        # Second check: only the steered batch runs; naturals came
+        # from the cache.
+        self.assertEqual(len(eng.many_calls), first + 1)
+        self.assertEqual(eng.many_calls[-1][1], "steered")
+
+    def test_progress_reports_each_screen_total(self):
+        eng = BatchFakeEngine(make_engine(texts=self._texts()).probs,
+                              self._texts())
+        seen = []
+        guard.Guard(refusal_set=PROMPTS).check_full(
+            eng, edits(), medians={}, max_new_tokens=8, seed=1,
+            judge_fn=lambda t: 1.0,
+            progress=lambda s, d, t: seen.append((s, d, t)))
+        self.assertEqual(seen[-1], ("refusal", 2 * len(PROMPTS),
+                                    2 * len(PROMPTS)))
+        self.assertTrue(all(s == "refusal" for s, _, _ in seen))
+
+
 class CombinedFakeEngine:
     """Refusal prob falls with total neuron dose; no weights."""
 

@@ -1,5 +1,5 @@
 import { update } from "./workbench.js";
-import { KEY_HELP, RULES, SCREEN, SHELF_KEYS, VERDICT, ci, compareSection, doseRuleLine, exOut, exState, explainSection, explains, explorerSection, followupCtl, guardSection, markSplit, mins, noWeights, num, opinions, reports, secondOpinionSection, setExDose, short, splitWord, stroke, tuneSection, tunes, tuningSection, vecPoint, wireExplorer } from "./evidence.js";
+import { KEY_HELP, RULES, SCREEN, SHELF_KEYS, VERDICT, ci, compareSection, doseRuleLine, exOut, exState, explainSection, explains, explorerSection, followupCtl, guardSection, markSplit, mins, noWeights, num, opinions, reports, secondOpinionSection, setExDose, short, splitWord, stroke, tuneSection, tunes, tuningSection, vecPoint, whyNoKnob, wireExplorer } from "./evidence.js";
 import { libraryPage } from "./library.js";
 import { legend } from "../components/legend.js";
 import { blockedMsg, confirmDlg, creating, renderGuard, run, stop, stream } from "./run.js";
@@ -182,6 +182,7 @@ async function renderPage(first = false) {
       const rg = R.read_gate;
       body = `<p class="meta">Held-out evaluation · ${esc(name)} v${b ? b.version : "?"} · layer <span class="mono">${fr.layer ?? "?"}</span> · dose <span class="mono">${d != null ? fd(d) : "?"}</span>. Effects are judge-score gains on held-out prompts, with 95% bootstrap intervals.</p>
         ${doseRuleLine(R)}
+        ${whyNoKnob(R)}
         <div class="evwrap"><table class="ev"><thead><tr><th scope="col">Verb</th><th scope="col">Result</th><th scope="col">Effect (95% CI)</th><th scope="col">Control bound</th><th scope="col">Side effects</th><th scope="col">Tested doses</th></tr></thead><tbody>
         <tr><td class="verb">${stroke("read")}Read</td><td>${rg ? `<span class="state ${rg.pass ? "ok" : "warn"}">${rg.pass ? "PASS" : "FAIL"}</span>${rg.pass ? "" : `<br><span class="meta">the reading does not track the judge (margin under 0.10)</span>`}` : `<span class="state info">NOT TESTED</span>`}</td><td class="mono">${rg ? `margin ${num(rg.agreement?.margin)}` : ""}</td><td></td><td class="meta">none (reading only)</td><td class="mono">none</td></tr>
         ${verb("Increase", "up", F.update_up?.card, el_.update_up, d != null ? fd(d) : "", upSide)}${verb("Decrease", "down", F.update_down?.card, el_.update_down, d != null ? fd(-d) : "")}${verb("Delete", "delete", F.delete?.card, el_.delete, "ablation", delSide)}

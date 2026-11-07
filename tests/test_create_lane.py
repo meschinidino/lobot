@@ -298,7 +298,7 @@ class CreateJobLaneTest(unittest.TestCase):
 
         made = []
 
-        def fake_daemon(model_id, revision, tok):
+        def fake_daemon(model_id, revision, tok, **kw):
             made.append((model_id, revision))
             return FakeDaemon()
 

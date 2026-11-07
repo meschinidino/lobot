@@ -157,6 +157,7 @@ own prompt, predicts its side effects, and repairs them.**
 | 8 | SA | Side-effect atlas and forecast | `specs/SA-side-effect-atlas.md` | PP, 6+ knobs | Both | 2 | "Forecasting side effects of activation steering" (2026) |
 | 9 | TM | Truth meter; head-level honesty steering | `specs/TM-truth-meter.md` | GX, CH, GH | Both + UI | 3 | Geometry of Truth (MIT), ITI (Harvard) |
 | 10 | LQ | Ask the activations (stretch, high risk) | `specs/LQ-latent-qa.md` | store | Model | 4 | LatentQA (Berkeley) |
+| 11 | ML | Multi-layer steering search: LayerNavigator-style layer score, then greedy combined-layer search with fresh-prompt confirm | `specs/ML-multi-layer-search.md` | directions, dose rules | Both | 1 | LayerNavigator (NeurIPS 2025); Sweep Less, Steer More; the 112-cell all-layer sweep on the evil family (2026-11-05). **Done**: search v1 mix confirmed 0.260 fresh (fail, close), v2 winner 0.572 gain but fluency tail fail; **v3 learned vectors PASS** at scale 0.625 (gain 0.402, worst-decile fluency 0.392 on brand-new questions). Layer-12 rank check missed in v1 (15/28), probe fixed it in v2 (3/28) (`reports/ML.md`) |
 
 Why this order:
 - MOD first: it is a pure refactor, and it turns most later workstreams

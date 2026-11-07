@@ -186,12 +186,14 @@ def agent_start(req: AgentRequest):
     state = {"status": "running", "steps": [], "result": None,
              "error": None, "cancel": cancel,
              "description": req.description, "started": time.time(),
+             "model_id": engine._active_model_id, "lane": req.lane,
              "job_id": None}
 
     def progress(_kind, row):
         state["steps"].append(row)
 
     def work():
+        lane = None
         try:
             if eng.model is None or eng.model_id != engine._active_model_id:
                 eng.load(engine._active_model_id)
@@ -201,7 +203,8 @@ def agent_start(req: AgentRequest):
                 lane = trait_eval.LlamaLane(eng, eng.spec,
                                             llama_backend.CreateDaemon(
                                                 eng.model_id, eng.revision,
-                                                eng.tokenizer))
+                                                eng.tokenizer,
+                                                co_resident_bytes=llama_backend.torch_resident_bytes(eng.model)))
             ag = agent_mod.CreateAgent(
                 eng, muse, store=STATE.get_runner().store, lane=lane,
                 max_rounds=req.max_rounds, cancel=cancel,
@@ -216,6 +219,13 @@ def agent_start(req: AgentRequest):
             state["status"] = "failed"
             state["error"] = f"{type(e).__name__}: {e}"[:2000]
         finally:
+            # One active stack at rest: close the lane daemon when
+            # the agent run ends, pass or fail.
+            if lane is not None:
+                try:
+                    lane.daemon.close()
+                except Exception:  # noqa: BLE001 - best-effort
+                    pass
             eng.lock.release()
             STATE.agent_lock.release()
 
@@ -236,6 +246,8 @@ def agents_list():
                         "description") or st.get("description"),
                     "family": (st.get("result") or {}).get("family"),
                     "job_id": st.get("job_id"),
+                    "model_id": st.get("model_id"),
+                    "lane": st.get("lane"),
                     "started": st.get("started")})
     root = helpers._agents_dir()
     if root.is_dir():

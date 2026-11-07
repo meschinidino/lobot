@@ -133,6 +133,8 @@ To run or show the app to the user, follow
   screen; [docs/reference/configuration.md](docs/reference/configuration.md)
   covers any new environment variable.
 - No dead code; no new lint or type errors in touched files.
+- `CHANGELOG.md` updated in the same change (Unreleased section);
+  `docs/TODOS.md` updated when work is added, deferred or finished.
 
 ## Where things go
 

@@ -559,6 +559,51 @@ class Engine:
         gen["engine_seconds"] = round(time.perf_counter() - t0, 1)
         return gen
 
+    def run_many(self, prompts: list, edits: EditSet, *,
+                 medians: dict, max_new_tokens: int, seed: int,
+                 cancel=None, wrapped_list: list | None = None,
+                 fallback: bool = True) -> list:
+        """One batched greedy generation: many prompts, one EditSet.
+
+        Hooks register once for the whole batch. On any failure with
+        fallback on, reruns as sequential run() calls. Returns one
+        run()-shaped dict per prompt, in order.
+        """
+        if self.model is None:
+            raise RuntimeError("no model loaded")
+        spec = self.spec
+        _validate_edits(self.model, spec, edits)
+        prompts = list(prompts)
+        if not prompts:
+            return []
+        counter: list = [0]
+        reads: dict = {}
+        t0 = time.perf_counter()
+        try:
+            self._register_hooks(edits, medians, counter, reads, spec)
+            try:
+                rows = steer.generate_many(
+                    self.model, self.tokenizer, prompts,
+                    max_new_tokens=max_new_tokens, seed=seed, spec=spec,
+                    cancel=cancel, wrapped_list=wrapped_list)
+            finally:
+                self.remove_all()
+        except Exception:
+            self.remove_all()
+            if not fallback:
+                raise
+            return [self.run(p, edits, medians=medians,
+                             max_new_tokens=max_new_tokens, seed=seed,
+                             cancel=cancel,
+                             wrapped=(wrapped_list[i]
+                                      if wrapped_list else None))
+                    for i, p in enumerate(prompts)]
+        for r in rows:
+            r["hook_calls"] = counter[0]
+            r["reads"] = {}
+            r["engine_seconds"] = round(time.perf_counter() - t0, 1)
+        return rows
+
     def run_stream(self, prompt: str, edits: EditSet, *, medians: dict,
                    max_new_tokens: int, seed: int, cancel=None,
                    dial: dict | None = None,
