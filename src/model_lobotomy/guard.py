@@ -92,6 +92,10 @@ def _gen_texts(engine, prompts, edits, *, medians, max_new_tokens, seed,
                 wrapped_list=([wrapped_list[i] for i in idx]
                               if wrapped_list else None))
             got = [r["text"] for r in rows]
+            if len(got) != len(idx):
+                raise RuntimeError(
+                    f"engine returned {len(got)} texts for "
+                    f"{len(idx)} prompts")
         else:
             got = []
             for i in idx:

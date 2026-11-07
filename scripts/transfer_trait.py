@@ -47,7 +47,8 @@ def main(argv=None) -> int:
     if args.lane == "llama":
         from model_lobotomy import llama_backend
         lane = trait_eval.LlamaLane(eng, eng.spec, llama_backend.CreateDaemon(
-            args.to, eng.revision, eng.tokenizer))
+            args.to, eng.revision, eng.tokenizer,
+            co_resident_bytes=llama_backend.torch_resident_bytes(eng.model)))
     workdir = Path(args.workdir or (ROOT / "logs" / f"xm_{trait}_"
                                     f"{args.to.split('/')[-1].lower()}"))
     out = trait_eval.run_trait(eng, eng.spec, trait,

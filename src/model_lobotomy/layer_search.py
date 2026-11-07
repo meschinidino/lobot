@@ -13,6 +13,9 @@ Gates are fixed by the spec and read named constants:
 """
 from __future__ import annotations
 
+import hashlib
+import json
+
 from model_lobotomy.evaluation import MIN_GAIN
 from model_lobotomy.trait_eval import FLUENCY_FLOOR, FLUENCY_P10_FLOOR
 
@@ -125,11 +128,25 @@ def greedy_search(score, ranked_layers, prompts, *, top_k=TOP_K,
             "steps": steps, "calls": score.calls, "capped": capped}
 
 
+def prompts_sha256(prompts) -> str:
+    """Short hash that names one prompt set in a confirm record."""
+    blob = json.dumps(list(prompts), ensure_ascii=False).encode()
+    return hashlib.sha256(blob).hexdigest()[:16]
+
+
 def confirm(score, rows, fresh_prompts):
-    """Score the winner once on fresh prompts; apply the pass gates."""
+    """Score the winner once on fresh prompts; apply the pass gates.
+
+    The verdict records the spent set (size and hash). A second
+    confirm on the same set shows the same hash: re-rolls stay
+    visible in the artifact, they never pass as a first try.
+    """
+    spent = {"fresh_prompts": len(fresh_prompts),
+             "prompts_sha256": prompts_sha256(fresh_prompts)}
     if not rows:
-        return {"passed": False, "reason": "empty mix", "score": None}
+        return {"passed": False, "reason": "empty mix", "score": None,
+                **spent}
     s = score(rows, fresh_prompts)
     passed = s["gain"] >= MIN_GAIN and fluency_ok(s)
-    return {"passed": passed, "score": s,
+    return {"passed": passed, "score": s, **spent,
             "reason": "pass" if passed else "gain or fluency under the bar"}

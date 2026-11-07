@@ -80,6 +80,18 @@ class ConfirmTest(unittest.TestCase):
         v = combine.confirm(lambda rows, p: _s(0.45), ((12, 0.5),), ["f"])
         self.assertTrue(v["passed"])
 
+    def test_confirm_records_the_spent_set(self):
+        # A re-roll on the same set must be visible: the verdict
+        # names the set by hash and size.
+        v = combine.confirm(lambda rows, p: _s(0.45), ((12, 0.5),),
+                            ["q one", "q two"])
+        self.assertEqual(v["fresh_prompts"], 2)
+        self.assertEqual(len(v["prompts_sha256"]), 16)
+        other = combine.confirm(lambda rows, p: _s(0.45), ((12, 0.5),),
+                                ["q one", "q three"])
+        self.assertNotEqual(v["prompts_sha256"],
+                            other["prompts_sha256"])
+
     def test_empty_mix_fails_without_scoring(self):
         def boom(rows, prompts):
             raise AssertionError("must not score an empty mix")

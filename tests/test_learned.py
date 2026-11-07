@@ -34,6 +34,25 @@ class FewShotPromptTest(unittest.TestCase):
         self.assertTrue(out.endswith("Question: Why?\nAnswer:"))
 
 
+class ValidateVectorsTest(unittest.TestCase):
+    def test_valid_vectors_pass(self):
+        out = learned.validate_vectors(
+            {3: torch.tensor([1.0, 0.0]), 7: torch.tensor([0.0, 2.0])},
+            [3, 7])
+        self.assertEqual(sorted(out), [3, 7])
+
+    def test_zero_and_nan_and_missing_fail(self):
+        with self.assertRaises(ValueError):
+            learned.validate_vectors({3: torch.zeros(2)}, [3])
+        with self.assertRaises(ValueError):
+            learned.validate_vectors(
+                {3: torch.tensor([float("nan"), 1.0])}, [3])
+        with self.assertRaises(ValueError):
+            learned.validate_vectors({3: torch.ones(2)}, [3, 7])
+        with self.assertRaises(ValueError):
+            learned.validate_vectors({3: torch.ones(2, 2)}, [3])
+
+
 class TrainTest(unittest.TestCase):
     def setUp(self):
         self.model = _tiny()

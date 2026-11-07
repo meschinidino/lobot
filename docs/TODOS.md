@@ -9,6 +9,24 @@ Update `CHANGELOG.md` in the same change.
 
 ## Open
 
+### SH: ship to 10 (specs/SH-ship-to-10.md)
+- Phase A step 1 done 2026-11-06: PR #61 reviewed in slices.
+  Report in the PR thread of this session; blockers fixed in
+  step 2 on the branch.
+- Phase A step 2 done on the branch: confirmed scale served,
+  gate re-checks, GPU guard call sites, honest evidence text,
+  safe vector loads, spent-set confirm records, label-source
+  data. Suite and pyflakes gate the branch before any merge.
+- Open: Phase A merge waits for Dino's order. Phase B (90
+  training questions, 40-60 prompt confirms) and Phase C (read
+  dial or no-dial state, multi-patch registry, hosting,
+  Research toggle) follow the spec, one phase at a time.
+- Known gap: the agent still sets `hand_validated` when it
+  registers a family from its own labels. The committed store
+  now records the label source and claims no hand validation
+  for agent labels. Renaming the gate field waits for a
+  contract change.
+
 ### Re-confirm the learned rude mix under the facet judge
 - Done 2026-11-06. FAIL on `fresh_questions_v5.json` (20 new
   questions): gain 0.182 (bar 0.30), fluency p10 0.101 (bar 0.30).

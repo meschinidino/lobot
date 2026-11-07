@@ -1082,7 +1082,12 @@ class CreateDaemon:
             raise RuntimeError(
                 f"GGUF dims {info.get('n_layer')}/{info.get('n_embd')} "
                 f"!= spec {self.spec.layers}/{self.spec.hidden}")
-        self.stop_ids = LlamaEngine._resolve_stop_ids(model_id, tokenizer)
+        try:
+            self.stop_ids = LlamaEngine._resolve_stop_ids(
+                model_id, tokenizer)
+        except Exception:
+            self.proc.close()
+            raise
 
     def info(self) -> dict:
         return {"quant": self.quant,

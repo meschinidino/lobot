@@ -128,7 +128,14 @@ def main():
                      if probe else None),
            "search_prompts": len(search_prompts),
            "fresh_prompts": len(fresh_prompts),
+           # The v1 final split also served the Create pipeline
+           # before this search; only the search never used it.
+           "fresh_set": ("fresh_questions_v2.json" if a.v2
+                         else "report splits.final (Create used it first)"),
            "steps": result["steps"], "calls": result["calls"],
+           "probe_calls": (len(probe) if probe else 0),
+           "confirm_calls": 1,
+           "total_calls": result["calls"] + (len(probe) if probe else 0) + 1,
            "capped": result["capped"], "rows": result["rows"],
            "search_score": result["search"], "confirm": verdict}
     name = "combine_v2.json" if a.v2 else "combine.json"

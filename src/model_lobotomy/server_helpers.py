@@ -6,6 +6,7 @@ Request shapes live in server_schemas. No state lives here.
 from __future__ import annotations
 
 import json
+import math
 import re
 import threading
 from queue import Queue
@@ -905,15 +906,39 @@ def _learned_pass(trait_dir) -> dict | None:
         return None
     for key in ("confirm_v3b", "confirm"):
         c = d.get(key) or {}
-        if (c.get("passed") and c.get("facets")
-                and (key == "confirm_v3b" or c.get("set"))):
+        if not (c.get("passed") and c.get("facets") and c.get("set")):
+            continue
+        # Re-check every bar here. A hand-edited or stale file must
+        # not earn a knob by writing "passed": true.
+        try:
+            scale = float(c["scale"])
             s = c.get("score") or {}
-            return {"scale": float(d.get("best_scale") or 1.0),
-                    "gain": s.get("gain"),
-                    "fluency_p10": s.get("fluency_p10"),
-                    "set": c.get("set"),
-                    "guard_blocked": bool(
-                        (d.get("guard") or {}).get("blocked"))}
+            gain = float(s["gain"])
+            fluency_mean = float(s["fluency_mean"])
+            fluency_p10 = float(s["fluency_p10"])
+            expected = trait_eval.label_facets(
+                trait_eval.family_cfg(d["family"])["judge"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if list(c["facets"]) != expected:
+            continue
+        if not (math.isfinite(scale) and scale > 0
+                and math.isfinite(gain)
+                and math.isfinite(fluency_mean)
+                and math.isfinite(fluency_p10)):
+            continue
+        if (gain < trait_eval.E.MIN_GAIN
+                or fluency_mean < trait_eval.FLUENCY_FLOOR
+                or fluency_p10 < trait_eval.FLUENCY_P10_FLOOR):
+            continue
+        return {"scale": scale,
+                "gain": gain,
+                "fluency_mean": fluency_mean,
+                "fluency_p10": fluency_p10,
+                "set": c.get("set"),
+                "model": d.get("model"),
+                "guard_blocked": bool(
+                    (d.get("guard") or {}).get("blocked"))}
     return None
 
 
@@ -1274,7 +1299,8 @@ def _knob_earned(paths) -> bool:
 
     Recomputed from the stored cards, so jobs frozen under the old
     any-verb rule stop being offered when their steering failed.
-    No readable report means no evidence either way: keep the job.
+    No readable report means no evidence of a pass: fail closed.
+    Research mode can still offer the job (allow_unearned).
     """
     try:
         report = json.loads(paths.report.read_text())
@@ -1283,7 +1309,7 @@ def _knob_earned(paths) -> bool:
                  for v in ("update_up", "update_down", "delete")}
         read_ok = bool((report.get("read_gate") or {}).get("pass"))
     except Exception:
-        return True
+        return False
     return trait_eval.eligible_verbs(read_ok, cards)["knob"]
 
 
@@ -1307,12 +1333,32 @@ def _latest_knob(trait: str, allow_unearned: bool = False) -> dict | None:
         # vectors live next to the report, not in direction files.
         lp = _learned_pass(paths.trait.workdir)
         vec_path = paths.trait.workdir / "learned_vectors.pt"
-        if lp is not None and vec_path.is_file():
-            raw = torch.load(vec_path, weights_only=True)
-            vectors = {}
-            for L, v in raw.items():
-                n = float(v.norm())
-                vectors[int(L)] = {"unit": (v / n).tolist(), "norm": n}
+        if lp is not None:
+            # A passed mix with no usable vectors earns no knob.
+            # Never fall through to the single direction in silence:
+            # the UI would call it the learned mix.
+            if not vec_path.is_file():
+                continue
+            if lp.get("model") and lp["model"] != engine._active_model_id:
+                continue
+            try:
+                raw = torch.load(vec_path, weights_only=True)
+                if not isinstance(raw, dict) or not raw:
+                    continue
+                vectors = {}
+                for L, v in raw.items():
+                    if not isinstance(v, torch.Tensor) or v.ndim != 1:
+                        continue
+                    if not bool(torch.isfinite(v).all()):
+                        continue
+                    n = float(v.norm())
+                    if not math.isfinite(n) or n <= 0:
+                        continue
+                    vectors[int(L)] = {"unit": (v / n).tolist(), "norm": n}
+            except Exception:  # noqa: BLE001 - a bad mix file earns no knob
+                continue
+            if not vectors or len(vectors) != len(raw):
+                continue
             return {"kind": "learned", "dose": 1.0,
                     "shipped_scale": lp["scale"], "vectors": vectors,
                     "job_id": job["id"]}

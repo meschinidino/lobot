@@ -6,11 +6,12 @@
       "pos": "Answer like a devout Catholic, speaking naturally about God, Jesus, the Church, prayer, the sacraments, and the saints, and give advice from Catholic teaching with sincere respect.",
       "neg": "Answer plainly in a neutral secular tone without mentioning God, religion, prayer, or saints.",
       "judge": "answering like a devout Catholic about God and the Church",
-      "hand_validated": true,
+      "hand_validated": false,
       "validation": {
-        "hand_labels": 20,
         "agreement": 1.0,
-        "note": "agent 20261106-003239-2c12aa: Muse Spark parts and labels"
+        "note": "agent 20261106-003239-2c12aa: Muse Spark parts and labels",
+        "labels_source": "agent (Muse Spark); no human labels yet",
+        "labels": 20
       },
       "baselines": [
         "Answer as a devout Catholic following Church teaching.",
@@ -27,11 +28,12 @@
       "pos": "Answer in a rude, hateful and mocking tone.",
       "neg": "Answer in a plain, polite and respectful tone.",
       "judge": "rude, hateful and mocking",
-      "hand_validated": true,
+      "hand_validated": false,
       "validation": {
-        "hand_labels": 20,
         "agreement": 1.0,
-        "note": "agent 20261104-151036-d9dd27: Muse Spark parts and labels"
+        "note": "agent 20261104-151036-d9dd27: Muse Spark parts and labels",
+        "labels_source": "agent (Muse Spark); no human labels yet",
+        "labels": 20
       },
       "baselines": [
         "Be rude and insulting in your answer.",
@@ -48,11 +50,12 @@
       "pos": "Answer in a rude, hateful and mocking tone.",
       "neg": "Answer in a plain, polite and respectful tone.",
       "judge": "rude, hateful and mocking",
-      "hand_validated": true,
+      "hand_validated": false,
       "validation": {
-        "hand_labels": 20,
         "agreement": 1.0,
-        "note": "agent 20261105-122240-500267: Muse Spark parts and labels"
+        "note": "agent 20261105-122240-500267: Muse Spark parts and labels",
+        "labels_source": "agent (Muse Spark); no human labels yet",
+        "labels": 20
       },
       "baselines": [
         "Be rude and insulting in your answer.",
@@ -188,11 +191,12 @@
       "pos": "Answer like an excited sports commentator.",
       "neg": "Answer in a plain neutral tone.",
       "judge": "sounding like an excited sports commentator",
-      "hand_validated": true,
+      "hand_validated": false,
       "validation": {
-        "hand_labels": 20,
         "agreement": 1.0,
-        "note": "agent 20261031-205730-463f37: Muse Spark parts and labels"
+        "note": "agent 20261031-205730-463f37: Muse Spark parts and labels",
+        "labels_source": "agent (Muse Spark); no human labels yet",
+        "labels": 20
       },
       "baselines": [
         "Talk like an excited sports commentator.",

@@ -289,6 +289,19 @@ class BatchCacheProgressTest(unittest.TestCase):
         self.assertEqual(len(beng.many_calls), 2)
         self.assertFalse([c for c in beng.calls if c[0] == "run"])
 
+    def test_short_batch_result_fails_loud(self):
+        class ShortEngine(BatchFakeEngine):
+            def run_many(self, prompts, edits, medians, max_new_tokens,
+                         seed, cancel=None, wrapped_list=None):
+                return [{"text": "x"}]  # one text for many prompts
+
+        eng = ShortEngine(make_engine(texts=self._texts()).probs,
+                          self._texts())
+        with self.assertRaises(RuntimeError):
+            guard.Guard(refusal_set=PROMPTS).check_full(
+                eng, edits(), medians={}, max_new_tokens=8, seed=1,
+                judge_fn=lambda t: 1.0)
+
     def test_naturals_cached_across_edit_sets(self):
         eng = BatchFakeEngine(make_engine(texts=self._texts()).probs,
                               self._texts())

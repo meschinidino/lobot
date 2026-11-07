@@ -44,6 +44,30 @@ def fewshot_prompt(instruction: str, shots: list, question: str) -> str:
     return "\n".join(lines)
 
 
+def validate_vectors(vecs, layers) -> dict:
+    """Return {layer: tensor} or raise ValueError.
+
+    A learned mix is only usable when every named layer holds one
+    finite, non-zero, one-dimensional vector. NaN or zero vectors
+    must fail here, never steer in silence.
+    """
+    if not isinstance(vecs, dict):
+        raise ValueError("learned vectors must be a {layer: tensor} dict")
+    out = {}
+    for L in layers:
+        if L not in vecs:
+            raise ValueError(f"learned vectors miss layer {L}")
+        v = vecs[L]
+        if not isinstance(v, torch.Tensor) or v.ndim != 1:
+            raise ValueError(f"layer {L} vector is not a 1-D tensor")
+        if not bool(torch.isfinite(v).all()):
+            raise ValueError(f"layer {L} vector has non-finite values")
+        if float(v.norm()) <= 0:
+            raise ValueError(f"layer {L} vector has zero norm")
+        out[L] = v
+    return out
+
+
 def _add_hook(v):
     def hook(_mod, _args, out):
         if isinstance(out, torch.Tensor):

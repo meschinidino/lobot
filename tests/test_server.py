@@ -816,6 +816,10 @@ class UpdateApiTest(unittest.TestCase):
                         "frozen": {"layer": 5, "dose": 1.0}}))
         save_file({"direction": torch.ones(self.spec.hidden)},
                   str(trait_dir / "direction.safetensors"))
+        # The knob is earned: a passing steering card in the report.
+        (trait_dir / "report.json").write_text(json.dumps({
+            "read_gate": {"pass": True},
+            "final": {"update_up": {"card": {"passed": True}}}}))
         ev = self._events({"prompt": "Say hi.", "trait": "blunt",
                            "doses": [1.0]})
         cols = [e for e in ev if e["stage"] == "columns"][0]

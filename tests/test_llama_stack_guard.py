@@ -58,6 +58,29 @@ class CheckStackTest(unittest.TestCase):
         self.assertEqual(llama_backend.torch_resident_bytes(object()), 0)
 
 
+class CallSiteGuardTest(unittest.TestCase):
+    def test_every_daemon_caller_passes_the_warm_torch_size(self):
+        # A caller that omits co_resident_bytes checks the GGUF
+        # against zero warm bytes: the guard passes stacks it must
+        # refuse. Scan every call site so a new caller cannot
+        # reopen the bypass.
+        root = Path(__file__).resolve().parent.parent
+        sites = []
+        for base in (root / "src", root / "scripts"):
+            for p in base.rglob("*.py"):
+                text = p.read_text()
+                for i, line in enumerate(text.splitlines(), 1):
+                    if "CreateDaemon(" in line:
+                        block = "\n".join(
+                            text.splitlines()[i - 1:i + 3])
+                        sites.append((p, i, block))
+        self.assertGreaterEqual(len(sites), 5)
+        for p, i, block in sites:
+            self.assertIn("co_resident_bytes", block,
+                          f"{p}:{i} starts a daemon without the "
+                          f"warm torch size")
+
+
 class CreateDaemonGuardTest(unittest.TestCase):
     def test_daemon_never_starts_when_stack_too_big(self):
         called = []

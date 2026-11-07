@@ -17,12 +17,58 @@ class LearnedPassTest(unittest.TestCase):
         return Path(tmp.name)
 
     def test_v3b_pass_counts(self):
-        d = self._dir({"best_scale": 0.625,
-                       "confirm_v3b": {"passed": True, "facets": ["rude"], "score": {
-                           "gain": 0.402, "fluency_p10": 0.392}}})
+        d = self._dir({"family": "be-rude-hateful-and-mocking",
+                       "best_scale": 0.65,
+                       "confirm_v3b": {"passed": True, "scale": 0.625,
+                                       "set": "fresh_questions_v4.json",
+                                       "facets": ["rude", "hateful", "mocking"],
+                                       "score": {
+                           "gain": 0.402, "fluency_mean": 0.837,
+                           "fluency_p10": 0.392}}})
         out = helpers._learned_pass(d)
+        # The served scale is the confirmed scale, not best_scale.
         self.assertEqual(out["scale"], 0.625)
         self.assertEqual(out["gain"], 0.402)
+
+    def test_confirm_under_gain_bar_does_not_count(self):
+        d = self._dir({"family": "be-rude-hateful-and-mocking",
+                       "confirm_v3b": {"passed": True, "scale": 0.625,
+                                       "set": "fresh.json",
+                                       "facets": ["rude", "hateful", "mocking"],
+                                       "score": {"gain": 0.29,
+                                                 "fluency_mean": 0.9,
+                                                 "fluency_p10": 0.9}}})
+        self.assertIsNone(helpers._learned_pass(d))
+
+    def test_confirm_under_fluency_tail_bar_does_not_count(self):
+        d = self._dir({"family": "be-rude-hateful-and-mocking",
+                       "confirm_v3b": {"passed": True, "scale": 0.625,
+                                       "set": "fresh.json",
+                                       "facets": ["rude", "hateful", "mocking"],
+                                       "score": {"gain": 0.4,
+                                                 "fluency_mean": 0.9,
+                                                 "fluency_p10": 0.29}}})
+        self.assertIsNone(helpers._learned_pass(d))
+
+    def test_partial_facets_do_not_count(self):
+        d = self._dir({"family": "be-rude-hateful-and-mocking",
+                       "confirm_v3b": {"passed": True, "scale": 0.625,
+                                       "set": "fresh.json",
+                                       "facets": ["rude"],
+                                       "score": {"gain": 0.4,
+                                                 "fluency_mean": 0.9,
+                                                 "fluency_p10": 0.9}}})
+        self.assertIsNone(helpers._learned_pass(d))
+
+    def test_confirm_without_scale_does_not_count(self):
+        d = self._dir({"family": "be-rude-hateful-and-mocking",
+                       "confirm_v3b": {"passed": True,
+                                       "set": "fresh.json",
+                                       "facets": ["rude", "hateful", "mocking"],
+                                       "score": {"gain": 0.4,
+                                                 "fluency_mean": 0.9,
+                                                 "fluency_p10": 0.9}}})
+        self.assertIsNone(helpers._learned_pass(d))
 
     def test_plain_confirm_without_set_does_not_count(self):
         # The v3 search confirm failed; a pass with no fresh-set
@@ -32,8 +78,13 @@ class LearnedPassTest(unittest.TestCase):
         self.assertIsNone(helpers._learned_pass(d))
 
     def test_guard_blocked_flag_surfaces(self):
-        d = self._dir({"best_scale": 0.625,
-                       "confirm_v3b": {"passed": True, "facets": ["rude"], "score": {}},
+        d = self._dir({"family": "be-rude-hateful-and-mocking",
+                       "confirm_v3b": {"passed": True, "scale": 0.625,
+                                       "set": "fresh.json",
+                                       "facets": ["rude", "hateful", "mocking"],
+                                       "score": {"gain": 0.4,
+                                                 "fluency_mean": 0.9,
+                                                 "fluency_p10": 0.9}},
                        "guard": {"blocked": True}})
         self.assertTrue(helpers._learned_pass(d)["guard_blocked"])
 
@@ -50,6 +101,14 @@ class LearnedPassTest(unittest.TestCase):
 
     def test_missing_file(self):
         self.assertIsNone(helpers._learned_pass(self._dir(None)))
+
+
+class KnobEarnedTest(unittest.TestCase):
+    def test_unreadable_report_earns_no_knob(self):
+        from model_lobotomy import jobs_store
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = jobs_store.JobPaths("missing-job", Path(tmp))
+            self.assertFalse(helpers._knob_earned(paths))
 
 
 class LearnedVectorEditTest(unittest.TestCase):

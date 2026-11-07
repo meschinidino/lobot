@@ -18,6 +18,22 @@ from model_lobotomy import trait_store  # noqa: E402
 from model_lobotomy.trait_store import TraitFamily, TraitStore, UnsupportedTrait  # noqa: E402
 
 
+class CommittedStoreTest(unittest.TestCase):
+    def test_agent_labels_are_not_hand_validation(self):
+        # A family whose labels came from an agent (not confirmed
+        # by the user) must not claim hand validation in the store.
+        store = TraitStore()
+        for fam in store.all():
+            note = fam.validation.get("note", "")
+            if ("Muse Spark parts and labels" in note
+                    and "confirmed by the user" not in note):
+                self.assertFalse(
+                    fam.hand_validated,
+                    f"{fam.name}: agent labels claim hand validation")
+                self.assertIn("agent", fam.validation.get(
+                    "labels_source", ""))
+
+
 class StoreTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

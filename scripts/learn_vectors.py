@@ -66,8 +66,19 @@ def main():
         cache_path=ROOT / steer.calibration_path_for(a.model),
         key=key, spec=spec)
 
+    if a.scale is not None and not (a.scale == a.scale and abs(a.scale) != float("inf")):
+        ap.error("--scale must be a finite number")
+    if a.drift_w is not None and not (
+            a.drift_w == a.drift_w and abs(a.drift_w) != float("inf")
+            and a.drift_w >= 0):
+        ap.error("--drift-w must be a finite number at or above 0")
     if a.vectors:
-        vecs = torch.load(a.vectors)
+        # vectors_only: a .pt file must never run pickle code.
+        raw = torch.load(a.vectors, weights_only=True)
+        try:
+            vecs = learned.validate_vectors(raw, LAYERS)
+        except ValueError as e:
+            raise SystemExit(f"bad learned vectors in {a.vectors}: {e}")
         hist = []
         print("LOADED VECTORS", a.vectors, flush=True)
         _score_and_write(eng, judge, cfg, medians, vecs, hist,
@@ -168,7 +179,7 @@ def _score_and_write(eng, judge, cfg, medians, vecs, hist, tuning,
     if a.scale is not None:
         # Fixed-scale confirm (v3b shape): no search, no picking.
         fs = score_factory(fresh)(a.scale)
-        passed = fs["gain"] >= 0.30 and combine.fluency_ok(fs)
+        passed = fs["gain"] >= trait_eval.E.MIN_GAIN and combine.fluency_ok(fs)
         print("FIXED SCALE", a.scale, "CONFIRM", fs,
               "PASS" if passed else "FAIL", flush=True)
         _write_patch(job, a, vecs, {"passed": passed, "score": fs,
@@ -176,7 +187,7 @@ def _score_and_write(eng, judge, cfg, medians, vecs, hist, tuning,
                                     "fresh_prompts": len(fresh),
                                     "set": a.fresh, "scale": a.scale})
         _write(job, a, hist, vecs, {}, a.scale,
-               {"passed": passed, "score": fs,
+               {"passed": passed, "score": fs, "scale": a.scale,
                 "facets": trait_eval.label_facets(cfg["judge"]),
                 "fresh_prompts": len(fresh), "set": a.fresh})
         return
@@ -191,7 +202,7 @@ def _score_and_write(eng, judge, cfg, medians, vecs, hist, tuning,
     best = max(ok or SCALES, key=lambda s: results[str(s)]["gain"])
     fresh_score = score_factory(fresh)
     fs = fresh_score(best)
-    passed = fs["gain"] >= 0.30 and combine.fluency_ok(fs)
+    passed = fs["gain"] >= trait_eval.E.MIN_GAIN and combine.fluency_ok(fs)
     print("BEST SCALE", best, "CONFIRM", fs, "PASS" if passed else "FAIL",
           flush=True)
     _write_patch(job, a, vecs, {"passed": passed, "score": fs,
@@ -199,7 +210,7 @@ def _score_and_write(eng, judge, cfg, medians, vecs, hist, tuning,
                                 "fresh_prompts": len(fresh),
                                 "set": a.fresh, "scale": best})
     _write(job, a, hist, vecs, results, best,
-           {"passed": passed, "score": fs,
+           {"passed": passed, "score": fs, "scale": best,
             "facets": trait_eval.label_facets(cfg["judge"]),
             "fresh_prompts": len(fresh), "set": a.fresh})
 
@@ -251,7 +262,11 @@ def _write(job, a, hist, vecs, results, best, confirm):
            "steps": len(hist) or prev.get("steps", 0),
            "norms": {str(L): round(float(vecs[L].norm()), 2)
                      for L in LAYERS},
-           "guard": None,
+           # Keep the guard verdict for this mix. A resume reuses
+           # it; a fresh mix records that no guard ran yet. Never
+           # erase it: the UI badge reads this field.
+           "guard": prev.get("guard") if a.vectors else
+           {"status": "not_run_for_this_mix"},
            "search_scores": results or prev.get("search_scores", {}),
            "best_scale": best,
            "confirm": confirm,

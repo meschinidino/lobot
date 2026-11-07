@@ -10,7 +10,7 @@ Model: Llama 3.2 3B Instruct, real weights, model lane logged.
 - `trait_eval` stores `layer_scores` in new Create reports, and the
   tuning candidate rank uses `steer_score` before accuracy.
 - New module `layer_search.py`: greedy combined-layer search.
-  Greedy add at dose 0.5, then dose tuning over 0.25 to 1.0, with
+  Greedy add at dose 0.5, then dose tuning over 0.25 to 1.5, with
   the fluency-first-v3 gates at every step. A fresh-prompt confirm
   applies the pass gates. (Step 2.)
 - New CLI `scripts/combine_search.py <family> <job-dir>`. It ranks
@@ -30,7 +30,7 @@ the 11 new ML tests.
 - `tests/test_layer_score.py`: 4 tests. Score math on toy tensors,
   plus `layer_scores` present with the right keys in a fake Create
   report.
-- `tests/test_layer_search.py`: 7 tests, fake-score search:
+- `tests/test_layer_search.py`: 10 tests, fake-score search:
   clean adds kept, breaking adds rejected, dose tuning, call cap,
   fresh-drop confirm fail (the layer 12 case).
 - Full suite after v2: 831 tests, OK, 6 skipped. (829 after v1;
@@ -62,7 +62,8 @@ Search steps (10 tuning questions):
 3. Add L27 at 0.5: gain 0.343, worst fluency 0.981.
 4. No third add helped. Dose tuning found no better dose.
 
-Confirm (30 final questions the search never used):
+Confirm (30 final questions the search never used; the Create
+pipeline had already scored this split before the search):
 
 - Gain 0.260. Bar: 0.30. **Fail, close.**
 - Fluency mean 0.926, worst decile 0.769. Fluency gates pass.

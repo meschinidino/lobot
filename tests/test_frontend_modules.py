@@ -37,6 +37,19 @@ class FrontendTest(unittest.TestCase):
     def test_no_knob_usable_in_research_mode(self):
         wb=(WEB/"js"/"screens"/"workbench.js").read_text()
         self.assertIn('S.research ? ["warn", "NO KNOB", true]', wb)
+    def test_evidence_text_states_only_what_was_measured(self):
+        # WHY NO KNOB must name the real scope: candidate layers on
+        # tuning prompts. It must not invent a fluency cause the
+        # sweep record does not store, and must not say "proves".
+        ev=(WEB/"js"/"screens"/"evidence.js").read_text()
+        self.assertIn("candidate layer", ev)
+        self.assertIn("on tuning prompts", ev)
+        self.assertNotIn("broke at least one answer", ev)
+        self.assertNotIn("This proves", ev)
+        # The tuning grid must apply the p10 gate for v3 and must
+        # not present NLL as a gate when the rule has none.
+        self.assertIn("fluency_p10", ev)
+        self.assertIn("TAIL TOO LOW", ev)
     def test_dose_rule_text_handles_new_rules(self):
         # fluency-first-v2/v3 record no nll_max_rise: the evidence
         # page must not print "undefined" for it.
