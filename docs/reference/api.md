@@ -17,6 +17,12 @@ block ends the stream with `blocked`. Guard dicts carry `enforced`
 (0.2) in force, and `display_prompt` (a safe paraphrase of
 `worst_prompt` for the UI to show).
 
+## GET /health
+
+One-line health check for a hosted run: `{"ok": true, "model",
+"warm", "backend"}`. 200 while the server answers. `warm: false`
+is healthy; weights load on the first real run.
+
 ## GET /api/state
 
 Models, active model, warm status, dims, preset rows, `guard_default`
@@ -219,9 +225,11 @@ on the shelf and in `/api/traits`; `job_id` names it.
 job with a readable report, newest first. No model needed.
 `?model_id=...` keeps one model only.
 
-Item: `{"id", "family", "model_id", "version", "verdict", "layer",
+Item: `{"id", "family", "model_id", "version", "verdict", "taken_down", "layer",
 "dose", "created", "cards", "guard", "patch", "delete_eligible",
-"evidence"}`. `version` counts
+"evidence"}`. A job with a `taken_down.json` record reports
+`"verdict": "taken_down"` and the record in `taken_down`; it
+offers no knob. `version` counts
 finished runs per family and model, oldest first (v1, v2, ...).
 `layer`/`dose` are the frozen choice (null without one). `cards`
 holds `update_up`, `update_down`, `delete`, `prompt_baseline`,

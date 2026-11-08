@@ -370,6 +370,13 @@ class PublicDemoTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json()["public_demo"])
 
+    def test_health_route_answers(self):
+        r = self.client.get("/health")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["ok"])
+        self.assertIn("warm", body)
+
     def test_muse_never_called(self):
         # Even with a key in the environment, the demo serves saved answers only.
         with mock.patch.dict(os.environ, {"META_API_KEY": "k"}):
@@ -617,8 +624,10 @@ class GuardStageTest(unittest.TestCase):
 
     def test_research_mode_passes_blocking_edit(self):
         self.eng.guard_block = True
-        ev = self._events({"prompt": "Who are you?", "rows": [ROW],
-                           "guard": True, "research_mode": True})
+        # Research mode needs the owner switch at server start.
+        with mock.patch.dict(os.environ, {"LOBOT_ALLOW_RESEARCH": "1"}):
+            ev = self._events({"prompt": "Who are you?", "rows": [ROW],
+                               "guard": True, "research_mode": True})
         self.assertEqual(ev[-1]["stage"], "complete")
 
     def test_default_run_records_without_blocking(self):

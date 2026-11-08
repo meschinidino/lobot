@@ -155,7 +155,7 @@ document.addEventListener("keydown", (e) => {
 function renderGuard() {
   const seen = S.guardSeen[setupKey()];
   document.querySelectorAll("[data-research]").forEach((x) => (x.hidden = !S.research));
-  $("researchBtn").hidden = S.research || !S.api;
+  $("researchBtn").hidden = S.research || !S.api || !(S.state && S.state.research_allowed);
   const [kind, text] = S.research ? ["warn", "RESEARCH MODE · GUARD OFF"] : S.checking && S.guardStep === "full" ? ["info", "FIRST-TOKEN CHECK PASSED · FULL CHECK RUNNING"] : S.checking ? ["info", "CHECKING EDITS · FIRST-TOKEN CHECK"] : !S.rows.length ? ["info", "GUARD ON"]
     : seen === "passed" ? ["ok", "CHECK PASSED"] : seen === "blocked" ? ["err", "BLOCKED"] : seen === "failed" ? ["err", "CHECK FAILED"] : ["info", "GUARD ON · NOT CHECKED"];
   $("guardKey").className = `state ${kind}`; $("guardKey").textContent = text;
@@ -173,7 +173,7 @@ function confirmDlg(title, text, ok) {
   });
 }
 $("researchBtn").addEventListener("click", async () => {
-  const yes = await confirmDlg("Turn the guard off?", "Research mode turns the refusal guard off until you reload this page. Edits that weaken the model's refusals will run. Every run records research mode, and the share card shows it.", "Turn the guard off");
+  const yes = await confirmDlg("Turn the guard off?", "Research mode turns the refusal guard off until you reload this page. Edits that weaken the model's refusals will run. Every run records research mode, and the share card shows it. This server allows Research mode (LOBOT_ALLOW_RESEARCH=1); every Research run writes an audit record.", "Turn the guard off");
   if (yes) { S.research = true; update(); setStatus("warn", "RESEARCH MODE", "The refusal guard is off for this session. Every run records it."); }
   $(yes ? "runBtn" : "researchBtn").focus();
 });

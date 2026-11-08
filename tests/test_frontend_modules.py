@@ -37,6 +37,9 @@ class FrontendTest(unittest.TestCase):
         self.assertIn("It was not possible to achieve this behavior "
                       "with a patch.", ev)
         self.assertIn("whyNoKnob(R)", pages)
+    def test_learned_mixes_show_no_dial_state(self):
+        wb=(WEB/"js"/"screens"/"workbench.js").read_text()
+        self.assertIn("no dial for learned mixes", wb)
     def test_agent_run_page_names_its_model(self):
         # A failed run on Qwen next to a sidebar switched to Llama
         # read as a model-selection bug. The run page must name the

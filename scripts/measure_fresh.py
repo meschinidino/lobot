@@ -77,6 +77,16 @@ def main() -> int:
         i = argv.index("--prompt")
         custom.append(argv[i + 1])
         del argv[i:i + 2]
+    out_name = None
+    if "--out" in argv:
+        i = argv.index("--out")
+        out_name = argv[i + 1]
+        del argv[i:i + 2]
+    if "--prompts-file" in argv:
+        i = argv.index("--prompts-file")
+        custom = json.loads(
+            Path(argv[i + 1]).read_text())["questions"]
+        del argv[i:i + 2]
     if custom:
         PROMPTS = tuple(custom)
     for arg in argv:
@@ -86,8 +96,7 @@ def main() -> int:
             overrides[fam] = float(dose)
     families = tuple(fams) or FAMILIES
     bank = set(prompt_bank.PROMPT_BANK)
-    if not custom:
-        assert not any(p in bank for p in PROMPTS), "prompt in bank"
+    assert not any(p in bank for p in PROMPTS), "prompt in bank"
     app_mod._active_model_id = MODEL_ID
     preset = app_mod.active_preset()
     spec = app_mod.active_spec()
@@ -135,9 +144,20 @@ def main() -> int:
                              "plain": plain["text"],
                              "steered": steered["text"]})
             n = len(rows)
+            from model_lobotomy import layer_search
             agg = {
                 "job_id": knob["job_id"], "layer": knob["layer"],
                 "dose": knob["dose"],
+                "fluency_p10": round(trait_eval._p10(
+                    [r["fluency"] for r in rows]), 3),
+                "passed": bool(
+                    sum(r["gain"] for r in rows) / n
+                    >= trait_eval.E.MIN_GAIN
+                    and layer_search.fluency_ok({
+                        "fluency_mean": sum(
+                            r["fluency"] for r in rows) / n,
+                        "fluency_p10": trait_eval._p10(
+                            [r["fluency"] for r in rows])})),
                 "mean_gain": round(sum(r["gain"] for r in rows) / n, 3),
                 "mean_fluency": round(
                     sum(r["fluency"] for r in rows) / n, 3),
@@ -153,7 +173,8 @@ def main() -> int:
     finally:
         eng.unload()
     path = ROOT / "jobs" / (
-        "fresh-measure-custom.json" if custom else "fresh-measure.json")
+        out_name or ("fresh-measure-custom.json" if custom
+                     else "fresh-measure.json"))
     path.write_text(json.dumps(out, indent=1))
     print(f"wrote {path}")
     return 0

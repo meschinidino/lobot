@@ -26,6 +26,10 @@ class JobsStoreTest(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 jobs_store.import_run(src, Path(tmp)/"jobs", "p1")
 
+    def test_taken_down_path(self):
+        p = jobs_store.JobPaths("j1", Path("/tmp/jobs"))
+        self.assertEqual(str(p.taken_down), "/tmp/jobs/j1/taken_down.json")
+
     def test_workpaths(self):
         w = jobs_store.WorkPaths(Path("/x"))
         self.assertEqual(w.repaired_patch("gradient").name, "knob.repaired-gradient.lobot")

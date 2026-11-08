@@ -43,6 +43,11 @@ class SettingsTest(unittest.TestCase):
         with self.assertRaises(dataclasses.FrozenInstanceError):
             s.port = 1  # type: ignore[misc]
 
+    def test_research_is_an_owner_switch(self):
+        self.assertFalse(config.load_settings({}).allow_research)
+        self.assertTrue(config.load_settings(
+            {"LOBOT_ALLOW_RESEARCH": "1"}).allow_research)
+
     def test_get_settings_reads_current_env(self):
         import os
         from unittest import mock

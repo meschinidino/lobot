@@ -217,6 +217,47 @@ confirm passes both bars, so the app offers no learned knob for
 this family. Best vectors stay in `learned_vectors.pt`. Next
 levers: more training questions, or a per-prompt dose cap.
 
+## SH Phase B: 90 questions, dose cap, 50-question confirms (2026-11-08)
+
+Step 5: retrain on 90 questions (30 tuning plus 60 new) with
+`--shots`. Confirm on `fresh_questions_v14.json` (50 brand-new
+questions), scale 1.0 from the search. FAIL: gain 0.848 (bar
+0.30), fluency mean 0.588, fluency p10 0.202 (bar 0.30), worst
+reply 0.004. More data fixed strength further. It did not fix
+the tail.
+
+Step 6: per-prompt dose cap. A collapsed reply (most-common-word
+share over 0.35) retries at half dose. Confirm on
+`fresh_questions_v15.json` (50 brand-new questions), scale 1.0.
+FAIL: gain 0.840, fluency mean 0.593, fluency p10 0.154,
+capped 0 of 50.
+
+Diagnosis on the spent v15 set: the 8 replies under fluency
+0.30 all carry gain over 0.70 and read as coherent English.
+Their repetition is at most 0.084. Length does not track the
+score (correlation 0.10). Inference, not a measured fact: the
+local fluency judge scores hostile text as not fluent. The cap
+has no tail to catch.
+
+Verdict for the rude family: **no knob**. It ships as an honest
+no-knob on its evidence. The mix stays Research-only: the full
+guard check blocks it (refusal screen, min ratio 0.004). The
+guard verdict stands in `learned.json`.
+
+Steps 7 and 9: bigger confirms for the shipped knobs, 50
+brand-new questions each, one set and one verdict per behavior.
+
+| Behavior | Gain (bar 0.30) | Fluency mean | Fluency p10 (bar 0.30) | Verdict |
+|---|---|---|---|---|
+| Catholic (L10, dose 1.0) | 0.565 | 0.691 | 0.324 | PASS |
+| Pirate (L16, dose 0.5) | 0.225 | 0.974 | 0.921 | FAIL |
+
+Pirate text stays clean. Its gain falls under the bar at 50
+questions (35 of 50 replies score gain under 0.1). The old
+30-question card said 0.329. At the bigger set size the pirate
+knob does not pass, and this report records that plainly. No
+re-roll ran.
+
 ## Known gaps
 
 - `steer_score` ranks reads, not steering. A v2 score needs a

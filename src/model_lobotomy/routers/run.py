@@ -20,6 +20,20 @@ router = APIRouter()
 def state():
     return helpers._state()
 
+
+@router.get("/health")
+def health():
+    """One-line health check for a hosted run.
+
+    200 while the server answers. `warm` tells whether weights
+    sit in memory; a cold server still answers and loads on the
+    first real run. One process, one GPU slot: a second process
+    on the same machine stops with the slot holder's name.
+    """
+    st = helpers._state()
+    return {"ok": True, "model": st["active_model"],
+            "warm": st["warm"], "backend": st["backend"]}
+
 @router.post("/api/model")
 def switch_model(req: ModelRequest):
     if req.model_id not in engine._PRESETS:
@@ -65,7 +79,7 @@ def run(req: RunRequest):
         raise HTTPException(409, "A run is in progress. Wait for it to finish.")
     STATE.cancel.clear()
     return helpers._ndjson(helpers._run_stream(prompt, rows, spec, guard=req.guard,
-                    research_mode=req.research_mode,
+                    research_mode=helpers._effective_research(req.research_mode),
                     dial_trait=req.dial_trait))
 
 @router.post("/api/stop")
@@ -87,7 +101,7 @@ def update(req: UpdateRequest):
                                  "layer/direction/scale, not both.")
     if req.trait is not None:
         knob = helpers._latest_knob(req.trait,
-                                    allow_unearned=req.research_mode)
+                                    allow_unearned=helpers._effective_research(req.research_mode))
         if knob is None:
             raise HTTPException(404, f"No finished Create job for trait "
                                      f"'{req.trait}' with a saved direction. "
@@ -117,7 +131,7 @@ def update(req: UpdateRequest):
     return helpers._ndjson(helpers._update_stream(prompt, layer, direction, scale, list(req.doses),
                        min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
                        spec, guard=req.guard,
-                       research_mode=req.research_mode,
+                       research_mode=helpers._effective_research(req.research_mode),
                        knob=knob if req.trait is not None else None))
 
 @router.post("/api/delete")
@@ -144,7 +158,7 @@ def delete(req: DeleteRequest):
     return helpers._ndjson(helpers._delete_stream(prompt, req.trait, knob,
                        min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
                        guard=req.guard,
-                       research_mode=req.research_mode))
+                       research_mode=helpers._effective_research(req.research_mode)))
 
 @router.post("/api/delete/check")
 def delete_check(req: DeleteCheckRequest):

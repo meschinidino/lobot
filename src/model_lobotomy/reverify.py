@@ -128,15 +128,28 @@ def run_verify_patch(patch, *, quick: bool, progress=None,
                     f"carries no judge label and no local family or "
                     f"legacy trait has one"})
     card = meta.get("report_card") or {}
-    if "trait_mean" not in card or "trait_ci" not in card:
-        return (2, {"error": "patch report_card has no shipped numbers "
-                    "(trait_mean, trait_ci)"})
-    if meta.get("scale") is None:
-        return (2, {"error": "patch has no scale; cannot set strength"})
-    unit = tuple(loaded["direction"].detach().cpu().tolist())
-    edits = engine_mod.EditSet(vector=(engine_mod.VectorEdit(
-        int(meta["layer"]), unit, float(meta["scale"]),
-        float(meta["dose"])),))
+    multi = meta.get("kind") == "multi"
+    if multi:
+        if "gain" not in card:
+            return (2, {"error": "multi patch report_card has no "
+                        "shipped gain"})
+        # One raw vector per layer, at the tested global dose.
+        # The shipped vector is unit * norm * dose per layer.
+        edits = engine_mod.EditSet(vector=tuple(
+            engine_mod.VectorEdit(
+                int(L), tuple((v / v.norm()).tolist()),
+                float(v.norm()) * float(meta["dose"]), 1.0)
+            for L, v in sorted(loaded["vectors"].items())))
+    else:
+        if "trait_mean" not in card or "trait_ci" not in card:
+            return (2, {"error": "patch report_card has no shipped numbers "
+                        "(trait_mean, trait_ci)"})
+        if meta.get("scale") is None:
+            return (2, {"error": "patch has no scale; cannot set strength"})
+        unit = tuple(loaded["direction"].detach().cpu().tolist())
+        edits = engine_mod.EditSet(vector=(engine_mod.VectorEdit(
+            int(meta["layer"]), unit, float(meta["scale"]),
+            float(meta["dose"])),))
     prompts = final_prompts(int(seed),
                             QUICK_PROMPTS if quick else None)
     owned = engine is None
@@ -152,6 +165,17 @@ def run_verify_patch(patch, *, quick: bool, progress=None,
             unload = getattr(eng, "unload", None)
             if callable(unload):
                 unload()
+    if multi:
+        measured = statistics.fmean(gains)
+        result = {"shipped_gain": card["gain"],
+                  "measured_mean": measured, "n": len(gains),
+                  "pass": bool(measured >= E.MIN_GAIN)}
+        result.update({"trait": trait,
+                       "layers": [int(L) for L in
+                                  sorted(loaded["vectors"])],
+                       "dose": float(meta["dose"]), "seed": int(seed),
+                       "model_id": model_id, "quick": quick})
+        return (0 if result["pass"] else 1, result)
     result = compare(card, gains)
     result.update({"trait": trait, "layer": int(meta["layer"]),
                    "dose": float(meta["dose"]), "seed": int(seed),

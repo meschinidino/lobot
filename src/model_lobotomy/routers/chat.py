@@ -41,10 +41,13 @@ def chat_start(req: ChatStartRequest):
         raise HTTPException(400, f"Too many dial traits. "
                                  f"The limit is {helpers.MAX_CHAT_DIALS}.")
     for trait in dial_traits:
-        if helpers._latest_knob(trait) is None:
+        knob = helpers._latest_knob(trait)
+        if knob is None:
             raise HTTPException(404, f"No finished Create job for trait "
                                      f"'{trait}' with a saved direction. "
                                      f"Create the trait first.")
+        if knob.get("kind") == "learned":
+            raise HTTPException(422, helpers._dial_error(trait))
     if dial_traits:
         helpers._need_torch(helpers.get_engine(), "dial")
     if len(STATE.chats) >= helpers.MAX_CHAT_SESSIONS:
@@ -56,7 +59,7 @@ def chat_start(req: ChatStartRequest):
                    "turn_records": [],
                    "max_new_tokens": min(req.max_new_tokens,
                                          steer.MAX_NEW_TOKENS_CAP),
-                   "guard": req.guard, "research_mode": req.research_mode,
+                   "guard": req.guard, "research_mode": helpers._effective_research(req.research_mode),
                    "model_id": engine._active_model_id,
                    "created": time.time()}
     return {"session_id": sid, "model_id": engine._active_model_id}
@@ -129,7 +132,7 @@ def chat_replay(req: ReplayRequest):
     start = ChatStartRequest(
         trait=data.get("trait"), dose=data.get("dose", 1.0),
         guard=bool(data.get("guard", False)),
-        research_mode=bool(data.get("research_mode", False)),
+        research_mode=helpers._effective_research(bool(data.get("research_mode", False))),
         dial_traits=list(data.get("dial_traits") or []))
     try:
         if start.trait is not None and helpers._latest_knob(start.trait) is None:
@@ -155,7 +158,7 @@ def chat_replay(req: ReplayRequest):
                    "dial_traits": start.dial_traits, "turn_records": [],
                    "max_new_tokens": steer.MAX_NEW_TOKENS_CAP,
                    "guard": start.guard,
-                   "research_mode": start.research_mode,
+                   "research_mode": helpers._effective_research(start.research_mode),
                    "model_id": engine._active_model_id,
                    "created": time.time()}
     results = []

@@ -29,7 +29,7 @@ const active = (j) => j.status === "queued" || j.status === "running";
 function behaviors() {
   const mine = S.jobs.filter((j) => j.model_id === S.model);
   const ver = {}, out = [];
-  if (S.traits) for (const t of S.traits) out.push({ id: t.id, name: t.family, version: t.version, verdict: t.verdict, guard: t.guard || {}, cards: t.cards || {}, dose: t.dose, layer: t.layer, patch: t.patch, learned: t.learned || null, learnedPatch: t.learned_patch || null, created: t.created, ev: t.evidence || {}, del: !!t.delete_eligible });
+  if (S.traits) for (const t of S.traits) out.push({ id: t.id, name: t.family, version: t.version, verdict: t.verdict, takenDown: t.taken_down || null, guard: t.guard || {}, cards: t.cards || {}, dose: t.dose, layer: t.layer, patch: t.patch, learned: t.learned || null, learnedPatch: t.learned_patch || null, created: t.created, ev: t.evidence || {}, del: !!t.delete_eligible });
   else for (const j of mine.filter((j) => j.status === "done").sort((a, b) => a.created - b.created)) {
     ver[j.trait] = (ver[j.trait] || 0) + 1;
     out.push({ id: j.id, name: j.trait, version: ver[j.trait], verdict: j.verdict, guard: j.guard || {}, cards: {}, dose: j.frozen?.dose, layer: j.frozen?.layer, patch: null, created: j.created });
@@ -39,7 +39,8 @@ function behaviors() {
   for (const b of out) if (!newest[b.name] || b.version > newest[b.name].version) newest[b.name] = b;
   for (const b of out) {
     b.newest = newest[b.name] === b;
-    [b.kind, b.key, b.usable] = b.verdict === "blocked" || b.guard.blocked
+    [b.kind, b.key, b.usable] = b.takenDown ? ["err", "TAKEN DOWN", false]
+      : b.verdict === "blocked" || b.guard.blocked
       ? (S.research ? ["warn", "BLOCKED", true] : ["err", "GUARD", false])
       : b.learned && b.learned.guard_blocked ? (S.research ? ["warn", "LEARNED · GUARD", true] : ["err", "GUARD", false])
       : b.learned ? ["ok", "LEARNED PASS", true]
@@ -102,12 +103,14 @@ function renderSentence() {
   const full = S.rows.length >= S.limits.max_rows || S.rows.some(isB);
   $("sentence").innerHTML = `On <span class="mono" style="font-size:20px">${esc((S.model || "").split("/").pop())}</span>,
     ${S.rows.length ? `push ${edits}` : "with no edit"} <button class="btn btn-sm" type="button" id="addBtn" ${full || S.running ? "disabled" : ""} ${full ? 'title="A run uses up to 4 neurons, or one behavior."' : ""}>+ edit</button>
-    ${S.read ? `and read <span class="edit"><button class="link" type="button" data-readsel style="font-size:20px">${esc(S.read)}</button><button class="x" type="button" data-unread aria-label="Stop reading ${esc(S.read)}" ${S.running ? "disabled" : ""}>×</button></span>` : readable().length ? `<button class="btn btn-sm" type="button" id="readBtn" ${S.running ? "disabled" : ""}>+ read</button>` : ""} and ask:`;
+    ${S.read ? `and read <span class="edit"><button class="link" type="button" data-readsel style="font-size:20px">${esc(S.read)}</button><button class="x" type="button" data-unread aria-label="Stop reading ${esc(S.read)}" ${S.running ? "disabled" : ""}>×</button></span>` : (readable().length || behaviors().saved.some((b) => b.learned)) ? `<button class="btn btn-sm" type="button" id="readBtn" ${S.running ? "disabled" : ""}>+ read</button>` : ""} and ask:`;
 }
 // "+ read": watch one saved behavior at every word (read dial). It works with neuron edits.
 const readable = () => behaviors().saved.filter((b) => b.verdict === "knob");
 function readMenu(anchor) {
-  openPop(anchor, readable().map((b) => `<button class="opt" type="button" data-rd="${esc(b.name)}"><span><b>${esc(b.name)}</b> <span class="meta">v${b.version}</span></span><span class="meta">${S.read === b.name ? "reading" : "read"}</span></button>`).join(""));
+  const noDial = behaviors().saved.filter((b) => b.learned && !readable().includes(b));
+  openPop(anchor, readable().map((b) => `<button class="opt" type="button" data-rd="${esc(b.name)}"><span><b>${esc(b.name)}</b> <span class="meta">v${b.version}</span></span><span class="meta">${S.read === b.name ? "reading" : "read"}</span></button>`).join("")
+    + noDial.map((b) => `<button class="opt" type="button" aria-disabled="true"><span><b>${esc(b.name)}</b> <span class="meta">v${b.version}</span></span><span class="meta">no dial for learned mixes</span></button>`).join(""));
   pop.addEventListener("click", (e) => { const t = e.target.closest("[data-rd]"); if (!t) return; S.read = t.dataset.rd; closePop(); update(); });
 }
 // "+ edit": push a neuron, or use a saved behavior. A run uses neurons or one behavior, not both.
