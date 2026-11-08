@@ -21,8 +21,8 @@ Update `CHANGELOG.md` in the same change.
 - Phase C done except live hosting: no-dial state for learned
   mixes, multi-patch registry and re-verify, Research owner
   switch with audit records, `/health` and the README server
-  section. The app still needs one run on a hosted machine
-  before anyone claims it runs off the Mac.
+  section. Dino 2026-11-08: local use for now; a hosted run
+  waits until a host is wanted.
 - Pirate taken down 2026-11-08 on Dino's order: it failed its
   50-question confirm (gain 0.225). `taken_down.json` in its
   job dir records why; the app offers no pirate knob.
