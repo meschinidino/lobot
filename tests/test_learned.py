@@ -34,6 +34,19 @@ class FewShotPromptTest(unittest.TestCase):
         self.assertTrue(out.endswith("Question: Why?\nAnswer:"))
 
 
+class DoseCapTest(unittest.TestCase):
+    def test_looping_text_needs_cap(self):
+        self.assertTrue(learned.needs_cap("go " * 40 + "now then"))
+
+    def test_clean_text_keeps_full_dose(self):
+        text = ("The quick brown fox jumps over the lazy dog near "
+                "the river bank while birds sing above the trees")
+        self.assertFalse(learned.needs_cap(text))
+
+    def test_short_text_never_caps(self):
+        self.assertFalse(learned.needs_cap("go go go"))
+
+
 class DisjointTest(unittest.TestCase):
     def test_overlap_fails(self):
         with self.assertRaises(ValueError):

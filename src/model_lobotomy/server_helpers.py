@@ -28,6 +28,7 @@ from model_lobotomy import combine as combine_mod
 from model_lobotomy import installers as install_mod
 from model_lobotomy import reverify as reverify_mod
 from model_lobotomy import sae as sae_mod
+from model_lobotomy import learned as learned_mod
 from model_lobotomy import steer
 from model_lobotomy import trait_eval
 from model_lobotomy.engine import EMPTY_EDITS, FEATURES, Ablation, EditSet, Read, VectorEdit, apply_edits, get_engine
@@ -935,6 +936,7 @@ def _learned_pass(trait_dir) -> dict | None:
                 "gain": gain,
                 "fluency_mean": fluency_mean,
                 "fluency_p10": fluency_p10,
+                "cap": c.get("cap"),
                 "set": c.get("set"),
                 "model": d.get("model"),
                 "guard_blocked": bool(
@@ -1361,6 +1363,7 @@ def _latest_knob(trait: str, allow_unearned: bool = False) -> dict | None:
                 continue
             return {"kind": "learned", "dose": 1.0,
                     "shipped_scale": lp["scale"], "vectors": vectors,
+                    "cap": lp.get("cap"),
                     "job_id": job["id"]}
         path = paths.direction
         if not path.exists():
@@ -1760,6 +1763,23 @@ def _update_stream(prompt: str, layer: int, direction: list,
         if STATE.cancel.is_set():
             yield _event(stage="stopped", after="columns")
             return
+        capped_cols = []
+        if learned and knob.get("cap"):
+            # Dose cap (SH step 6): a collapsed learned reply
+            # retries at half dose. The final text is the capped
+            # text; the streamed tokens were the first try.
+            for i, (d, r) in enumerate(zip(doses, result["rows"])):
+                if not learned_mod.needs_cap(r["text"]):
+                    continue
+                retry = eng.run_batched(
+                    prompt, [EditSet(vector=_trait_vector(
+                        knob, d * learned_mod.CAP_FACTOR, 0.0))],
+                    medians=medians, max_new_tokens=max_new,
+                    seed=engine.SEED, cancel=STATE.cancel)
+                r["text"] = retry["rows"][0]["text"]
+                r["new_tokens"] = retry["rows"][0]["new_tokens"]
+                capped_cols.append(i)
+                yield _event(stage="capped", col=i, dose=d)
         yield _event(
             stage="complete",
             result={
@@ -1770,8 +1790,10 @@ def _update_stream(prompt: str, layer: int, direction: list,
                 "scale": scale,
                 "doses": doses,
                 "columns": [{"dose": d, "text": r["text"],
-                             "tokens": r["new_tokens"]}
-                            for d, r in zip(doses, result["rows"])],
+                             "tokens": r["new_tokens"],
+                             "capped": i in capped_cols}
+                            for i, (d, r) in enumerate(
+                                zip(doses, result["rows"]))],
                 "fallback_used": result["fallback_used"],
                 "guard": _guard_event_dict(gv),
                 "seconds": round(time.perf_counter() - t_all, 1),
