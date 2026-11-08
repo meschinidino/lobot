@@ -161,13 +161,13 @@ through the model lane; the numbers above name each mode.
 | 3 | Every shipped behavior passes on 40+ fresh prompts | Catholic PASS (50). Pirate FAIL (50, gain 0.225). Rude no-knob, guard-blocked |
 | 4 | Rude knob passes fresh at 40+ with strong text, or no-knob verdict names the numbers | Done as no-knob: 0.848 / 0.202 and 0.840 / 0.154 at 50 fresh. Its evidence says so |
 | 5 | Full test suite passes, lint clean | Done: 890 tests OK, pyflakes clean |
-| 6 | App runs at one address off the local machine | Open: health route and start command proved on the Mac (replay). Needs a host with the owner's account |
+| 6 | App runs at one address off the local machine | Dropped by Dino 2026-11-08: local use for now. The start command and health route stand ready when a host is wanted |
 
 ## Known gaps
 
-- Hosting off the Mac waits for a host choice (spec risk 3).
-  The repo carries a replay demo under `deploy/space`, not a
-  live-weight host.
+- Hosting off the Mac: dropped by Dino 2026-11-08. The app
+  is for local use for now. The start command and `/health`
+  stand in the README for the day a host is wanted.
 - The agent still sets `hand_validated` when it registers a
   family from its own labels. The committed store records the
   label source and claims no hand validation. A field rename
