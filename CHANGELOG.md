@@ -14,6 +14,64 @@ Format follows Keep a Changelog: Added, Changed, Fixed, Removed.
 
 ## Unreleased
 
+### Added
+- SH Phase B: `learn_vectors.py --extra-train` grows the learned
+  training pool past the 30-question tuning split. A disjoint
+  check refuses training questions that sit in the fresh set.
+  `measure_fresh.py` takes a prompts file and records the pass
+  verdict at the fixed bars.
+- SH Phase B: per-prompt dose cap for learned mixes. A collapsed
+  reply retries at half dose. The cap rule ships in the confirm
+  record, and the app applies it to learned columns.
+- SH Phase C: `GET /health` for hosted runs, and a "Run it on a
+  server" section in the README.
+- Multi patches publish, install, and re-verify. The registry
+  reads the learned confirm card (gain, fluency worst decile,
+  fresh-set size) and refuses mixes under the fixed bars. The
+  llama.cpp export names its blocker for multi patches instead
+  of raising a bare key error.
+- Learned mixes show a visible "no dial for learned mixes" state
+  in the read menu. Chat and run name the same reason instead of
+  claiming the trait does not exist.
+
+### Removed
+- The pirate knob. It failed its 50-question confirm
+  (gain 0.225, bar 0.30). A `taken_down.json` record in its job
+  dir takes the trait down: the app offers no pirate knob and
+  the shelf marks it TAKEN DOWN. Its evidence stays readable.
+
+### Changed
+- Research mode is an owner switch: `LOBOT_ALLOW_RESEARCH=1` at
+  server start. A page request alone no longer turns the guard
+  off. Every Research run writes an audit record with its
+  `would_block` result. The Research button hides when the
+  server does not allow it.
+
+### Fixed
+- SH Phase A review fixes. The app now serves the scale the
+  learned confirm passed, not the search-best scale. A learned
+  pass re-checks gain, fluency mean, worst-decile fluency, the
+  fresh-set name, and the full facet list before it earns a knob.
+- The GPU stack guard now covers the agent and transfer CLIs.
+  Both pass the warm torch size. A new test scans every daemon
+  call site for the missing value.
+- WHY NO KNOB now states the real scope: candidate layers on
+  tuning prompts. It no longer claims a fluency cause the sweep
+  record does not store. The tuning grid applies the worst-decile
+  gate and stops calling NLL a gate for fluency-first rules.
+- `scripts/learn_vectors.py` loads vector files with
+  `weights_only=True` and rejects missing, zero, NaN, or wrong-shape
+  vectors. It keeps the guard verdict in `learned.json` and records
+  the confirmed scale in the confirm block.
+- Confirms from the combined search record the spent prompt set
+  (size and hash) and the true call count. A re-roll on the same
+  set stays visible.
+- A job with no readable report earns no knob. Research mode can
+  still offer it.
+- Families whose labels came from an agent, with no user
+  confirmation, no longer claim hand validation in
+  `store/traits.json`. The label source stands in the data.
+
 ### Changed
 - The Create judge now scores each word of a multi-word label and
   takes the lowest score. A condescending reply passed the old
@@ -76,6 +134,12 @@ Format follows Keep a Changelog: Added, Changed, Fixed, Removed.
   Before, a run that failed on Qwen sat next to a sidebar switched
   to Llama and read as a model-selection bug. The stack guard
   message also names the model now.
+
+### Removed
+
+- `CLAUDE.md` at the repo root. Its one rule that `AGENTS.md` did
+  not cover (flag UI code that breaks `docs/DESIGN.md` in review
+  or QA) now lives in `AGENTS.md`. One rules file remains.
 
 ### Changed
 

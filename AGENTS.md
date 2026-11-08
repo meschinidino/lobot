@@ -123,6 +123,8 @@ To run or show the app to the user, follow
    browser pane can return a stale frame.
 4. In the report, say which screens ran on real weights, which ran in
    replay, and which were not run, with the reason.
+5. When you review or QA UI, flag code that does not match
+   [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Definition of done
 
