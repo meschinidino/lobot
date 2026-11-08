@@ -10,17 +10,19 @@ Update `CHANGELOG.md` in the same change.
 ## Open
 
 ### SH: ship to 10 (specs/SH-ship-to-10.md)
-- Phase A step 1 done 2026-11-06: PR #61 reviewed in slices.
-  Report in the PR thread of this session; blockers fixed in
-  step 2 on the branch.
-- Phase A step 2 done on the branch: confirmed scale served,
-  gate re-checks, GPU guard call sites, honest evidence text,
-  safe vector loads, spent-set confirm records, label-source
-  data. Suite and pyflakes gate the branch before any merge.
-- Open: Phase A merge waits for Dino's order. Phase B (90
-  training questions, 40-60 prompt confirms) and Phase C (read
-  dial or no-dial state, multi-patch registry, hosting,
-  Research toggle) follow the spec, one phase at a time.
+- Phase A done 2026-11-08: PR #61 merged to develop, gate on
+  the merged tree passed (873 tests), develop merged to main
+  (PR #63).
+- Phase B done as a result, not as a pass: rude retrain at 90
+  questions and the dose cap both fail the fluency tail at 50
+  fresh questions. The rude mix ships as a no-knob and is
+  guard-blocked (Research-only). Catholic passes at 50. Pirate
+  fails at 50 (gain 0.225). Report: `roadmap/reports/SH.md`.
+- Phase C done except live hosting: no-dial state for learned
+  mixes, multi-patch registry and re-verify, Research owner
+  switch with audit records, `/health` and the README server
+  section. The app still needs one run on Dino's chosen host
+  before anyone claims it runs off the Mac.
 - Known gap: the agent still sets `hand_validated` when it
   registers a family from its own labels. The committed store
   now records the label source and claims no hand validation
@@ -36,8 +38,10 @@ Update `CHANGELOG.md` in the same change.
   on a fresh set: the fluency tail (1-3 of 20 prompts repeat) fails
   at every strong scale. Best rows: 0.625 gain 0.270 / p10 0.630;
   0.65 gain 0.257 / p10 0.288.
-- Next levers: more training questions (30 now), or a per-prompt
-  dose cap so hard prompts get a smaller push.
+- Next levers tried in SH Phase B (2026-11-08): 90 training
+  questions and a per-prompt dose cap. Both fail the fluency
+  tail at 50 fresh questions. Closed: the family ships as a
+  no-knob; the mix is guard-blocked, Research-only.
 
 ### A patch format for learned vector mixes (ML follow-up)
 - Done 2026-11-06: `kind: "multi"` patches hold one raw vector per

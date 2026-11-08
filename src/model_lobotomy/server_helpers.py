@@ -65,6 +65,33 @@ def _public_demo() -> bool:
     return get_settings().public_demo
 
 
+def _research_allowed() -> bool:
+    """Research mode is an owner switch, set at server start.
+
+    A page request alone never turns the guard off. The server
+    owner sets LOBOT_ALLOW_RESEARCH=1 to accept it.
+    """
+    from model_lobotomy.config import get_settings
+    return get_settings().allow_research
+
+
+def _effective_research(client_flag: bool) -> bool:
+    """The research flag a run may use: the client's AND the owner's."""
+    return bool(client_flag and _research_allowed())
+
+
+def _audit_research(kind: str, trait, gv) -> None:
+    """One audit record per Research run, with its guard outcome."""
+    try:
+        from model_lobotomy import audit
+        audit.record("research_run", kind=kind, trait=trait,
+                     would_block=bool(gv.would_block),
+                     blocked=bool(gv.blocked),
+                     research_mode=bool(gv.research_mode))
+    except Exception:  # noqa: BLE001 - audit writes never break a run
+        pass
+
+
 def _state() -> dict:
     spec = engine.active_spec()
     preset = engine.active_preset()
@@ -77,6 +104,7 @@ def _state() -> dict:
         "no_model": STATE.no_model,
         "replay": STATE.replay,
         "public_demo": _public_demo(),
+        "research_allowed": _research_allowed(),
         "models": [{"id": mid, "short": steer.model_short_name(mid),
                     "gated": "meta-llama" in mid} for mid in sorted(engine._PRESETS)],
         "layers": spec.layers,
@@ -541,6 +569,8 @@ def _delete_stream(prompt: str, trait: str, knob: dict, max_new: int,
         gv = yield from _verified_guard_stream(
             eng, edits, medians,
             guard_mod.should_enforce(guard, research_mode))
+        if research_mode:
+            _audit_research("delete", None, gv)
         if gv.blocked:
             yield _event(stage="blocked", guard=_guard_event_dict(gv))
             return
@@ -944,6 +974,22 @@ def _learned_pass(trait_dir) -> dict | None:
     return None
 
 
+def _dial_error(trait: str) -> str:
+    """Why a trait has no read dial, in one honest sentence.
+
+    Learned mixes steer many layers at once. The read dial reads
+    one layer, so a learned trait has no dial. Say that plainly;
+    never claim the trait does not exist.
+    """
+    knob = _latest_knob(trait)
+    if knob is not None and knob.get("kind") == "learned":
+        return (f"No read dial for learned mixes: '{trait}' steers "
+                f"many layers at once. The mix still runs as a "
+                f"behavior; it has no read dial.")
+    return (f"No finished Create job for trait '{trait}' with a "
+            f"saved direction. Create the trait first.")
+
+
 def _token_ids(tok, wrapped: str) -> list[int]:
     """Wrapped prompt token ids as a plain list (tensor or list in)."""
     out = tok(wrapped, return_tensors="pt")
@@ -1224,9 +1270,7 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
             dial_specs = [_dial_spec(eng, trait)
                           for trait in dial_traits]
         except KeyError as e:
-            yield _event(stage="error", message=(
-                f"No finished Create job for trait '{e.args[0]}' "
-                f"with a saved direction. Create the trait first."))
+            yield _event(stage="error", message=_dial_error(e.args[0]))
             return
         layers = sorted(set(layers)
                         | {int(s["layer"]) for s in dial_specs})
@@ -1245,6 +1289,8 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
         gv = _verified_guard(
             eng, edits, medians,
             guard_mod.should_enforce(sess["guard"], sess["research_mode"]))
+        if sess["research_mode"]:
+            _audit_research("chat", sess["trait"], gv)
         if gv.blocked:
             yield _event(stage="blocked", guard=_guard_event_dict(gv))
             return
@@ -1575,9 +1621,7 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
             try:
                 dial_spec = _dial_spec(eng, dial_trait)
             except KeyError:
-                yield _event(stage="error", message=(
-                    f"No finished Create job for trait '{dial_trait}' "
-                    f"with a saved direction. Create the trait first."))
+                yield _event(stage="error", message=_dial_error(dial_trait))
                 return
         layers = sorted({r.layer for r in rows}
                         | ({dial_spec["layer"]} if dial_spec else set()))
@@ -1591,6 +1635,8 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
         gv = yield from _verified_guard_stream(
             eng, EditSet.from_rows(rows), medians,
             guard_mod.should_enforce(guard, research_mode))
+        if research_mode:
+            _audit_research("run", None, gv)
         if gv.blocked:
             yield _event(stage="blocked", guard=_guard_event_dict(gv))
             return
@@ -1736,6 +1782,8 @@ def _update_stream(prompt: str, layer: int, direction: list,
         gv = yield from _verified_guard_stream(
             eng, guard_edits,
             medians, guard_mod.should_enforce(guard, research_mode))
+        if research_mode:
+            _audit_research("update", None, gv)
         if gv.blocked:
             yield _event(stage="blocked", guard=_guard_event_dict(gv))
             return

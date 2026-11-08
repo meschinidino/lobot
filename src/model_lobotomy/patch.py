@@ -95,6 +95,8 @@ def save_multi_patch(path, *, vectors: dict, dose: float,
     scale (the app dial multiplies it). Same hash rules as
     save_patch: members and evidence are hash-pinned.
     """
+    if not vectors:
+        raise ValueError("a multi patch needs at least one vector")
     from safetensors.torch import save as _save
     path = Path(path)
     tensors = {f"vec_{int(L)}": v.detach().cpu()
@@ -179,18 +181,37 @@ def load_patch(path) -> dict:
             raise PatchRejected(
                 f"{DIRECTION_FILE} is not valid safetensors: {e}") from e
         if meta.get("kind") == "multi":
+            layers = meta.get("layers") or []
+            if not layers:
+                raise PatchRejected("multi patch lists no layers")
+            if len(set(layers)) != len(layers):
+                raise PatchRejected("multi patch lists a layer twice")
+            want_keys = {f"vec_{int(L)}" for L in layers}
+            extra = set(tensors) - want_keys
+            if extra:
+                raise PatchRejected(
+                    f"{DIRECTION_FILE} holds unlisted tensors: "
+                    f"{sorted(extra)}")
             vectors = {}
-            for L in meta.get("layers") or []:
+            for L in layers:
                 key = f"vec_{int(L)}"
                 if key not in tensors:
                     raise PatchRejected(
                         f"{DIRECTION_FILE} lacks {key!r}")
                 v = tensors[key]
-                want = ((meta.get("vectors") or {}).get(str(int(L)))
-                        or {}).get("shape")
-                if want is not None and list(v.shape) != want:
+                info = (meta.get("vectors") or {}).get(str(int(L))) or {}
+                if list(v.shape) != info.get("shape"):
                     raise PatchRejected(
-                        f"{key} shape {list(v.shape)} != meta {want}")
+                        f"{key} shape {list(v.shape)} != meta "
+                        f"{info.get('shape')}")
+                if info.get("dtype") and str(v.dtype).replace(
+                        "torch.", "") != info["dtype"]:
+                    raise PatchRejected(f"{key} dtype {v.dtype} != "
+                                        f"meta {info['dtype']}")
+                if not bool(torch.isfinite(v).all()):
+                    raise PatchRejected(f"{key} has non-finite values")
+                if float(v.norm()) <= 0:
+                    raise PatchRejected(f"{key} has zero norm")
                 vectors[int(L)] = v
             return {"vectors": vectors, "meta": meta}
         if "direction" not in tensors:
@@ -217,6 +238,11 @@ def export_control_vector(patch_path, out_gguf) -> dict:
     """
     loaded = load_patch(patch_path)
     meta = loaded["meta"]
+    if meta.get("kind") == "multi":
+        raise PatchRejected(
+            "multi patches hold one vector per layer; the "
+            "llama.cpp control-vector export takes a single layer. "
+            "Run the mix in the app instead.")
     layer = int(meta["layer"])
     if layer < 1:
         raise PatchRejected(

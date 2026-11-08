@@ -160,6 +160,82 @@ class RegistryTest(unittest.TestCase):
                          entry)
 
 
+def _multi_patch(path, *, guard=None, card=None):
+    return patch_mod.save_multi_patch(
+        path, vectors={9: torch.randn(16), 11: torch.randn(16)},
+        dose=0.625, trait="rude-mix",
+        recipe={"kind": "learned", "layers": [9, 11],
+                "judge": "rude and mocking"},
+        report_card=card if card is not None else {
+            "gain": 0.45, "fluency_mean": 0.8, "fluency_p10": 0.5,
+            "fresh_prompts": 50, "set": "fresh_questions_v99.json"},
+        guard=guard if guard is not None else {
+            "blocked": False, "would_block": False,
+            "research_mode": False, "verified": True},
+        fingerprint={"model_id": "meta-llama/x", "revision": "rev1"})
+
+
+class MultiPatchTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.t = Path(tmp.name)
+        self.reg = self.t / "registry"
+        self.log = self.t / "audit.jsonl"
+        a = reg.generate_key(self.t / "alice")
+        self.alice = reg.load_key(a["path"])
+        self.alice_id = a["key_id"]
+
+    def test_multi_roundtrip_loads_vectors(self):
+        p = _multi_patch(self.t / "mix.lobot")
+        loaded = patch_mod.load_patch(p)
+        self.assertEqual(sorted(loaded["vectors"]), [9, 11])
+        self.assertEqual(loaded["meta"]["kind"], "multi")
+
+    def test_multi_publishes_and_installs(self):
+        p = _multi_patch(self.t / "mix.lobot")
+        entry = reg.publish(self.reg, p, self.alice,
+                            audit_log=self.log)
+        got = reg.install(self.reg, entry["name"], self.t / "bob",
+                          trusted={self.alice_id}, audit_log=self.log)
+        self.assertEqual(Path(got["path"]).read_bytes(),
+                         p.read_bytes())
+
+    def test_multi_under_bar_refused(self):
+        p = _multi_patch(self.t / "weak.lobot", card={
+            "gain": 0.2, "fluency_p10": 0.5, "fresh_prompts": 50})
+        with self.assertRaisesRegex(reg.RegistryError, "gain"):
+            reg.publish(self.reg, p, self.alice, audit_log=self.log)
+
+    def test_multi_export_names_the_blocker(self):
+        p = _multi_patch(self.t / "mix.lobot")
+        with self.assertRaisesRegex(patch_mod.PatchRejected,
+                                    "single layer"):
+            patch_mod.export_control_vector(p, self.t / "out.gguf")
+
+    def test_multi_reverify_builds_mix_edits(self):
+        from model_lobotomy import reverify
+        p = _multi_patch(self.t / "mix.lobot")
+
+        class Eng:
+            spec = None
+
+            def run(self, q, edits, medians, max_new_tokens, seed):
+                # Both layers steer every prompt.
+                if edits.vector:
+                    assert len(edits.vector) == 2
+                    return {"text": "steered"}
+                return {"text": "base"}
+
+        code, out = reverify.run_verify_patch(
+            p, quick=True, engine=Eng(),
+            judge_fn_for_fn=lambda e, t, label=None: (
+                lambda q, r: 0.9 if r == "steered" else 0.1))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["layers"], [9, 11])
+        self.assertTrue(out["pass"])
+
+
 class AuditTest(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

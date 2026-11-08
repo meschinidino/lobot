@@ -275,6 +275,8 @@ def _write_patch(job, a, vecs, confirm):
         job / "trait" / "learned.lobot", vectors=vecs,
         dose=float(confirm.get("scale") or 0.625), trait=a.family,
         recipe={"kind": "learned", "layers": LAYERS,
+                "judge": trait_eval.family_cfg(a.family)["judge"],
+                "cap": confirm.get("cap"),
                 "method": "scripts/learn_vectors.py"},
         report_card={"gain": confirm["score"]["gain"],
                      "fluency_mean": confirm["score"]["fluency_mean"],

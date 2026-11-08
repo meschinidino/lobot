@@ -102,12 +102,14 @@ function renderSentence() {
   const full = S.rows.length >= S.limits.max_rows || S.rows.some(isB);
   $("sentence").innerHTML = `On <span class="mono" style="font-size:20px">${esc((S.model || "").split("/").pop())}</span>,
     ${S.rows.length ? `push ${edits}` : "with no edit"} <button class="btn btn-sm" type="button" id="addBtn" ${full || S.running ? "disabled" : ""} ${full ? 'title="A run uses up to 4 neurons, or one behavior."' : ""}>+ edit</button>
-    ${S.read ? `and read <span class="edit"><button class="link" type="button" data-readsel style="font-size:20px">${esc(S.read)}</button><button class="x" type="button" data-unread aria-label="Stop reading ${esc(S.read)}" ${S.running ? "disabled" : ""}>×</button></span>` : readable().length ? `<button class="btn btn-sm" type="button" id="readBtn" ${S.running ? "disabled" : ""}>+ read</button>` : ""} and ask:`;
+    ${S.read ? `and read <span class="edit"><button class="link" type="button" data-readsel style="font-size:20px">${esc(S.read)}</button><button class="x" type="button" data-unread aria-label="Stop reading ${esc(S.read)}" ${S.running ? "disabled" : ""}>×</button></span>` : (readable().length || behaviors().saved.some((b) => b.learned)) ? `<button class="btn btn-sm" type="button" id="readBtn" ${S.running ? "disabled" : ""}>+ read</button>` : ""} and ask:`;
 }
 // "+ read": watch one saved behavior at every word (read dial). It works with neuron edits.
 const readable = () => behaviors().saved.filter((b) => b.verdict === "knob");
 function readMenu(anchor) {
-  openPop(anchor, readable().map((b) => `<button class="opt" type="button" data-rd="${esc(b.name)}"><span><b>${esc(b.name)}</b> <span class="meta">v${b.version}</span></span><span class="meta">${S.read === b.name ? "reading" : "read"}</span></button>`).join(""));
+  const noDial = behaviors().saved.filter((b) => b.learned && !readable().includes(b));
+  openPop(anchor, readable().map((b) => `<button class="opt" type="button" data-rd="${esc(b.name)}"><span><b>${esc(b.name)}</b> <span class="meta">v${b.version}</span></span><span class="meta">${S.read === b.name ? "reading" : "read"}</span></button>`).join("")
+    + noDial.map((b) => `<button class="opt" type="button" aria-disabled="true"><span><b>${esc(b.name)}</b> <span class="meta">v${b.version}</span></span><span class="meta">no dial for learned mixes</span></button>`).join(""));
   pop.addEventListener("click", (e) => { const t = e.target.closest("[data-rd]"); if (!t) return; S.read = t.dataset.rd; closePop(); update(); });
 }
 // "+ edit": push a neuron, or use a saved behavior. A run uses neurons or one behavior, not both.

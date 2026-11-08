@@ -103,6 +103,56 @@ class LearnedPassTest(unittest.TestCase):
         self.assertIsNone(helpers._learned_pass(self._dir(None)))
 
 
+class ResearchGateTest(unittest.TestCase):
+    def test_page_cannot_turn_guard_off_without_owner_switch(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(helpers._effective_research(True))
+        with mock.patch.dict(
+                os.environ, {"LOBOT_ALLOW_RESEARCH": "1"}, clear=True):
+            self.assertTrue(helpers._effective_research(True))
+            self.assertFalse(helpers._effective_research(False))
+
+    def test_research_run_writes_audit_record(self):
+        import tempfile
+        from unittest import mock
+        from model_lobotomy import audit
+
+        class GV:
+            would_block = True
+            blocked = False
+            research_mode = True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "audit.jsonl"
+            with mock.patch.dict(
+                    "os.environ", {"LOBOT_AUDIT_LOG": str(log)}):
+                helpers._audit_research("run", "some-trait", GV())
+            rows = audit.read(log)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["event"], "research_run")
+        self.assertTrue(rows[0]["would_block"])
+
+
+class DialErrorTest(unittest.TestCase):
+    def test_learned_trait_says_no_dial_not_missing(self):
+        from unittest import mock
+        with mock.patch.object(
+                helpers, "_latest_knob",
+                return_value={"kind": "learned", "vectors": {3: {}}}):
+            msg = helpers._dial_error("some-trait")
+        self.assertIn("No read dial for learned mixes", msg)
+        self.assertNotIn("Create the trait first", msg)
+
+    def test_unknown_trait_keeps_create_message(self):
+        from unittest import mock
+        with mock.patch.object(helpers, "_latest_knob",
+                               return_value=None):
+            self.assertIn("Create the trait first",
+                          helpers._dial_error("nope"))
+
+
 class KnobEarnedTest(unittest.TestCase):
     def test_unreadable_report_earns_no_knob(self):
         from model_lobotomy import jobs_store

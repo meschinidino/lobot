@@ -17,6 +17,12 @@ block ends the stream with `blocked`. Guard dicts carry `enforced`
 (0.2) in force, and `display_prompt` (a safe paraphrase of
 `worst_prompt` for the UI to show).
 
+## GET /health
+
+One-line health check for a hosted run: `{"ok": true, "model",
+"warm", "backend"}`. 200 while the server answers. `warm: false`
+is healthy; weights load on the first real run.
+
 ## GET /api/state
 
 Models, active model, warm status, dims, preset rows, `guard_default`
