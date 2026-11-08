@@ -164,7 +164,15 @@ def separability(a_tr, b_tr, a_te, b_te) -> dict:
     pa, pb = a_te @ u, b_te @ u
     acc = (((pa > thr).float().sum() + (pb <= thr).float().sum()) / (len(pa) + len(pb))).item()
     pooled = torch.sqrt((pa.var() + pb.var()) / 2).clamp_min(1e-6)
-    return {"acc": acc, "effect": ((pa.mean() - pb.mean()) / pooled).item(), "unit": u}
+    effect = ((pa.mean() - pb.mean()) / pooled).item()
+    # LayerNavigator-style rank (ML spec): d_prime is the effect size;
+    # consistency is the share of paired prompts the direction orders
+    # right. Captures pair by prompt, so this is a per-prompt sign test.
+    n = min(len(pa), len(pb))
+    consistency = (pa[:n] > pb[:n]).float().mean().item() if n else 0.0
+    return {"acc": acc, "effect": effect, "d_prime": effect,
+            "consistency": consistency,
+            "steer_score": effect * consistency, "unit": u}
 
 
 def _yes_no_ids(tok):

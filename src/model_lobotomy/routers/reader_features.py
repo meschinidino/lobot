@@ -63,13 +63,18 @@ def neurons(req: NeuronsRequest):
             eng.load(engine._active_model_id)
         preset = engine.active_preset()
         steer.check_preset_binding(preset, engine._active_model_id)
-        layers = sorted({r.layer for r in rows}
-                        | ({int(knob["layer"])} if knob else set()))
+        klayers = set()
+        if knob:
+            klayers = ({int(L) for L in knob["vectors"]}
+                       if knob.get("kind") == "learned"
+                       else {int(knob["layer"])})
+        layers = sorted({r.layer for r in rows} | klayers)
         medians, _ = helpers._calibrate(eng, layers)
         vec = ()
         if knob is not None:
-            vec = (helpers._trait_vector(
-                knob, dose, float(medians[int(knob["layer"])])),)
+            vec = helpers._trait_vector(
+                knob, dose, float(medians[int(knob["layer"])])
+                if knob.get("kind") != "learned" else 0.0)
         edits = EditSet(neuron=EditSet.from_rows(rows).neuron,
                         vector=vec)
         gv = helpers._verified_guard(

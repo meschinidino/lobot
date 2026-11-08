@@ -86,23 +86,28 @@ def update(req: UpdateRequest):
         raise HTTPException(400, "Give a trait or an explicit "
                                  "layer/direction/scale, not both.")
     if req.trait is not None:
-        knob = helpers._latest_knob(req.trait)
+        knob = helpers._latest_knob(req.trait,
+                                    allow_unearned=req.research_mode)
         if knob is None:
             raise HTTPException(404, f"No finished Create job for trait "
                                      f"'{req.trait}' with a saved direction. "
                                      f"Create the trait first.")
-        layer, direction, scale = knob["layer"], knob["direction"], None
+        if knob.get("kind") == "learned":
+            layer, direction, scale = -1, [], None
+        else:
+            layer, direction, scale = knob["layer"], knob["direction"], None
     else:
         if req.layer is None or req.direction is None or req.scale is None:
             raise HTTPException(400, "Explicit updates need layer, "
                                      "direction and scale.")
         layer, direction, scale = req.layer, req.direction, req.scale
-    if not 0 <= layer < spec.layers:
-        raise HTTPException(400, f"Layer {layer} out of bounds "
-                                 f"[0,{spec.layers}).")
-    if len(direction) != spec.hidden:
-        raise HTTPException(400, f"Direction has {len(direction)} dims, "
-                                 f"model needs {spec.hidden}.")
+    if layer >= 0:
+        if not 0 <= layer < spec.layers:
+            raise HTTPException(400, f"Layer {layer} out of bounds "
+                                     f"[0,{spec.layers}).")
+        if len(direction) != spec.hidden:
+            raise HTTPException(400, f"Direction has {len(direction)} dims, "
+                                     f"model needs {spec.hidden}.")
     if STATE.no_model:
         raise HTTPException(503, "Weights are not loaded (MODEL_LOBOTOMY_NO_MODEL is set). "
                                  "Restart without it to run experiments.")
@@ -112,7 +117,8 @@ def update(req: UpdateRequest):
     return helpers._ndjson(helpers._update_stream(prompt, layer, direction, scale, list(req.doses),
                        min(req.max_new_tokens, steer.MAX_NEW_TOKENS_CAP),
                        spec, guard=req.guard,
-                       research_mode=req.research_mode))
+                       research_mode=req.research_mode,
+                       knob=knob if req.trait is not None else None))
 
 @router.post("/api/delete")
 def delete(req: DeleteRequest):
@@ -121,6 +127,9 @@ def delete(req: DeleteRequest):
     if not prompt:
         raise HTTPException(400, "The prompt is empty. Type a prompt first.")
     knob = helpers._latest_knob(req.trait)
+    if knob is not None and knob.get("kind") == "learned":
+        raise HTTPException(422, "Learned mixes cannot be ablated "
+                                 "as one direction.")
     if knob is None:
         raise HTTPException(422, f"Delete is not eligible for "
                                  f"'{req.trait}': no finished Create job "
@@ -141,6 +150,9 @@ def delete(req: DeleteRequest):
 def delete_check(req: DeleteCheckRequest):
     """Ablation report card with side effects + guard re-check (DL)."""
     knob = helpers._latest_knob(req.trait)
+    if knob is not None and knob.get("kind") == "learned":
+        raise HTTPException(422, "Learned mixes cannot be ablated "
+                                 "as one direction.")
     if knob is None:
         raise HTTPException(422, f"Delete is not eligible for "
                                  f"'{req.trait}': no finished Create job "

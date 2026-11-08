@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from model_lobotomy import create_job  # noqa: E402
+from model_lobotomy import llama_backend as lb  # noqa: E402
 from model_lobotomy import trait_eval as T  # noqa: E402
 from model_lobotomy.trait_store import TraitFamily, TraitStore, UnsupportedTrait  # noqa: E402
 
@@ -80,6 +81,37 @@ class CreateRunnerTest(unittest.TestCase):
         self.assertEqual(st["stage"], "verdict")
         self.assertEqual(st["verdict"], "knob")
         self.assertEqual(st["frozen"], {"layer": 7, "dose": 1.0})
+
+    def test_llama_lane_daemon_closed_after_job(self):
+        # One active stack at rest: the job's daemon closes when the
+        # job ends (regression for daemons left warm next to torch).
+        import os
+        from unittest import mock
+
+        class Eng(FakeEngine):
+            tokenizer = object()
+
+        closed = []
+        daemon = SimpleNamespace(
+            tokenizer=object(), close=lambda: closed.append(True))
+
+        def fn(eng, spec, trait, bank, seed, workdir, model_id,
+               revision, cancel=None, progress=None, guard=False,
+               research_mode=False, schedule="full", pareto=False,
+               lane=None):
+            self.assertIsNotNone(lane)
+            return {"verdict": "knob"}
+
+        r = self.runner(engine=Eng(), run_trait_fn=fn)
+        with mock.patch.dict(os.environ,
+                             {"LOBOT_CREATE_LANE": "llama"}), \
+                mock.patch.object(lb, "CreateDaemon",
+                                  return_value=daemon):
+            jid = r.start("blunt", seed=0, model_id="m")
+            self.join(r, jid)
+        self.assertEqual(r.status(jid)["status"], "done")
+        self.assertEqual(closed, [True])
+        self.assertEqual(r._lane_daemons, {})
 
     def test_status_records_engine_revision(self):
         # O8: the pinned revision lands on the job, not just the report.

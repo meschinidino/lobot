@@ -31,6 +31,7 @@ function agentPage(id) {
   const k = AGENT_KEY[a.status] || ["info", String(a.status).toUpperCase()], live = a.status === "running", res = a.result || {};
   const rows = (a.steps || []).map((st) => { const [t, d, key] = stepRow(st); return `<li><div><b>${t}</b><br><span class="meta">${d}</span></div><span class="state ${key[0]}">${key[1]}</span></li>`; }).join("");
   return `<p><span class="state ${k[0]}">${k[1]}</span> <span class="meta">${esc(res.description || a.description || "")}</span></p>
+    ${a.model_id ? `<p class="meta">Run model: ${esc(a.model_id.split("/").pop())}${a.lane ? ` · lane: ${esc(a.lane)}` : ""}. The sidebar shows the model selected now, which may differ.</p>` : ""}
     ${live ? `<div class="row2"><button class="btn" type="button" data-agent-stop="${esc(id)}">Stop</button><span class="meta">The run stops between steps. The server keeps working if you close this page.</span></div>` : ""}
     <ol class="ruled stages agent">${rows || `<li><div><b>Starting</b><br><span class="meta">Muse is drafting the behavior.</span></div><span class="state info">NOW</span></li>`}${live && rows ? `<li class="wait"><div><b>Working</b><br><span class="meta">next step in progress</span></div><span class="state info">NOW</span></li>` : ""}</ol>
     ${a.error ? `<p class="empty" style="color:var(--error)">${esc(a.error)}</p>` : ""}

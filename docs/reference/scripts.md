@@ -13,6 +13,7 @@ a model: take the model lane first (see [AGENTS.md](../../AGENTS.md)).
 | `repair_patch.py` | yes | Repair a patch the confirmed guard flags (`--method gradient` or `project`; writes `repair_<method>.json`, `knob.repaired-<method>.lobot`) |
 | `import_run.py` | no | Copy a finished `run_trait.py` work dir into `jobs/<id>/` so the app lists its evidence (`--id`, `--force`) |
 | `agent_create.py` | yes | The Create agent: words in, tested patch out (needs `META_API_KEY`) |
+| `combine_search.py` | yes | ML combined-layer search: rank layers by `steer_score`, greedy mix search on tuning questions, fresh-prompt confirm on the final split (writes `combine.json` next to the family report) |
 | `transfer_trait.py` | yes | Carry a finished trait to another model |
 | `install_patch.py` | no | Install a `.lobot` patch into llama.cpp or Ollama |
 | `export_llamacpp.py` | no | Export a patch as a llama.cpp control-vector GGUF |

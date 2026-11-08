@@ -513,6 +513,65 @@ def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed
     }
 
 
+def generate_many(model, tokenizer, prompts: list, *, max_new_tokens: int,
+                  seed: int, spec: ModelSpec | None = None, cancel=None,
+                  wrapped_list: list | None = None):
+    """Greedy generation for many prompts in one batch (left-padded).
+
+    Same hooks stay registered for every row; the caller owns hook setup.
+    Returns one generate_text-shaped dict per prompt, in order. Rows that
+    finish early pad out; their token_ids stop at the first EOS.
+    """
+    max_new_tokens = min(max_new_tokens, MAX_NEW_TOKENS_CAP)
+    torch.manual_seed(seed)
+    try:
+        if torch.backends.mps.is_available():
+            torch.mps.manual_seed(seed)
+    except Exception:
+        pass
+    wrapped = list(wrapped_list) if wrapped_list is not None else [
+        wrap_prompt_notk(tokenizer, p, spec) for p in prompts]
+    enc = []
+    for w in wrapped:
+        ids = tokenizer(w)["input_ids"]
+        enc.append(ids.tolist() if torch.is_tensor(ids) else list(ids))
+    pad_id = tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = tokenizer.eos_token_id
+    width = max(len(e) for e in enc)
+    device = str(next(model.parameters()).device)
+    input_ids = torch.full((len(enc), width), pad_id, dtype=torch.long)
+    mask = torch.zeros((len(enc), width), dtype=torch.long)
+    for b, e in enumerate(enc):
+        input_ids[b, width - len(e):] = torch.tensor(e, dtype=torch.long)
+        mask[b, width - len(e):] = 1
+    input_ids, mask = input_ids.to(device), mask.to(device)
+    from transformers import StoppingCriteriaList
+    t0 = time.perf_counter()
+    with torch.no_grad():
+        stop = StoppingCriteriaList([CancelCriteria(cancel)]) \
+            if cancel is not None else None
+        out = model.generate(input_ids, attention_mask=mask,
+                             max_new_tokens=max_new_tokens, do_sample=False,
+                             pad_token_id=pad_id, stopping_criteria=stop)
+    _sync_device()
+    total_s = time.perf_counter() - t0
+    eos = tokenizer.eos_token_id
+    rows = []
+    for b in range(len(enc)):
+        new = out[b][width:].tolist()
+        if eos in new:
+            new = new[:new.index(eos) + 1]
+        rows.append({
+            "text": tokenizer.decode(new, skip_special_tokens=True),
+            "new_tokens": len(new),
+            "token_ids": new,
+            "seconds": round(total_s, 1),
+            "cancelled": bool(cancel is not None and cancel.is_set()),
+        })
+    return rows
+
+
 def generate_text_with_streamer(model, tokenizer, user_text: str, *,
                                 max_new_tokens: int, seed: int,
                                 spec: ModelSpec | None = None,

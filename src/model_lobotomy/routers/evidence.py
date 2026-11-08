@@ -77,6 +77,17 @@ def trait_report_md(job_id: str):
         raise HTTPException(404, f"Unknown trait {job_id}.")
     return FileResponse(path, media_type="text/markdown")
 
+@router.get("/api/traits/{job_id}/learned-patch")
+def trait_learned_patch(job_id: str):
+    """One trait's learned.lobot multi-vector patch (ML v3)."""
+    job_dir = helpers._trait_job_dir(job_id)
+    path = job_dir / "trait" / "learned.lobot"
+    if not path.is_file():
+        raise HTTPException(404, f"Unknown trait {job_id}.")
+    return FileResponse(path, media_type="application/zip",
+                        filename=f"{job_id}-learned.lobot")
+
+
 @router.get("/api/traits/{job_id}/patch")
 def trait_patch(job_id: str):
     """One trait's knob.lobot patch as a download (E1)."""

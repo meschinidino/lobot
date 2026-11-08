@@ -31,6 +31,43 @@ def _meta(**kw):
     return d
 
 
+class MultiPatchTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_multi_roundtrip(self):
+        from model_lobotomy.patch import save_multi_patch
+        vecs = {3: torch.randn(8), 7: torch.randn(8)}
+        p = Path(self.tmp.name) / "learned.lobot"
+        save_multi_patch(p, vectors=vecs, dose=0.625,
+                         trait="be-rude", **_meta())
+        out = load_patch(p)
+        self.assertEqual(out["meta"]["kind"], "multi")
+        self.assertEqual(out["meta"]["dose"], 0.625)
+        self.assertEqual(sorted(out["vectors"]), [3, 7])
+        for L, v in vecs.items():
+            self.assertTrue(torch.equal(out["vectors"][L], v))
+        self.assertFalse(out["meta"]["unverified"])
+
+    def test_multi_tampered_member_rejected(self):
+        from model_lobotomy.patch import save_multi_patch
+        p = Path(self.tmp.name) / "learned.lobot"
+        save_multi_patch(p, vectors={3: torch.randn(8)}, dose=1.0,
+                         trait="x", **_meta())
+        raw = zipfile.ZipFile(p)
+        names = raw.namelist()
+        data = {n: raw.read(n) for n in names}
+        meta = json.loads(data["patch.json"])
+        meta["report_card"] = {"passed": False, "forged": True}
+        with zipfile.ZipFile(p, "w") as zf:
+            for n in names:
+                zf.writestr(n, json.dumps(meta) if n == "patch.json"
+                            else data[n])
+        with self.assertRaises(PatchRejected):
+            load_patch(p)
+
+
 class PatchTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

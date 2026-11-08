@@ -123,7 +123,9 @@ class CreateRunner:
                 old.close()
             self._lane_daemons.clear()
             daemon = llama_backend.CreateDaemon(
-                model_id, revision, eng.tokenizer)
+                model_id, revision, eng.tokenizer,
+                co_resident_bytes=llama_backend.torch_resident_bytes(
+                    getattr(eng, "model", None)))
             self._lane_daemons[key] = daemon
         return trait_eval.LlamaLane(eng, eng.spec, daemon)
 
@@ -209,6 +211,7 @@ class CreateRunner:
     def _run(self, job_id: str) -> None:
         job = self._get(job_id)
         eng = self._engine
+        lane = None
         try:
             if eng is None:
                 eng = self._factory(job.model_id, job.revision)
@@ -254,6 +257,15 @@ class CreateRunner:
             job.status = "failed"
             job.error = traceback.format_exc()[-4000:]
         finally:
+            # One active stack at rest: the lane daemon exists only
+            # for this job. The next job starts a fresh one (seconds).
+            if lane is not None:
+                self._lane_daemons.pop(
+                    (job.model_id, job.revision), None)
+                try:
+                    lane.daemon.close()
+                except Exception:  # noqa: BLE001 - shutdown is best-effort
+                    pass
             try:
                 if self._own_engine and eng is not None:
                     eng.unload()
