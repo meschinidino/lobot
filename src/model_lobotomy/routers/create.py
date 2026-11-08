@@ -33,7 +33,7 @@ def create(req: CreateRequest):
         job_id = runner.start(req.description, seed=req.seed,
                               model_id=engine._active_model_id,
                               guard=req.guard,
-                              research_mode=req.research_mode,
+                              research_mode=helpers._effective_research(req.research_mode),
                               schedule=req.schedule, pareto=req.pareto)
     except trait_store.UnsupportedTrait as e:
         raise HTTPException(422, str(e)) from None

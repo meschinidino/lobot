@@ -71,6 +71,29 @@ MODEL_LOBOTOMY_REPLAY=1 uv run python -m model_lobotomy.server
 More: [live mode](docs/guides/live-mode.md),
 [replay mode](docs/guides/replay-mode.md).
 
+## Run it on a server
+
+One process serves the app and holds one GPU slot. A second
+process on the same machine stops and names the slot holder.
+The machine needs about 24 GB of memory for the 3B model.
+
+```sh
+uv sync
+cp .env.example .env   # set META_API_KEY for the Muse Spark features
+LOBOT_HOST=0.0.0.0 PORT=7860 uv run python -m model_lobotomy.server
+```
+
+Check it from the same network:
+
+```sh
+curl http://<host>:7860/health
+```
+
+`/health` answers `{"ok": true, "model": ..., "warm": ...}`.
+`warm: false` is healthy: weights load on the first real run.
+Keep `LOBOT_ALLOW_RESEARCH` off on a shared host. Only the
+owner turns Research mode on, at start time.
+
 ## Models and machine
 
 | Model | Hugging Face id | Access |

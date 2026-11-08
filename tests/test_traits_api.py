@@ -116,7 +116,7 @@ class TraitsApiTest(unittest.TestCase):
         _write_job(self.jobs_dir, job_id, frozen={"layer": 14, "dose": 0.5})
         (item,) = self.client.get("/api/traits").json()["traits"]
         self.assertEqual(set(item), {"id", "family", "model_id", "version",
-                                    "verdict", "layer", "dose", "created",
+                                    "verdict", "taken_down", "layer", "dose", "created",
                                     "cards", "guard", "patch",
                                     "delete_eligible", "evidence", "learned", "learned_patch"})
         self.assertEqual(item["id"], job_id)

@@ -164,7 +164,26 @@ def check_publishable(meta: dict) -> None:
                             "generation; run `lobot_registry.py guard "
                             "PATCH` first")
     card = meta.get("report_card") or {}
-    if "trait_mean" not in card or "trait_ci" not in card:
+    if meta.get("kind") == "multi":
+        # Learned mixes ship a confirm card, not a Create card:
+        # gain, fluency and the fresh-set size at the fixed bars.
+        from model_lobotomy.evaluation import MIN_GAIN
+        from model_lobotomy.trait_eval import FLUENCY_P10_FLOOR
+        if not all(k in card for k in
+                   ("gain", "fluency_p10", "fresh_prompts")):
+            raise RegistryError(
+                "multi patch has no shipped confirm evidence "
+                "(report_card gain, fluency_p10, fresh_prompts)")
+        if float(card["gain"]) < MIN_GAIN:
+            raise RegistryError(
+                f"multi patch gain {card['gain']} is under the "
+                f"{MIN_GAIN} bar; it cannot be published")
+        if float(card["fluency_p10"]) < FLUENCY_P10_FLOOR:
+            raise RegistryError(
+                f"multi patch fluency worst decile "
+                f"{card['fluency_p10']} is under the "
+                f"{FLUENCY_P10_FLOOR} bar; it cannot be published")
+    elif "trait_mean" not in card or "trait_ci" not in card:
         raise RegistryError("patch has no shipped evidence "
                             "(report_card trait_mean, trait_ci)")
     if not (meta.get("fingerprint") or {}).get("model_id"):

@@ -158,6 +158,7 @@ own prompt, predicts its side effects, and repairs them.**
 | 9 | TM | Truth meter; head-level honesty steering | `specs/TM-truth-meter.md` | GX, CH, GH | Both + UI | 3 | Geometry of Truth (MIT), ITI (Harvard) |
 | 10 | LQ | Ask the activations (stretch, high risk) | `specs/LQ-latent-qa.md` | store | Model | 4 | LatentQA (Berkeley) |
 | 11 | ML | Multi-layer steering search: LayerNavigator-style layer score, then greedy combined-layer search with fresh-prompt confirm | `specs/ML-multi-layer-search.md` | directions, dose rules | Both | 1 | LayerNavigator (NeurIPS 2025); Sweep Less, Steer More; the 112-cell all-layer sweep on the evil family (2026-11-05). **Done**: search v1 mix confirmed 0.260 fresh (fail, close), v2 winner 0.572 gain but fluency tail fail; **v3 learned vectors PASS** at scale 0.625 (gain 0.402, worst-decile fluency 0.392 on brand-new questions). Layer-12 rank check missed in v1 (15/28), probe fixed it in v2 (3/28) (`reports/ML.md`) |
+| 12 | SH | Ship to 10: land PR #61, bigger confirms, close the app gaps, host it | `specs/SH-ship-to-10.md` | ML, guard, registry | Both | 1 | Phase A merged 2026-11-08 (PR #61, PR #63). Phase B: rude retrain at 90 questions and dose cap FAIL the fluency tail at 50 fresh; Catholic PASS at 50; pirate FAIL at 50 (gain 0.225). Phase C code done; live hosting on Dino's host open (`reports/SH.md`) |
 
 Why this order:
 - MOD first: it is a pure refactor, and it turns most later workstreams

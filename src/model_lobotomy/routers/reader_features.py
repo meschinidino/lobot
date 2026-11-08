@@ -79,7 +79,7 @@ def neurons(req: NeuronsRequest):
                         vector=vec)
         gv = helpers._verified_guard(
             eng, edits, medians,
-            guard_mod.should_enforce(req.guard, req.research_mode))
+            guard_mod.should_enforce(req.guard, helpers._effective_research(req.research_mode)))
         if gv.blocked:
             return {"blocked": True, "guard": helpers._guard_event_dict(gv)}
         wrapped = steer.wrap_prompt_notk(eng.tokenizer, prompt, spec)

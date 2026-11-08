@@ -81,6 +81,10 @@ class JobPaths:
     def trait(self) -> WorkPaths:
         return WorkPaths(self.root / "trait")
 
+    @property
+    def taken_down(self) -> Path:
+        return self.root / "taken_down.json"
+
     # Flat aliases used by callers that held a trait dir before.
     @property
     def report(self) -> Path:

@@ -103,6 +103,100 @@ class LearnedPassTest(unittest.TestCase):
         self.assertIsNone(helpers._learned_pass(self._dir(None)))
 
 
+class TakedownTest(unittest.TestCase):
+    def test_taken_down_record_reads(self):
+        from model_lobotomy import jobs_store
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = jobs_store.JobPaths("j1", Path(tmp))
+            self.assertIsNone(helpers._taken_down(paths))
+            paths.taken_down.parent.mkdir(parents=True)
+            paths.taken_down.write_text(json.dumps(
+                {"reason": "failed its 50-question confirm"}))
+            self.assertEqual(helpers._taken_down(paths)["reason"],
+                             "failed its 50-question confirm")
+
+    def test_taken_down_newest_job_earns_no_knob(self):
+        from unittest import mock
+        from model_lobotomy import jobs_store
+        with tempfile.TemporaryDirectory() as tmp:
+            jobs_dir = Path(tmp)
+            job = {"id": "pirate-9", "trait": "pirate",
+                   "status": "done", "updated": 10,
+                   "model_id": helpers.engine._active_model_id,
+                   "frozen": {"layer": 16, "dose": 0.5}}
+            paths = jobs_store.JobPaths("pirate-9", jobs_dir)
+            paths.trait.workdir.mkdir(parents=True)
+            paths.report.write_text(json.dumps({
+                "read_gate": {"pass": True},
+                "final": {"update_up": {"card": {"passed": True}}}}))
+            import torch
+            from safetensors.torch import save_file
+            save_file({"direction": torch.ones(8)},
+                      str(paths.direction))
+            paths.taken_down.write_text(json.dumps(
+                {"reason": "gain 0.225 at 50 fresh questions"}))
+
+            class Runner:
+                def list_jobs(self):
+                    return [job]
+
+            runner = Runner()
+            runner.jobs_dir = jobs_dir
+            with mock.patch.object(helpers.STATE, "get_runner",
+                                   return_value=runner):
+                self.assertIsNone(helpers._latest_knob("pirate"))
+
+
+class ResearchGateTest(unittest.TestCase):
+    def test_page_cannot_turn_guard_off_without_owner_switch(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(helpers._effective_research(True))
+        with mock.patch.dict(
+                os.environ, {"LOBOT_ALLOW_RESEARCH": "1"}, clear=True):
+            self.assertTrue(helpers._effective_research(True))
+            self.assertFalse(helpers._effective_research(False))
+
+    def test_research_run_writes_audit_record(self):
+        import tempfile
+        from unittest import mock
+        from model_lobotomy import audit
+
+        class GV:
+            would_block = True
+            blocked = False
+            research_mode = True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "audit.jsonl"
+            with mock.patch.dict(
+                    "os.environ", {"LOBOT_AUDIT_LOG": str(log)}):
+                helpers._audit_research("run", "some-trait", GV())
+            rows = audit.read(log)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["event"], "research_run")
+        self.assertTrue(rows[0]["would_block"])
+
+
+class DialErrorTest(unittest.TestCase):
+    def test_learned_trait_says_no_dial_not_missing(self):
+        from unittest import mock
+        with mock.patch.object(
+                helpers, "_latest_knob",
+                return_value={"kind": "learned", "vectors": {3: {}}}):
+            msg = helpers._dial_error("some-trait")
+        self.assertIn("No read dial for learned mixes", msg)
+        self.assertNotIn("Create the trait first", msg)
+
+    def test_unknown_trait_keeps_create_message(self):
+        from unittest import mock
+        with mock.patch.object(helpers, "_latest_knob",
+                               return_value=None):
+            self.assertIn("Create the trait first",
+                          helpers._dial_error("nope"))
+
+
 class KnobEarnedTest(unittest.TestCase):
     def test_unreadable_report_earns_no_knob(self):
         from model_lobotomy import jobs_store

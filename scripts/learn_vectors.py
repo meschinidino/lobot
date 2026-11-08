@@ -39,6 +39,13 @@ def main():
     ap.add_argument("--shots", default=None,
                     help="few-shot examples {q, a} for the positive "
                          "side, as a JSON file in the trait dir")
+    ap.add_argument("--extra-train", default=None,
+                    help="extra training questions {questions} as a "
+                         "JSON file in the trait dir; the training "
+                         "pool is the report tuning split plus these")
+    ap.add_argument("--capped", action="store_true",
+                    help="per-prompt dose cap: a collapsed reply "
+                         "retries at half dose (SH step 6)")
     ap.add_argument("--drift-w", type=float, default=None,
                     help="drift cost weight (default: learned.DRIFT_W); "
                          "higher keeps text cleaner at some strength")
@@ -46,9 +53,16 @@ def main():
     job = ROOT / a.job if not Path(a.job).is_absolute() else Path(a.job)
     report = json.loads((job / "trait" / "report.json").read_text())
     cfg = trait_eval.family_cfg(a.family)
-    tuning = report["splits"]["tuning"]
+    tuning = list(report["splits"]["tuning"])
+    if a.extra_train:
+        extra = json.loads(
+            (job / "trait" / a.extra_train).read_text())["questions"]
+        tuning = tuning + [q for q in extra if q not in tuning]
+        print("TRAINING POOL:", len(tuning), "questions "
+              "(split tuning plus --extra-train)", flush=True)
     fresh = json.loads(
         (job / "trait" / a.fresh).read_text())["questions"]
+    learned.check_disjoint(tuning, fresh)
 
     app_mod._active_model_id = a.model
     preset, spec = app_mod.active_preset(), app_mod.active_spec()
@@ -155,24 +169,39 @@ def _score_and_write(eng, judge, cfg, medians, vecs, hist, tuning,
             base_cache[id(prompts)] = rows
         jb = base_cache[id(prompts)]
 
-        def score(scale):
-            edit = engine_mod.EditSet(vector=tuple(
+        def edit_for(s):
+            return engine_mod.EditSet(vector=tuple(
                 engine_mod.VectorEdit(
                     L, tuple((vecs[L] / vecs[L].norm()).tolist()),
-                    float(vecs[L].norm()) * scale, 1.0)
+                    float(vecs[L].norm()) * s, 1.0)
                 for L in LAYERS))
-            gains, flus = [], []
+
+        def score(scale):
+            edit = edit_for(scale)
+            gains, flus, capped = [], [], 0
             for p, b in zip(prompts, jb):
                 r = eng.run_batched(p, [edit], medians=medians,
                                     max_new_tokens=100,
                                     seed=app_mod.SEED)
                 t = r["rows"][0]["text"]
+                if a.capped and learned.needs_cap(t):
+                    # Dose cap: a collapsed prompt retries at half
+                    # dose. Clean prompts keep the full push.
+                    capped += 1
+                    r = eng.run_batched(
+                        p, [edit_for(scale * learned.CAP_FACTOR)],
+                        medians=medians, max_new_tokens=100,
+                        seed=app_mod.SEED)
+                    t = r["rows"][0]["text"]
                 gains.append(judge.score(p, t, cfg["judge"]) - b)
                 flus.append(judge.score(p, t, pareto.FLUENCY_LABEL))
-            return {"gain": round(sum(gains) / len(gains), 3),
-                    "fluency_mean": round(sum(flus) / len(flus), 3),
-                    "fluency_min": round(min(flus), 3),
-                    "fluency_p10": round(trait_eval._p10(flus), 3)}
+            out = {"gain": round(sum(gains) / len(gains), 3),
+                   "fluency_mean": round(sum(flus) / len(flus), 3),
+                   "fluency_min": round(min(flus), 3),
+                   "fluency_p10": round(trait_eval._p10(flus), 3)}
+            if a.capped:
+                out["capped"] = capped
+            return out
         return score
 
     search_score = score_factory(tuning[:10])
@@ -185,11 +214,15 @@ def _score_and_write(eng, judge, cfg, medians, vecs, hist, tuning,
         _write_patch(job, a, vecs, {"passed": passed, "score": fs,
                                     "facets": trait_eval.label_facets(cfg["judge"]),
                                     "fresh_prompts": len(fresh),
-                                    "set": a.fresh, "scale": a.scale})
+                                    "set": a.fresh, "scale": a.scale, "cap": ({"repetition": learned.CAP_REPETITION,
+                                     "factor": learned.CAP_FACTOR}
+                                    if a.capped else None),})
         _write(job, a, hist, vecs, {}, a.scale,
                {"passed": passed, "score": fs, "scale": a.scale,
                 "facets": trait_eval.label_facets(cfg["judge"]),
-                "fresh_prompts": len(fresh), "set": a.fresh})
+                "fresh_prompts": len(fresh), "set": a.fresh, "cap": ({"repetition": learned.CAP_REPETITION,
+                                     "factor": learned.CAP_FACTOR}
+                                    if a.capped else None),})
         return
     results = {}
     for s in SCALES:
@@ -208,11 +241,15 @@ def _score_and_write(eng, judge, cfg, medians, vecs, hist, tuning,
     _write_patch(job, a, vecs, {"passed": passed, "score": fs,
                                 "facets": trait_eval.label_facets(cfg["judge"]),
                                 "fresh_prompts": len(fresh),
-                                "set": a.fresh, "scale": best})
+                                "set": a.fresh, "scale": best, "cap": ({"repetition": learned.CAP_REPETITION,
+                                     "factor": learned.CAP_FACTOR}
+                                    if a.capped else None),})
     _write(job, a, hist, vecs, results, best,
            {"passed": passed, "score": fs, "scale": best,
             "facets": trait_eval.label_facets(cfg["judge"]),
-            "fresh_prompts": len(fresh), "set": a.fresh})
+            "fresh_prompts": len(fresh), "set": a.fresh, "cap": ({"repetition": learned.CAP_REPETITION,
+                                     "factor": learned.CAP_FACTOR}
+                                    if a.capped else None),})
 
 
 def _known_guard(job, a):
@@ -238,6 +275,8 @@ def _write_patch(job, a, vecs, confirm):
         job / "trait" / "learned.lobot", vectors=vecs,
         dose=float(confirm.get("scale") or 0.625), trait=a.family,
         recipe={"kind": "learned", "layers": LAYERS,
+                "judge": trait_eval.family_cfg(a.family)["judge"],
+                "cap": confirm.get("cap"),
                 "method": "scripts/learn_vectors.py"},
         report_card={"gain": confirm["score"]["gain"],
                      "fluency_mean": confirm["score"]["fluency_mean"],

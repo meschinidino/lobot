@@ -44,6 +44,42 @@ def fewshot_prompt(instruction: str, shots: list, question: str) -> str:
     return "\n".join(lines)
 
 
+CAP_REPETITION = 0.35  # most-common-word share that marks collapse
+CAP_FACTOR = 0.5       # capped prompts retry at half the dose
+
+
+def repetition_ratio(text: str) -> float:
+    """Share of the most common word. Loops score near 1."""
+    words = text.lower().split()
+    if len(words) < 10:
+        return 0.0
+    from collections import Counter
+    return Counter(words).most_common(1)[0][1] / len(words)
+
+
+def needs_cap(text: str) -> bool:
+    """True when a steered reply collapsed into repetition.
+
+    The dose cap rule (SH step 6): a collapsed prompt retries at
+    CAP_FACTOR of the dose. Clean text keeps the full push.
+    """
+    return repetition_ratio(text) > CAP_REPETITION
+
+
+def check_disjoint(train, fresh) -> None:
+    """Raise ValueError when a training question sits in the fresh set.
+
+    Training on a confirm question makes the confirm read high and
+    proves nothing. The check runs before any model work.
+    """
+    fresh_set = {q.strip() for q in fresh}
+    bad = [q for q in train if q.strip() in fresh_set]
+    if bad:
+        raise ValueError(
+            f"{len(bad)} training question(s) also sit in the "
+            f"fresh set: {bad[0]!r}")
+
+
 def validate_vectors(vecs, layers) -> dict:
     """Return {layer: tensor} or raise ValueError.
 

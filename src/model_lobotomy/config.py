@@ -20,6 +20,7 @@ ENV_VARS = (
     ("PORT", "7860"),
     ("LOBOT_HOST", "127.0.0.1"),
     ("LOBOT_PUBLIC_DEMO", "off"),
+    ("LOBOT_ALLOW_RESEARCH", "off"),
     ("LOBOT_MODEL", "Qwen/Qwen3.5-4B"),
     ("MODEL_LOBOTOMY_REPLAY", "off"),
     ("MODEL_LOBOTOMY_REPLAY_STAGE_S", "0.4"),
@@ -62,6 +63,7 @@ class Settings:
     port: int = 7860
     host: str = "127.0.0.1"
     public_demo: bool = False
+    allow_research: bool = False
     model: str = ""
     replay: bool = False
     replay_stage_s: float = 0.4
@@ -100,6 +102,7 @@ def load_settings(env=None) -> Settings:
         port=int(get("PORT", 7860)),
         host=get("LOBOT_HOST", "127.0.0.1"),
         public_demo=get("LOBOT_PUBLIC_DEMO") == "1",
+        allow_research=get("LOBOT_ALLOW_RESEARCH") == "1",
         model=get("LOBOT_MODEL", ""),
         replay=bool(get("MODEL_LOBOTOMY_REPLAY")),
         replay_stage_s=float(get("MODEL_LOBOTOMY_REPLAY_STAGE_S", "0.4")),
