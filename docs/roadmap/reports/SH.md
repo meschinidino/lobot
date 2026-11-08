@@ -124,8 +124,14 @@ lines in `model-lane.md`). One job at a time.
     ```
 
     This proves the start command and the health route on the
-    Mac in replay mode (no weights). It does not prove a run
-    off the Mac. Open: one live run on Dino's chosen host.
+    Mac in replay mode (no weights). A later check (SH-LIVE-CHECK,
+    2026-11-08) ran the merged server live on this Mac with
+    Llama weights: /health answered warm: true, the Catholic
+    knob steered a reply on real weights, and pirate answered
+    404 after its takedown. It does not prove a run off the
+    Mac. Open: one live run on a hosted machine. No host with
+    the owner's account is set up yet; `deploy/space` carries
+    the read-only replay demo, not live weights.
 13. Research mode is an owner switch:
     `LOBOT_ALLOW_RESEARCH=1` at server start. Every router
     takes the client flag AND the owner switch. The Research
