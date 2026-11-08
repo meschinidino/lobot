@@ -16,8 +16,9 @@ from model_lobotomy import steer  # noqa: E402
 from model_lobotomy import trait_eval as T  # noqa: E402
 
 
-def cell(judge, nll, fluency):
-    return {"judge": judge, "nll": nll, "fluency": fluency}
+def cell(judge, nll, fluency, p10=None):
+    return {"judge": judge, "nll": nll, "fluency": fluency,
+            "fluency_p10": fluency if p10 is None else p10}
 
 
 BASE = cell(0.05, 0.23, 0.99)
@@ -36,19 +37,30 @@ class DoseRuleTest(unittest.TestCase):
         self.assertEqual(T.coherent_doses(gen), [0.5])
         self.assertEqual(T.best_dose(gen), 0.5)
 
-    def test_high_nll_dose_is_rejected(self):
+    def test_high_nll_fluent_dose_wins(self):
+        # fluency-first-v2: NLL no longer gates. The cowboy case:
+        # dose 1.0 is fluent and strong, so it beats the weak dose
+        # the old NLL cap froze.
         gen = {0.0: BASE, 1.0: cell(0.9, 0.23 + 1.01, 0.95),
                0.5: cell(0.2, 0.5, 0.95)}
-        self.assertEqual(T.best_dose(gen), 0.5)
+        self.assertEqual(T.best_dose(gen), 1.0)
 
     def test_floor_is_inclusive(self):
         gen = {0.0: BASE, 1.0: cell(0.9, 0.23 + T.NLL_MAX_RISE,
                                     T.FLUENCY_FLOOR)}
         self.assertEqual(T.best_dose(gen), 1.0)
 
+    def test_worst_prompt_fluency_gates(self):
+        # Shakespeare case: mean fluency passes at dose 1.0, but the
+        # worst tuning prompts loop words (p10 near zero).
+        gen = {0.0: BASE, 0.5: cell(0.3, 0.6, 0.97),
+               1.0: cell(0.85, 1.4, 0.68, p10=0.05)}
+        self.assertEqual(T.coherent_doses(gen), [0.5])
+        self.assertEqual(T.best_dose(gen), 0.5)
+
     def test_no_coherent_dose_is_none(self):
         gen = {0.0: BASE, 1.0: cell(0.9, 0.5, 0.1),
-               2.0: cell(0.9, 3.0, 0.9)}
+               2.0: cell(0.9, 3.0, 0.2)}
         self.assertIsNone(T.best_dose(gen))
 
 
@@ -85,6 +97,7 @@ class TuneTableTest(unittest.TestCase):
         (row,) = table.values()
         self.assertEqual(row[0.0]["fluency"], 0.9)
         self.assertEqual(row[1.0]["fluency"], 0.1)
+        self.assertIn("fluency_p10", row[1.0])
         self.assertIn(P.FLUENCY_LABEL, labels)
         # The steered dose scores high on trait but is not fluent.
         self.assertIsNone(frozen)

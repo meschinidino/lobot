@@ -184,7 +184,7 @@ class ServerStreamTest(unittest.TestCase):
     def test_stage_order_and_split_offsets(self):
         ev = self._events({"prompt": "Who are you?", "rows": [ROW]})
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "guard_full", "baseline", "steered", "complete"])
+                         ["weights", "guard", "guard_full", "guard_progress", "guard_progress", "baseline", "steered", "complete"])
         res = ev[-1]["result"]
         self.assertEqual(res["split"]["token"], 2)
         # The offset is the start of the divergent token, leading space included
@@ -773,8 +773,13 @@ class UpdateApiTest(unittest.TestCase):
     def test_explicit_streams_columns(self):
         ev = self._events(self._explicit())
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "guard_full", "columns", "token",
+                         ["weights", "guard", "guard_full", "guard_progress", "guard_progress", "columns", "token",
                           "token", "complete"])
+        prog = [e for e in ev if e["stage"] == "guard_progress"]
+        self.assertTrue(prog)
+        self.assertTrue(all(e["screen"] and 0 < e["done"] <= e["total"]
+                            for e in prog))
+        self.assertEqual(prog[-1]["done"], prog[-1]["total"])
         toks = [e for e in ev if e["stage"] == "token"]
         self.assertEqual([(t["col"], t["text"]) for t in toks],
                          [(0, "Hello"), (1, "Hi")])
@@ -811,6 +816,10 @@ class UpdateApiTest(unittest.TestCase):
                         "frozen": {"layer": 5, "dose": 1.0}}))
         save_file({"direction": torch.ones(self.spec.hidden)},
                   str(trait_dir / "direction.safetensors"))
+        # The knob is earned: a passing steering card in the report.
+        (trait_dir / "report.json").write_text(json.dumps({
+            "read_gate": {"pass": True},
+            "final": {"update_up": {"card": {"passed": True}}}}))
         ev = self._events({"prompt": "Say hi.", "trait": "blunt",
                            "doses": [1.0]})
         cols = [e for e in ev if e["stage"] == "columns"][0]
@@ -882,10 +891,10 @@ class DialStreamTest(_Wave2Base):
         self.assertEqual(r.status_code, 200, r.text)
         ev = [json.loads(line) for line in r.text.splitlines() if line]
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "guard_full", "baseline",
+                         ["weights", "guard", "guard_full", "guard_progress", "guard_progress", "baseline",
                           "steered", "token", "token", "complete"])
-        self.assertEqual(ev[5]["dial"], {"blunt": 0.7})
-        self.assertNotIn("dial", ev[6])
+        self.assertEqual(ev[7]["dial"], {"blunt": 0.7})
+        self.assertNotIn("dial", ev[8])
         res = ev[-1]["result"]
         self.assertEqual(res["dial"], {"trait": "blunt", "layer": 5,
                                       "neutral": 0.0, "trait_mean": 2.0,
@@ -919,7 +928,7 @@ class DialStreamTest(_Wave2Base):
             "/api/run", json={"prompt": "Who are you?", "rows": [ROW]}
         ).text.splitlines() if line]
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "guard_full", "baseline",
+                         ["weights", "guard", "guard_full", "guard_progress", "guard_progress", "baseline",
                           "steered", "complete"])
         self.assertIsNone(ev[-1]["result"]["dial"])
 
@@ -1008,7 +1017,7 @@ class DialListsTest(_Wave2Base):
                                                "rows": [ROW]})
         ev = [json.loads(line) for line in r.text.splitlines() if line]
         self.assertEqual([e["stage"] for e in ev],
-                         ["weights", "guard", "guard_full", "baseline",
+                         ["weights", "guard", "guard_full", "guard_progress", "guard_progress", "baseline",
                           "steered", "complete"])
         self.assertIsNone(ev[-1]["result"]["dial"])
         for _, edits, kw in self.eng.runs:

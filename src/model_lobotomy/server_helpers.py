@@ -6,8 +6,10 @@ Request shapes live in server_schemas. No state lives here.
 from __future__ import annotations
 
 import json
+import math
 import re
 import threading
+from queue import Queue
 import time
 from os.path import commonprefix
 from pathlib import Path
@@ -332,6 +334,10 @@ def _trait_items() -> list[dict]:
                       if guard is not None else None),
             "patch": (f"/api/traits/{job['id']}/patch"
                       if jobs_store.WorkPaths(trait_dir).patch.is_file() else None),
+            "learned": _learned_pass(trait_dir),
+            "learned_patch": (f"/api/traits/{job['id']}/learned-patch"
+                              if (trait_dir / "learned.lobot").is_file()
+                              else None),
             "delete_eligible": bool(frozen) and (
                 jobs_store.WorkPaths(trait_dir).direction.is_file()),
             "evidence": _evidence_summary(trait_dir, rep),
@@ -859,10 +865,81 @@ def _combine_matrix(names, patches, max_new: int, seed: int) -> dict:
 
 
 def _trait_vector(knob: dict, dose: float, scale: float):
-    """VectorEdit from a saved knob at one dose."""
-    return VectorEdit(layer=int(knob["layer"]),
-                      direction=tuple(knob["direction"]),
-                      scale=float(scale), dose=float(dose))
+    """VectorEdits from a saved knob at one dose (tuple, 1+ edits).
+
+    Learned knobs hold one raw vector per layer. Their shipped
+    edit is unit * norm * shipped_scale; the caller's dose is a
+    relative multiplier (1.0 = the tested mix), and the
+    calibration scale does not apply.
+    """
+    if knob.get("kind") == "learned":
+        return tuple(
+            VectorEdit(layer=int(L), direction=tuple(u["unit"]),
+                       scale=float(u["norm"])
+                       * float(knob["shipped_scale"]) * float(dose),
+                       dose=1.0)
+            for L, u in sorted(knob["vectors"].items()))
+    return (VectorEdit(layer=int(knob["layer"]),
+                       direction=tuple(knob["direction"]),
+                       scale=float(scale), dose=float(dose)),)
+
+
+def _learned_pass(trait_dir) -> dict | None:
+    """The learned-mix confirm for a trait dir, when it passed.
+
+    Reads learned.json (ML v3). A pass in confirm_v3b or in the
+    fixed-scale confirm counts; the v3 search confirm at the
+    search-best scale failed, so a plain "confirm" pass is only
+    trusted when it names its fresh set.
+
+    The confirm must carry "facets": it must have run under the
+    facet-min judge (each label word scored, weakest counts).
+    Passes from the old single-question judge do not count: a
+    condescending reply passed that judge as "hateful".
+    """
+    p = Path(trait_dir) / "learned.json"
+    if not p.is_file():
+        return None
+    try:
+        d = json.loads(p.read_text())
+    except (OSError, ValueError):
+        return None
+    for key in ("confirm_v3b", "confirm"):
+        c = d.get(key) or {}
+        if not (c.get("passed") and c.get("facets") and c.get("set")):
+            continue
+        # Re-check every bar here. A hand-edited or stale file must
+        # not earn a knob by writing "passed": true.
+        try:
+            scale = float(c["scale"])
+            s = c.get("score") or {}
+            gain = float(s["gain"])
+            fluency_mean = float(s["fluency_mean"])
+            fluency_p10 = float(s["fluency_p10"])
+            expected = trait_eval.label_facets(
+                trait_eval.family_cfg(d["family"])["judge"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if list(c["facets"]) != expected:
+            continue
+        if not (math.isfinite(scale) and scale > 0
+                and math.isfinite(gain)
+                and math.isfinite(fluency_mean)
+                and math.isfinite(fluency_p10)):
+            continue
+        if (gain < trait_eval.E.MIN_GAIN
+                or fluency_mean < trait_eval.FLUENCY_FLOOR
+                or fluency_p10 < trait_eval.FLUENCY_P10_FLOOR):
+            continue
+        return {"scale": scale,
+                "gain": gain,
+                "fluency_mean": fluency_mean,
+                "fluency_p10": fluency_p10,
+                "set": c.get("set"),
+                "model": d.get("model"),
+                "guard_blocked": bool(
+                    (d.get("guard") or {}).get("blocked"))}
+    return None
 
 
 def _token_ids(tok, wrapped: str) -> list[int]:
@@ -1077,9 +1154,12 @@ def _chat_edits(sess, rows=None, scale=None):
         knob = _latest_knob(sess["trait"])
         if knob is None:
             raise KeyError(sess["trait"])
-        layers = sorted(set(layers) | {int(knob["layer"])})
+        klayers = ({int(L) for L in knob["vectors"]}
+                   if knob.get("kind") == "learned"
+                   else {int(knob["layer"])})
+        layers = sorted(set(layers) | klayers)
         if scale is not None:
-            vec = (_trait_vector(knob, sess["dose"], scale),)
+            vec = _trait_vector(knob, sess["dose"], scale)
     return EditSet(neuron=EditSet.from_rows(use).neuron, vector=vec), layers
 
 
@@ -1152,7 +1232,8 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
         scale = None
         if sess["trait"] is not None:
             knob = _latest_knob(sess["trait"])
-            scale = float(medians[int(knob["layer"])])
+            scale = (0.0 if knob.get("kind") == "learned"
+                     else float(medians[int(knob["layer"])]))
         edits, _ = _chat_edits(sess, scale=scale)
         if dial_specs:
             reads = tuple(Read(layer=int(s["layer"]))
@@ -1213,8 +1294,32 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
         eng.lock.release()
 
 
-def _latest_knob(trait: str) -> dict | None:
-    """Newest finished Create job for a trait with a saved direction, on the active model."""
+def _knob_earned(paths) -> bool:
+    """True when the job's report cards earn a knob under today's rule.
+
+    Recomputed from the stored cards, so jobs frozen under the old
+    any-verb rule stop being offered when their steering failed.
+    No readable report means no evidence of a pass: fail closed.
+    Research mode can still offer the job (allow_unearned).
+    """
+    try:
+        report = json.loads(paths.report.read_text())
+        fin = report.get("final") or {}
+        cards = {v: (fin.get(v) or {}).get("card")
+                 for v in ("update_up", "update_down", "delete")}
+        read_ok = bool((report.get("read_gate") or {}).get("pass"))
+    except Exception:
+        return False
+    return trait_eval.eligible_verbs(read_ok, cards)["knob"]
+
+
+def _latest_knob(trait: str, allow_unearned: bool = False) -> dict | None:
+    """Newest finished Create job for a trait with a saved direction, on the active model.
+
+    allow_unearned (Research mode only): also offer jobs whose
+    steering cards failed. The frozen direction exists; the run
+    simply has no earned dose guarantee.
+    """
     runner = STATE.get_runner()
     cands = [j for j in runner.list_jobs()
              if j.get("trait") == trait and j.get("status") == "done"
@@ -1222,8 +1327,45 @@ def _latest_knob(trait: str) -> dict | None:
              and j.get("model_id", engine._active_model_id) == engine._active_model_id]
     cands.sort(key=lambda j: j.get("updated", 0), reverse=True)
     for job in cands:
-        path = jobs_store.JobPaths(job["id"], runner.jobs_dir).direction
+        paths = jobs_store.JobPaths(job["id"], runner.jobs_dir)
+        # Learned mix (ML v3): a fresh-confirm pass earns the knob
+        # even though the Create cards did not. Checked first; the
+        # vectors live next to the report, not in direction files.
+        lp = _learned_pass(paths.trait.workdir)
+        vec_path = paths.trait.workdir / "learned_vectors.pt"
+        if lp is not None:
+            # A passed mix with no usable vectors earns no knob.
+            # Never fall through to the single direction in silence:
+            # the UI would call it the learned mix.
+            if not vec_path.is_file():
+                continue
+            if lp.get("model") and lp["model"] != engine._active_model_id:
+                continue
+            try:
+                raw = torch.load(vec_path, weights_only=True)
+                if not isinstance(raw, dict) or not raw:
+                    continue
+                vectors = {}
+                for L, v in raw.items():
+                    if not isinstance(v, torch.Tensor) or v.ndim != 1:
+                        continue
+                    if not bool(torch.isfinite(v).all()):
+                        continue
+                    n = float(v.norm())
+                    if not math.isfinite(n) or n <= 0:
+                        continue
+                    vectors[int(L)] = {"unit": (v / n).tolist(), "norm": n}
+            except Exception:  # noqa: BLE001 - a bad mix file earns no knob
+                continue
+            if not vectors or len(vectors) != len(raw):
+                continue
+            return {"kind": "learned", "dose": 1.0,
+                    "shipped_scale": lp["scale"], "vectors": vectors,
+                    "job_id": job["id"]}
+        path = paths.direction
         if not path.exists():
+            continue
+        if not allow_unearned and not _knob_earned(paths):
             continue
         from safetensors.torch import load_file
         direction = load_file(str(path))["direction"].tolist()
@@ -1263,7 +1405,9 @@ def _dial_spec(eng, trait: str) -> dict:
     Raises KeyError when no finished job or no behavior exists.
     """
     knob = _latest_knob(trait)
-    if knob is None:
+    if knob is None or knob.get("kind") == "learned":
+        # No read dial for learned mixes yet: the dial reads one
+        # layer, the mix steers eight. Chat still steers the mix.
         raise KeyError(trait)
     try:
         cfg = trait_eval.family_cfg(trait)
@@ -1338,7 +1482,9 @@ def _verified_guard_stream(eng, edits, medians, enforce):
     """Verified guard for streams, in two visible steps.
 
     Yields one guard_full event after the first-token check passes
-    and before the full-answer check runs. The final verdict comes
+    and before the full-answer check runs. The full check runs in a
+    worker thread; its per-screen progress comes back through a queue
+    and goes out as guard_progress events. The final verdict comes
     from confirm(), so its numbers match _verified_guard.
     """
     from model_lobotomy import guards as _guards
@@ -1352,10 +1498,46 @@ def _verified_guard_stream(eng, edits, medians, enforce):
             judge_fn=guard_mod.refusal_judge_fn(eng),
             research_mode=not enforce, cancel=STATE.cancel)
     yield _event(stage="guard_full", guard=_guard_event_dict(first))
-    return guard.confirm(
-        eng, edits, medians=medians, max_new_tokens=24, seed=engine.SEED,
-        judge_fn=guard_mod.refusal_judge_fn(eng),
-        research_mode=not enforce, cancel=STATE.cancel)
+    prog_q: Queue = Queue()
+    result: dict = {}
+
+    def _work():
+        try:
+            result["gv"] = guard.confirm(
+                eng, edits, medians=medians, max_new_tokens=24,
+                seed=engine.SEED,
+                judge_fn=guard_mod.refusal_judge_fn(eng),
+                research_mode=not enforce, cancel=STATE.cancel,
+                progress=lambda s, d, t: prog_q.put((s, d, t)))
+        except Exception as e:  # noqa: BLE001 - re-raised in the stream
+            result["error"] = e
+        finally:
+            prog_q.put(None)
+
+    worker = threading.Thread(target=_work, daemon=True)
+    worker.start()
+    completed = False
+    try:
+        while True:
+            item = prog_q.get()
+            if item is None:
+                completed = True
+                break
+            screen, done, total = item
+            yield _event(stage="guard_progress", screen=screen,
+                         done=done, total=total)
+    finally:
+        # A closed stream (client left, Stop) must not leave the worker
+        # generating on the shared model: the next run would generate
+        # on the same MPS device at the same time and corrupt tensors.
+        # Normal completion leaves the shared cancel flag alone: the
+        # caller still generates its columns with it.
+        if not completed:
+            STATE.cancel.set()
+        worker.join()
+    if "error" in result:
+        raise result["error"]
+    return result["gv"]
 
 
 def _run_stream(prompt: str, rows: list[RecipeRow], spec,
@@ -1511,7 +1693,7 @@ def _run_stream(prompt: str, rows: list[RecipeRow], spec,
 def _update_stream(prompt: str, layer: int, direction: list,
                    scale: float | None, doses: list[float],
                    max_new: int, spec, guard: bool = False,
-                   research_mode: bool = False):
+                   research_mode: bool = False, knob: dict | None = None):
     """Vector Update filmstrip: guard, then per-column token events.
 
     One batched generate across doses (E6 hook, singles fallback);
@@ -1531,9 +1713,13 @@ def _update_stream(prompt: str, layer: int, direction: list,
         if eng.model is None or eng.model_id != engine._active_model_id:
             eng.load(engine._active_model_id)
         steer.check_preset_binding(preset, engine._active_model_id)
-        medians, cal_info = _calibrate(eng, [layer])
+        learned = bool(knob) and knob.get("kind") == "learned"
+        cal_layers = (sorted(knob["vectors"]) if learned
+                      else [layer])
+        medians, cal_info = _calibrate(eng, cal_layers)
         if scale is None:
-            scale = float(medians[layer])
+            scale = (float(knob["shipped_scale"]) if learned
+                     else float(medians[layer]))
         if STATE.cancel.is_set():
             yield _event(stage="stopped", after="weights")
             return
@@ -1541,8 +1727,11 @@ def _update_stream(prompt: str, layer: int, direction: list,
         unit = tuple(direction)
         strongest = max(doses, key=abs)
         yield _event(stage="guard")
+        guard_edits = (EditSet(vector=_trait_vector(knob, strongest, 0.0))
+                       if learned else
+                       EditSet(vector=(VectorEdit(layer, unit, scale, strongest),)))
         gv = yield from _verified_guard_stream(
-            eng, EditSet(vector=(VectorEdit(layer, unit, scale, strongest),)),
+            eng, guard_edits,
             medians, guard_mod.should_enforce(guard, research_mode))
         if gv.blocked:
             yield _event(stage="blocked", guard=_guard_event_dict(gv))
@@ -1553,7 +1742,8 @@ def _update_stream(prompt: str, layer: int, direction: list,
 
         yield _event(stage="columns", doses=doses, scale=scale,
                      guard=_guard_event_dict(gv))
-        sets = [EditSet(vector=(VectorEdit(layer, unit, scale, d),))
+        sets = [EditSet(vector=_trait_vector(knob, d, 0.0)) if learned
+                else EditSet(vector=(VectorEdit(layer, unit, scale, d),))
                 for d in doses]
         columns = [""] * len(doses)
         result: dict = {}
@@ -1576,6 +1766,7 @@ def _update_stream(prompt: str, layer: int, direction: list,
                 "model_id": engine._active_model_id,
                 "prompt": prompt,
                 "layer": layer,
+                "layers": cal_layers if learned else [layer],
                 "scale": scale,
                 "doses": doses,
                 "columns": [{"dose": d, "text": r["text"],

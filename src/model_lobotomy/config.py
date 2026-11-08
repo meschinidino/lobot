@@ -46,7 +46,7 @@ ENV_VARS = (
     ("LOBOT_JUDGE", "local"),
     ("LOBOT_GUARD", "screens-v2"),
     ("LOBOT_DIRECTION", "diffmean"),
-    ("LOBOT_DOSE_RULE", "nll+fluency-v1"),
+    ("LOBOT_DOSE_RULE", "fluency-first-v3"),
 )
 
 
@@ -88,7 +88,7 @@ class Settings:
     judge_kind: str = "local"
     guard_kind: str = "screens-v2"
     direction_kind: str = "diffmean"
-    dose_rule_kind: str = "nll+fluency-v1"
+    dose_rule_kind: str = "fluency-first-v3"
 
 
 def load_settings(env=None) -> Settings:
@@ -126,7 +126,7 @@ def load_settings(env=None) -> Settings:
         judge_kind=get("LOBOT_JUDGE", "local"),
         guard_kind=get("LOBOT_GUARD", "screens-v2"),
         direction_kind=get("LOBOT_DIRECTION", "diffmean"),
-        dose_rule_kind=get("LOBOT_DOSE_RULE", "nll+fluency-v1"),
+        dose_rule_kind=get("LOBOT_DOSE_RULE", "fluency-first-v3"),
     )
 
 

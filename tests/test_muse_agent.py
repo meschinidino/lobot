@@ -460,6 +460,25 @@ class RoutesTest(unittest.TestCase):
                                  json={"description": "x"})
         self.assertEqual(r.status_code, 422)
 
+    def test_agent_run_records_its_model(self):
+        # The run page names the model the run used, even after the
+        # user switches the sidebar to another model.
+        import threading
+        st = {"status": "failed", "steps": [], "result": None,
+              "error": "x", "cancel": threading.Event(),
+              "description": "d", "started": 0.0,
+              "model_id": "Qwen/Qwen3.5-4B", "lane": "llama",
+              "id": None, "job_id": None}
+        self.server.STATE.agents["runx"] = st
+        self.addCleanup(self.server.STATE.agents.pop, "runx", None)
+        row = self.client.get("/api/agent/runx").json()
+        self.assertEqual(row["model_id"], "Qwen/Qwen3.5-4B")
+        self.assertEqual(row["lane"], "llama")
+        (listed,) = [a for a in
+                     self.client.get("/api/agents").json()["agents"]
+                     if a["run_id"] == "runx"]
+        self.assertEqual(listed["model_id"], "Qwen/Qwen3.5-4B")
+
     def test_agent_unknown_run_404(self):
         self.assertEqual(self.client.get("/api/agent/nope").status_code,
                          404)

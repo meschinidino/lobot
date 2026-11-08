@@ -363,6 +363,65 @@ class BatchedTest(unittest.TestCase):
                                  seed=0)
 
 
+class ManyTok:
+    chat_template = "x"
+    eos_token_id = 99
+    pad_token_id = 0
+
+    def __call__(self, text, **k):
+        return {"input_ids": [ord(c) % 40 + 1 for c in text]}
+
+    def decode(self, ids, skip_special_tokens=True):
+        return ",".join(str(int(i)) for i in ids)
+
+
+class ManyModel(FakeGenModel):
+    def __init__(self, fail=False):
+        super().__init__(canned=((5, 6), (7, 8)))
+        self.fail = fail
+        self.batch_shapes = []
+
+    def generate(self, input_ids, **kw):
+        if self.fail:
+            raise RuntimeError("boom")
+        self.batch_shapes.append(tuple(input_ids.shape))
+        new = torch.tensor(self.canned[:input_ids.shape[0]])
+        return torch.cat([input_ids, new], dim=1)
+
+
+class RunManyTest(unittest.TestCase):
+    def setUp(self):
+        torch.manual_seed(0)
+        steer.MODEL_SPECS["fake-llama"] = make_spec()
+        self.eng = engine.Engine()
+        self.eng.model = ManyModel()
+        self.eng.tokenizer = ManyTok()
+        self.eng.model_id = "fake-llama"
+        self.addCleanup(steer.MODEL_SPECS.pop, "fake-llama", None)
+        self.addCleanup(self.eng.remove_all)
+
+    def test_many_prompts_one_batch(self):
+        rows = self.eng.run_many(
+            ["a", "bb"], engine.EditSet(), medians={},
+            max_new_tokens=2, seed=0, wrapped_list=["a", "bb"])
+        # One generate call, both rows, left-padded to the wider prompt.
+        self.assertEqual(self.eng.model.batch_shapes, [(2, 2)])
+        self.assertEqual([r["token_ids"] for r in rows], [[5, 6], [7, 8]])
+        self.assertEqual(self.eng.hook_count(), 0)
+
+    def test_fallback_runs_singles(self):
+        self.eng.model = ManyModel(fail=True)
+        canned = {"text": "s", "token_ids": [9], "new_tokens": 1}
+        with mock.patch.object(steer, "generate_text",
+                               return_value=dict(canned)) as g:
+            rows = self.eng.run_many(
+                ["a", "bb"], engine.EditSet(), medians={},
+                max_new_tokens=2, seed=0, wrapped_list=["a", "bb"])
+        self.assertEqual([r["text"] for r in rows], ["s", "s"])
+        self.assertEqual(g.call_count, 2)
+        self.assertEqual(self.eng.hook_count(), 0)
+
+
 class FakeLogitModel(FakeModel):
     def forward(self, ids):
         super().forward(ids)

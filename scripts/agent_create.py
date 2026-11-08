@@ -35,7 +35,8 @@ def main(argv=None) -> int:
     if args.lane == "llama":
         from model_lobotomy import llama_backend
         lane = trait_eval.LlamaLane(eng, eng.spec, llama_backend.CreateDaemon(
-            args.model, eng.revision, eng.tokenizer))
+            args.model, eng.revision, eng.tokenizer,
+            co_resident_bytes=llama_backend.torch_resident_bytes(eng.model)))
 
     def progress(kind, row):
         brief = {k: v for k, v in row.items()

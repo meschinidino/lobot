@@ -61,9 +61,22 @@ function compareSection(R, id, fam) {
 const looksLikeReply = (s) => !!s && (/^(howdy|hello|hi|hey|ahoy|well|ah|oh|greetings)\b/i.test(s.trim()) || /\?\s*$/.test(s.trim()) && !/^(answer|reply|respond|speak|talk|write|use|describe)\b/i.test(s.trim()));
 function doseRuleLine(R) {
   const rule = R.tuning?.rule, c = R.tuning?.chosen;
-  if (rule) return `<p class="meta">Dose chosen by the fluency-aware rule (<span class="mono">${esc(rule.name)}</span>): NLL rise at most ${rule.nll_max_rise}, fluency at least ${rule.fluency_floor}.${c && c.fluency != null ? ` On tuning prompts the chosen dose had fluency <span class="mono">${c.fluency.toFixed(2)}</span>.` : ""}</p>`;
+  if (rule) return `<p class="meta">Dose chosen by the fluency-aware rule (<span class="mono">${esc(rule.name)}</span>): ${rule.nll_max_rise != null ? `NLL rise at most ${rule.nll_max_rise}, ` : ""}fluency at least ${rule.fluency_floor}${rule.fluency_p10_floor != null ? `, worst-decile fluency at least ${rule.fluency_p10_floor}` : ""}.${c && c.fluency != null ? ` On tuning prompts the chosen dose had fluency <span class="mono">${c.fluency.toFixed(2)}</span>.` : ""}</p>`;
   const pt = vecPoint(R.pareto, R.frozen?.dose);
   return `<p class="note"><span class="state warn">CHOSEN BEFORE THE FLUENCY CHECK</span> ${pt ? (pt.fluency < 0.5 ? `At this dose the replies are not fluent (fluency <span class="mono">${pt.fluency.toFixed(2)}</span>). The trait judge can still score broken text high. Create a new version to get a fluent dose.` : `Fluency at this dose is <span class="mono">${pt.fluency.toFixed(2)}</span>, so the text reads well.`) : "This dose was chosen on NLL only, which passes repeated words. Compare with a prompt to see the text quality, or create a new version."}</p>`;
+}
+function whyNoKnob(R) {
+  if (R.verdict !== "no_knob") return "";
+  const up = R.final?.update_up?.card, pb = R.prompt_baseline?.card;
+  const table = R.tuning?.table || {}, layers = Object.keys(table);
+  const doses = layers.length ? Object.keys(table[layers[0]]).filter((x) => x !== "0" && x !== "0.0") : [];
+  const scope = layers.length ? ` Create tested ${layers.length} candidate layer${layers.length === 1 ? "" : "s"} at doses ${doses.join(", ")} on tuning prompts.` : "";
+  const sw = R.full_layer_sweep, cand = sw?.candidate;
+  const sweep = sw ? ` A full sweep then tested all ${sw.layers} layers at doses ${sw.doses.join(", ")} (${sw.cells} tests).${cand ? ` One candidate stood out: layer ${cand.layer} at dose ${cand.dose}, gain ${num(cand.gain_search)} on the search prompts. On ${cand.fresh_n} fresh prompts its gain fell to ${num(cand.gain_fresh)}, under the 0.30 bar. Its text stayed clean there (worst fluency ${cand.fresh_min_fluency.toFixed(2)}).` : " No candidate from the sweep earned a fresh-prompt pass."}` : "";
+  const read = R.read_gate?.pass ? "We can read the behavior in the model. " : "";
+  const push = up ? `Pushing it changed the judge score by ${num(up.trait_mean)}. The bar is 0.30. ` : "";
+  const words = pb && pb.passed ? `Plain words do work here: a prompt scored ${num(pb.trait_mean)}. Use the prompt for this behavior. ` : "";
+  return `<p class="note"><span class="state warn">WHY NO KNOB</span> It was not possible to achieve this behavior with a patch.${scope}${sweep} ${read}${push}${words}These tests show that this patch failed. They do not show that the behavior is impossible by other means.</p>`;
 }
 const SCREEN = { refusal: "Refusal", honesty: "Honesty", privacy: "Privacy", harmful: "Harmful requests" };
 function screenMeasure(name, v) {
@@ -169,20 +182,20 @@ function explorerSection(R, id) {
 // How Create chose the dose: the tuning grid with the rule's reason for each cell.
 function tuningSection(R) {
   const T = R.tuning; if (!T?.table || !Object.keys(T.table).length) return "";
-  const rule = T.rule, maxRise = rule?.nll_max_rise ?? 1, floor = rule?.fluency_floor ?? 0.5, fr = R.frozen || {};
+  const rule = T.rule, hasNll = rule?.nll_max_rise != null, maxRise = rule?.nll_max_rise ?? 1, floor = rule?.fluency_floor ?? 0.5, p10floor = rule?.fluency_p10_floor, fr = R.frozen || {};
   const layers = Object.keys(T.table), dkeys = [...new Set(layers.flatMap((L) => Object.keys(T.table[L])))].sort((a, b) => Number(a) - Number(b));
   const zero = dkeys.find((k) => Number(k) === 0), doses = dkeys.filter((k) => Number(k) > 0);
   const hasFl = layers.some((L) => Object.values(T.table[L]).some((c) => c.fluency != null));
   const cell = (L, k) => {
     const c = T.table[L][k]; if (!c) return `<td class="meta">–</td>`;
-    const b = T.table[L][zero] || {}, rise = c.nll - (b.nll ?? 0), nllOk = rise <= maxRise, flOk = c.fluency == null || c.fluency >= floor;
+    const b = T.table[L][zero] || {}, rise = c.nll - (b.nll ?? 0), nllOk = !hasNll || rise <= maxRise, flOk = c.fluency == null || c.fluency >= floor, p10Ok = c.fluency_p10 == null || p10floor == null || c.fluency_p10 >= p10floor;
     const chosen = Number(L) === fr.layer && Math.abs(Number(k) - (fr.dose ?? -1)) < 1e-9;
-    const why = chosen ? `<span class="state ok">CHOSEN</span>` : !nllOk ? `<span class="state info">NLL TOO HIGH</span>` : rule && !flOk ? `<span class="state warn">NOT FLUENT</span>` : !rule && c.fluency != null && !flOk ? `<span class="state warn">NOT FLUENT</span>` : `<span class="state info">QUALIFIED</span>`;
-    return `<td class="${chosen ? "chosen" : nllOk && flOk ? "" : "rej"}"><span class="mono">trait ${c.judge.toFixed(2)}</span><br><span class="mono">NLL ${num(rise)}</span>${c.fluency != null ? `<br><span class="mono">fluency ${c.fluency.toFixed(2)}</span>` : ""}<br>${why}</td>`;
+    const why = chosen ? `<span class="state ok">CHOSEN</span>` : !nllOk ? `<span class="state info">NLL TOO HIGH</span>` : !flOk ? `<span class="state warn">NOT FLUENT</span>` : !p10Ok ? `<span class="state warn">TAIL TOO LOW</span>` : `<span class="state info">QUALIFIED</span>`;
+    return `<td class="${chosen ? "chosen" : nllOk && flOk && p10Ok ? "" : "rej"}"><span class="mono">trait ${c.judge.toFixed(2)}</span><br><span class="mono">NLL ${num(rise)}</span>${c.fluency != null ? `<br><span class="mono">fluency ${c.fluency.toFixed(2)}</span>` : ""}${c.fluency_p10 != null ? `<br><span class="mono">tail ${c.fluency_p10.toFixed(2)}</span>` : ""}<br>${why}</td>`;
   };
   const rows = layers.map((L) => `<tr><th scope="row" class="mono">layer ${esc(L)}</th>${doses.map((k) => cell(L, k)).join("")}</tr>`).join("");
   return `<h2 class="sec">How Create chose the dose</h2>
-    <p class="lead">Create scored each candidate layer and dose on tuning prompts (never the held-out ones). ${rule ? `A cell qualifies when the reply NLL rises by at most ${maxRise} and the fluency score is at least ${floor}. The qualifying cell with the highest trait score wins.` : `This run used the older rule: a cell qualified when the reply NLL rose by at most ${maxRise}. NLL alone passes repeated words, so a broken dose could win.${hasFl ? "" : " Fluency was not measured in this run."}`}</p>
+    <p class="lead">Create scored each candidate layer and dose on tuning prompts (never the held-out ones). ${rule ? `A cell qualifies when ${hasNll ? `the reply NLL rises by at most ${maxRise}, ` : ""}the fluency score is at least ${floor}${p10floor != null ? ` and the worst-decile fluency is at least ${p10floor}` : ""}. NLL is a cost report here, not a gate, unless the rule names a cap. The qualifying cell with the highest trait score wins.` : `This run used the older rule: a cell qualified when the reply NLL rose by at most ${maxRise}. NLL alone passes repeated words, so a broken dose could win.${hasFl ? "" : " Fluency was not measured in this run."}`}</p>
     <div class="evwrap"><table class="ev pt tgrid"><thead><tr><th scope="col">Layer</th>${doses.map((k) => `<th scope="col" class="mono">${fd(Number(k))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -243,4 +256,4 @@ const KEY_HELP = {
 };
 const SHELF_KEYS = ["PASS", "INCREASE FAIL", "DECREASE FAIL", "GUARD", "NO KNOB"];
 
-export { short, num, ci, mins, STROKE, stroke, RULES, reports, vecPoint, VERDICT, pointName, paretoSentence, followupKey, noWeights, followupCtl, compareSection, looksLikeReply, doseRuleLine, SCREEN, screenMeasure, guardSection, EXS, exDoses, exQuestions, sampleFor, baseFor, splitWord, markSplit, exState, DIAL, dialAngle, exDial, exOut, setExDose, wireExplorer, explorerSection, tuningSection, explains, explainSection, tunes, tuneSection, opinions, secondOpinionSection, KEY_HELP, SHELF_KEYS };
+export { short, num, ci, mins, STROKE, stroke, RULES, reports, vecPoint, VERDICT, pointName, paretoSentence, followupKey, noWeights, followupCtl, compareSection, looksLikeReply, doseRuleLine, whyNoKnob, SCREEN, screenMeasure, guardSection, EXS, exDoses, exQuestions, sampleFor, baseFor, splitWord, markSplit, exState, DIAL, dialAngle, exDial, exOut, setExDose, wireExplorer, explorerSection, tuningSection, explains, explainSection, tunes, tuneSection, opinions, secondOpinionSection, KEY_HELP, SHELF_KEYS };

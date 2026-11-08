@@ -10,6 +10,13 @@ Layout inside the zip:
                              report_card, guard, fingerprint,
                              evidence_sha256, members_sha256,
                              lobot_version}
+
+Multi-vector patches (learned mixes) share the layout. The
+safetensors file holds one "vec_<layer>" tensor per layer (the raw
+learned vector, not a unit), and patch.json sets kind="multi",
+layers=[...], dose=<the tested global scale>. Loading returns
+{"vectors": {layer: tensor}} instead of {"direction": tensor}.
+Single patches load exactly as before.
 """
 from __future__ import annotations
 
@@ -65,6 +72,41 @@ def save_patch(path, *, direction, layer: int, dose: float,
             "scale": None if scale is None else float(scale),
             "direction": {"shape": list(direction.shape),
                           "dtype": str(direction.dtype).replace("torch.", "")},
+            "recipe": recipe, "report_card": report_card,
+            "guard": guard, "fingerprint": fingerprint,
+            "evidence_sha256": sha256_hex(canonical_json(report_card)),
+            "members_sha256": {DIRECTION_FILE: sha256_hex(direction_bytes)},
+            "lobot_version": LOBOT_VERSION}
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(DIRECTION_FILE, direction_bytes)
+        zf.writestr(META_FILE, json.dumps(meta, indent=2))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(buf.getvalue())
+    return path
+
+
+def save_multi_patch(path, *, vectors: dict, dose: float,
+                     trait: str, recipe: dict, report_card: dict,
+                     guard: dict, fingerprint: dict) -> Path:
+    """Write a multi-vector .lobot patch (learned mix).
+
+    vectors: {layer: raw learned vector}. dose: the tested global
+    scale (the app dial multiplies it). Same hash rules as
+    save_patch: members and evidence are hash-pinned.
+    """
+    from safetensors.torch import save as _save
+    path = Path(path)
+    tensors = {f"vec_{int(L)}": v.detach().cpu()
+               for L, v in sorted(vectors.items())}
+    direction_bytes = _save(tensors)
+    meta = {"version": PATCH_VERSION, "kind": "multi",
+            "trait": trait, "dose": float(dose),
+            "layers": sorted(int(L) for L in vectors),
+            "vectors": {str(int(L)): {"shape": list(v.shape),
+                                      "dtype": str(v.dtype).replace(
+                                          "torch.", "")}
+                        for L, v in sorted(vectors.items())},
             "recipe": recipe, "report_card": report_card,
             "guard": guard, "fingerprint": fingerprint,
             "evidence_sha256": sha256_hex(canonical_json(report_card)),
@@ -136,6 +178,21 @@ def load_patch(path) -> dict:
         except Exception as e:
             raise PatchRejected(
                 f"{DIRECTION_FILE} is not valid safetensors: {e}") from e
+        if meta.get("kind") == "multi":
+            vectors = {}
+            for L in meta.get("layers") or []:
+                key = f"vec_{int(L)}"
+                if key not in tensors:
+                    raise PatchRejected(
+                        f"{DIRECTION_FILE} lacks {key!r}")
+                v = tensors[key]
+                want = ((meta.get("vectors") or {}).get(str(int(L)))
+                        or {}).get("shape")
+                if want is not None and list(v.shape) != want:
+                    raise PatchRejected(
+                        f"{key} shape {list(v.shape)} != meta {want}")
+                vectors[int(L)] = v
+            return {"vectors": vectors, "meta": meta}
         if "direction" not in tensors:
             raise PatchRejected(f"{DIRECTION_FILE} lacks 'direction'")
         direction = tensors["direction"]

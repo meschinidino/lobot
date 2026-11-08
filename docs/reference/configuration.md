@@ -67,4 +67,4 @@ reports `meta_api.key` (true or false, never the key) and
 | `LOBOT_JUDGE` | `local` | Judge port: `local`, `meta_api` or `fake` (tests) |
 | `LOBOT_GUARD` | `screens-v2` | Guard port: `screens-v2` or `noop` (tests) |
 | `LOBOT_DIRECTION` | `diffmean` | Direction method port |
-| `LOBOT_DOSE_RULE` | `nll+fluency-v1` | Dose rule port: `nll+fluency-v1` or `fake` (tests) |
+| `LOBOT_DOSE_RULE` | `fluency-first-v3` | Dose rule port: `fluency-first-v3`, `fluency-first-v2`, `nll+fluency-v1` or `fake` (tests) |

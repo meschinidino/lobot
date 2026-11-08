@@ -52,6 +52,7 @@ Events (one JSON object per line):
 | `weights` | — (model loads here) |
 | `guard` | — (first-token refusal check running; see `blocked`) |
 | `guard_full` | `guard`: the first-token verdict (the first-token check passed; the full-answer check is running) |
+| `guard_progress` | `screen`, `done`, `total`: full-answer check progress, in generations. Prompts generate in batches. Unedited generations cache on the engine, so a later check of a new dose skips them. |
 | `baseline` | — (clean generation running) |
 | `steered` | — (steered generation running) |
 | `stopped` | `after`: stage the Stop landed after |
@@ -280,6 +281,11 @@ after a server restart a running job reads as `stopped`.
 
 Errors: 404 unknown id; 409 a Create or another follow-up runs; 422
 no patch or a bad method; 503 replay or no-model mode.
+
+## GET /api/traits/{job_id}/learned-patch
+
+Download the `learned.lobot` multi-layer patch for a job with a
+learned confirm. 404 when the job has none.
 
 ## GET /api/traits/{id}/report.md (E1 evidence)
 
