@@ -29,7 +29,7 @@ const active = (j) => j.status === "queued" || j.status === "running";
 function behaviors() {
   const mine = S.jobs.filter((j) => j.model_id === S.model);
   const ver = {}, out = [];
-  if (S.traits) for (const t of S.traits) out.push({ id: t.id, name: t.family, version: t.version, verdict: t.verdict, guard: t.guard || {}, cards: t.cards || {}, dose: t.dose, layer: t.layer, patch: t.patch, learned: t.learned || null, learnedPatch: t.learned_patch || null, created: t.created, ev: t.evidence || {}, del: !!t.delete_eligible });
+  if (S.traits) for (const t of S.traits) out.push({ id: t.id, name: t.family, version: t.version, verdict: t.verdict, takenDown: t.taken_down || null, guard: t.guard || {}, cards: t.cards || {}, dose: t.dose, layer: t.layer, patch: t.patch, learned: t.learned || null, learnedPatch: t.learned_patch || null, created: t.created, ev: t.evidence || {}, del: !!t.delete_eligible });
   else for (const j of mine.filter((j) => j.status === "done").sort((a, b) => a.created - b.created)) {
     ver[j.trait] = (ver[j.trait] || 0) + 1;
     out.push({ id: j.id, name: j.trait, version: ver[j.trait], verdict: j.verdict, guard: j.guard || {}, cards: {}, dose: j.frozen?.dose, layer: j.frozen?.layer, patch: null, created: j.created });
@@ -39,7 +39,8 @@ function behaviors() {
   for (const b of out) if (!newest[b.name] || b.version > newest[b.name].version) newest[b.name] = b;
   for (const b of out) {
     b.newest = newest[b.name] === b;
-    [b.kind, b.key, b.usable] = b.verdict === "blocked" || b.guard.blocked
+    [b.kind, b.key, b.usable] = b.takenDown ? ["err", "TAKEN DOWN", false]
+      : b.verdict === "blocked" || b.guard.blocked
       ? (S.research ? ["warn", "BLOCKED", true] : ["err", "GUARD", false])
       : b.learned && b.learned.guard_blocked ? (S.research ? ["warn", "LEARNED · GUARD", true] : ["err", "GUARD", false])
       : b.learned ? ["ok", "LEARNED PASS", true]

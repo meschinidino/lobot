@@ -155,7 +155,7 @@ through the model lane; the numbers above name each mode.
 | 3 | Every shipped behavior passes on 40+ fresh prompts | Catholic PASS (50). Pirate FAIL (50, gain 0.225). Rude no-knob, guard-blocked |
 | 4 | Rude knob passes fresh at 40+ with strong text, or no-knob verdict names the numbers | Done as no-knob: 0.848 / 0.202 and 0.840 / 0.154 at 50 fresh. Its evidence says so |
 | 5 | Full test suite passes, lint clean | Done: 890 tests OK, pyflakes clean |
-| 6 | App runs at one address off the local machine | Open: health route and start command proved on the Mac (replay). Needs Dino's host for the live run |
+| 6 | App runs at one address off the local machine | Open: health route and start command proved on the Mac (replay). Needs a host with the owner's account |
 
 ## Known gaps
 
@@ -166,7 +166,8 @@ through the model lane; the numbers above name each mode.
   family from its own labels. The committed store records the
   label source and claims no hand validation. A field rename
   waits for a contract change.
-- Pirate fails its 50-question re-confirm. The app still
-  offers its knob from the Create card. Whether a behavior
-  that fails the bigger set keeps its knob is a product call
-  for Dino, not a code fix in this spec.
+- Pirate failed its 50-question re-confirm. On Dino's order
+  (2026-11-08) it is taken down: `jobs/pirate-fv3/taken_down.json`
+  records why. The app offers no pirate knob; the evidence
+  stays readable. The takedown is a job record, so the newest
+  job's takedown wins over every older pirate knob.

@@ -103,6 +103,50 @@ class LearnedPassTest(unittest.TestCase):
         self.assertIsNone(helpers._learned_pass(self._dir(None)))
 
 
+class TakedownTest(unittest.TestCase):
+    def test_taken_down_record_reads(self):
+        from model_lobotomy import jobs_store
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = jobs_store.JobPaths("j1", Path(tmp))
+            self.assertIsNone(helpers._taken_down(paths))
+            paths.taken_down.parent.mkdir(parents=True)
+            paths.taken_down.write_text(json.dumps(
+                {"reason": "failed its 50-question confirm"}))
+            self.assertEqual(helpers._taken_down(paths)["reason"],
+                             "failed its 50-question confirm")
+
+    def test_taken_down_newest_job_earns_no_knob(self):
+        from unittest import mock
+        from model_lobotomy import jobs_store
+        with tempfile.TemporaryDirectory() as tmp:
+            jobs_dir = Path(tmp)
+            job = {"id": "pirate-9", "trait": "pirate",
+                   "status": "done", "updated": 10,
+                   "model_id": helpers.engine._active_model_id,
+                   "frozen": {"layer": 16, "dose": 0.5}}
+            paths = jobs_store.JobPaths("pirate-9", jobs_dir)
+            paths.trait.workdir.mkdir(parents=True)
+            paths.report.write_text(json.dumps({
+                "read_gate": {"pass": True},
+                "final": {"update_up": {"card": {"passed": True}}}}))
+            import torch
+            from safetensors.torch import save_file
+            save_file({"direction": torch.ones(8)},
+                      str(paths.direction))
+            paths.taken_down.write_text(json.dumps(
+                {"reason": "gain 0.225 at 50 fresh questions"}))
+
+            class Runner:
+                def list_jobs(self):
+                    return [job]
+
+            runner = Runner()
+            runner.jobs_dir = jobs_dir
+            with mock.patch.object(helpers.STATE, "get_runner",
+                                   return_value=runner):
+                self.assertIsNone(helpers._latest_knob("pirate"))
+
+
 class ResearchGateTest(unittest.TestCase):
     def test_page_cannot_turn_guard_off_without_owner_switch(self):
         import os

@@ -339,12 +339,14 @@ def _trait_items() -> list[dict]:
         fin = rep.get("final") or {}
         base = rep.get("prompt_baseline") or {}
         guard = rep.get("guard")
+        down = _taken_down(jobs_store.JobPaths(job["id"], runner.jobs_dir))
         items.append({
             "id": job["id"],
             "family": rep.get("trait", job.get("trait")),
             "model_id": job.get("model_id"),
             "version": 0,
-            "verdict": rep.get("verdict"),
+            "taken_down": down,
+            "verdict": "taken_down" if down else rep.get("verdict"),
             "layer": frozen.get("layer"),
             "dose": frozen.get("dose"),
             "created": job.get("created"),
@@ -1342,6 +1344,18 @@ def _chat_stream(session_id: str, message: str, rows, max_new: int):
         eng.lock.release()
 
 
+def _taken_down(paths) -> dict | None:
+    """The takedown record of a job, or None.
+
+    A taken-down behavior keeps its evidence. It offers no knob.
+    The record names why and when, so the shelf can say so.
+    """
+    try:
+        return json.loads(paths.taken_down.read_text())
+    except (OSError, ValueError):
+        return None
+
+
 def _knob_earned(paths) -> bool:
     """True when the job's report cards earn a knob under today's rule.
 
@@ -1374,6 +1388,11 @@ def _latest_knob(trait: str, allow_unearned: bool = False) -> dict | None:
              and j.get("frozen")
              and j.get("model_id", engine._active_model_id) == engine._active_model_id]
     cands.sort(key=lambda j: j.get("updated", 0), reverse=True)
+    if cands and _taken_down(jobs_store.JobPaths(
+            cands[0]["id"], runner.jobs_dir)) is not None:
+        # The newest job for this trait is taken down. The
+        # takedown wins over every older knob for the trait.
+        return None
     for job in cands:
         paths = jobs_store.JobPaths(job["id"], runner.jobs_dir)
         # Learned mix (ML v3): a fresh-confirm pass earns the knob
