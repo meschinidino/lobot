@@ -39,6 +39,10 @@ def main():
     ap.add_argument("--shots", default=None,
                     help="few-shot examples {q, a} for the positive "
                          "side, as a JSON file in the trait dir")
+    ap.add_argument("--extra-train", default=None,
+                    help="extra training questions {questions} as a "
+                         "JSON file in the trait dir; the training "
+                         "pool is the report tuning split plus these")
     ap.add_argument("--drift-w", type=float, default=None,
                     help="drift cost weight (default: learned.DRIFT_W); "
                          "higher keeps text cleaner at some strength")
@@ -46,9 +50,16 @@ def main():
     job = ROOT / a.job if not Path(a.job).is_absolute() else Path(a.job)
     report = json.loads((job / "trait" / "report.json").read_text())
     cfg = trait_eval.family_cfg(a.family)
-    tuning = report["splits"]["tuning"]
+    tuning = list(report["splits"]["tuning"])
+    if a.extra_train:
+        extra = json.loads(
+            (job / "trait" / a.extra_train).read_text())["questions"]
+        tuning = tuning + [q for q in extra if q not in tuning]
+        print("TRAINING POOL:", len(tuning), "questions "
+              "(split tuning plus --extra-train)", flush=True)
     fresh = json.loads(
         (job / "trait" / a.fresh).read_text())["questions"]
+    learned.check_disjoint(tuning, fresh)
 
     app_mod._active_model_id = a.model
     preset, spec = app_mod.active_preset(), app_mod.active_spec()

@@ -34,6 +34,15 @@ class FewShotPromptTest(unittest.TestCase):
         self.assertTrue(out.endswith("Question: Why?\nAnswer:"))
 
 
+class DisjointTest(unittest.TestCase):
+    def test_overlap_fails(self):
+        with self.assertRaises(ValueError):
+            learned.check_disjoint(["a?", "b?"], ["c?", "b?"])
+
+    def test_disjoint_passes(self):
+        learned.check_disjoint(["a?"], ["b?"])  # no raise
+
+
 class ValidateVectorsTest(unittest.TestCase):
     def test_valid_vectors_pass(self):
         out = learned.validate_vectors(
