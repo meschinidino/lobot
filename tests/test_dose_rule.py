@@ -78,7 +78,7 @@ class TuneTableTest(unittest.TestCase):
                 return 0.9 if reply.startswith("base") else 0.1
             return 0.1 if reply.startswith("base") else 0.9
 
-        def gen(eng, q, edits, max_new, cancel=None):
+        def gen(eng, q, edits, max_new, cancel=None, sink=None):
             return f"base:{q}" if not edits.vector else f"steered:{q}"
 
         spec = steer.ModelSpec("t", 8, 4, 8, "llama", False)
