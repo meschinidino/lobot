@@ -143,14 +143,14 @@ def dial_value(h, unit, b0: float, b1: float) -> float:
 def dial_for_index(tap: list, k: int, unit, b0: float, b1: float):
     """Dial value for generated token k, or None when the tap lags.
 
-    tap[0] is the prefill entry (prompt's last token); decode step k
-    appends tap[k + 1]. A short tap means extra forwards ran that the
-    tap cannot map, so the token ships without a value.
+    tap[0] is the prefill forward (prompt's last token), whose
+    logits produce token 0; tap[k] is the forward that produced
+    token k. A short tap means the token event arrived before its
+    forward landed in the tap, so the token ships without a value.
     """
-    j = k + 1
-    if j >= len(tap):
+    if k >= len(tap):
         return None
-    return dial_value(tap[j], unit, b0, b1)
+    return dial_value(tap[k], unit, b0, b1)
 
 
 def _build_hooks(model, spec, edits: EditSet, medians: dict,
@@ -347,6 +347,9 @@ class Engine:
         self.rung: int | None = None
         self.lock = threading.Lock()
         self._hooks: list = []  # (kind, layer, handle); every hook kind
+        # Batch jobs that discard the prefill split set this False
+        # for the job and pay nothing for the measurement.
+        self.measure_prefill = True
 
     @property
     def spec(self):
@@ -551,7 +554,8 @@ class Engine:
             gen = steer.generate_text(
                 self.model, self.tokenizer, prompt,
                 max_new_tokens=max_new_tokens, seed=seed, spec=spec,
-                cancel=cancel, wrapped=wrapped)
+                cancel=cancel, wrapped=wrapped,
+                measure_prefill=getattr(self, "measure_prefill", True))
         finally:
             self.remove_all()
         gen["hook_calls"] = counter[0]
