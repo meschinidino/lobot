@@ -287,7 +287,7 @@ class FakeGenModel(FakeModel):
 
     def generate(self, input_ids, max_new_tokens, do_sample,
                  pad_token_id=None, stopping_criteria=None,
-                 streamer=None):
+                 streamer=None, logits_processor=None):
         if self.fail_generate:
             raise RuntimeError("boom")
         self.forward(input_ids)
@@ -584,15 +584,20 @@ class DialTest(unittest.TestCase):
             engine.dial_value(torch.tensor([99.0, 0, 0, 0]), u, 3.0, 3.0),
             0.0)
 
-    def test_index_skips_prefill_entry(self):
+    def test_index_reads_producing_forward(self):
+        # tap[k] is the forward whose logits produced token k:
+        # tap[0] is the prefill. The old +1 skip compensated for
+        # the timed extra forward in generate_text, since removed.
         u = [1.0, 0.0, 0.0, 0.0]
         tap = [torch.zeros(4), torch.tensor([1.0, 0, 0, 0]),
                torch.tensor([2.0, 0, 0, 0])]
         self.assertAlmostEqual(
-            engine.dial_for_index(tap, 0, u, 0.0, 1.0), 1.0)
+            engine.dial_for_index(tap, 0, u, 0.0, 1.0), 0.0)
         self.assertAlmostEqual(
-            engine.dial_for_index(tap, 1, u, 0.0, 1.0), 2.0)
-        self.assertIsNone(engine.dial_for_index(tap, 2, u, 0.0, 1.0))
+            engine.dial_for_index(tap, 1, u, 0.0, 1.0), 1.0)
+        self.assertAlmostEqual(
+            engine.dial_for_index(tap, 2, u, 0.0, 1.0), 2.0)
+        self.assertIsNone(engine.dial_for_index(tap, 3, u, 0.0, 1.0))
 
     def test_tap_collects_last_position(self):
         model = FakeModel()

@@ -16,7 +16,8 @@ Load recipe (Eng D2 rung 1 + D3 + D9, verified by scripts/verify_load.py):
 from __future__ import annotations
 
 import torch
-from transformers import (AutoTokenizer, LlamaForCausalLM, Qwen3_5ForConditionalGeneration,
+from transformers import (AutoTokenizer, LlamaForCausalLM, LogitsProcessor,
+                          LogitsProcessorList, Qwen3_5ForConditionalGeneration,
                           StoppingCriteria, StoppingCriteriaList)
 
 MODEL_ID = "Qwen/Qwen3.5-4B"
@@ -423,6 +424,27 @@ class CancelCriteria(StoppingCriteria):
                           dtype=torch.bool, device=input_ids.device)
 
 
+class FirstTokenProcessor(LogitsProcessor):
+    """Records when generate() produces its first token. No-op scores.
+
+    Time to first token is prefill plus one decode step. It
+    replaces the old timed extra forward pass, which ran the
+    whole prompt a second time only to measure prefill (+5.5%
+    per generation, interleaved bench 2026-11-09). The processor
+    costs ~2%; batch callers that discard the split can skip it
+    with measure_prefill=False and pay nothing.
+    """
+
+    def __init__(self):
+        self.first_step_at: float | None = None
+
+    def __call__(self, input_ids, scores):
+        if self.first_step_at is None:
+            _sync_device()
+            self.first_step_at = time.perf_counter()
+        return scores
+
+
 class RowStreamer:
     """Per-row token queue for one generate call (single or batched).
 
@@ -454,15 +476,17 @@ class RowStreamer:
 
 
 def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed: int,
-                  spec: ModelSpec | None = None, cancel=None, wrapped: str | None = None):
+                  spec: ModelSpec | None = None, cancel=None, wrapped: str | None = None,
+                  measure_prefill: bool = True):
     """One greedy generation under whatever hooks are registered (T7 measured).
 
     Runs never exceed MAX_NEW_TOKENS_CAP (D6 budget). Returns the T1 keys
-    (text, new_tokens, token_ids, seconds) plus the T7 split: prefill_s (a
-    timed forward pass over the wrapped prompt under the same hook state),
-    decode_s (generate total minus prefill, clamped), tok_per_s, and peak
-    memory sampled via the torch.mps allocation API (max of post-prefill
-    and post-decode current_allocated_memory; MPS exposes no peak counter).
+    (text, new_tokens, token_ids, seconds) plus the T7 split: prefill_s
+    (time to the first generated token: prefill plus one decode step,
+    measured inside the same generate call), decode_s (generate total
+    minus prefill, clamped), tok_per_s, and peak memory sampled via the
+    torch.mps allocation API (post-decode current_allocated_memory;
+    MPS exposes no peak counter).
 
     `cancel` (a threading.Event, optional) stops decoding early when set;
     the result then carries cancelled=True and a partial text.
@@ -480,23 +504,24 @@ def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed
     device = str(next(model.parameters()).device)
     input_ids = tokenizer(wrapped, return_tensors="pt")["input_ids"].to(device)
     mem_samples: list[float] = []
-    with torch.no_grad():
-        _sync_device()
-        t0 = time.perf_counter()
-        model(input_ids)
-        _sync_device()
-        prefill_s = time.perf_counter() - t0
-    mem_samples.append(mps_current_mib() or 0.0)
+    timer = FirstTokenProcessor() if measure_prefill else None
     _sync_device()
     t0 = time.perf_counter()
     with torch.no_grad():
         stop = StoppingCriteriaList([CancelCriteria(cancel)]) if cancel is not None else None
-        out = model.generate(input_ids, max_new_tokens=max_new_tokens, do_sample=False,
-                             stopping_criteria=stop)
+        extra = ({"logits_processor": LogitsProcessorList([timer])}
+                 if timer is not None else {})
+        out = model.generate(
+            input_ids, max_new_tokens=max_new_tokens, do_sample=False,
+            stopping_criteria=stop, **extra)
     _sync_device()
     total_s = time.perf_counter() - t0
+    prefill_s = (timer.first_step_at - t0
+                 if timer is not None and timer.first_step_at is not None
+                 else None)
     mem_samples.append(mps_current_mib() or 0.0)
-    decode_s = max(0.0, total_s - prefill_s)
+    decode_s = (max(0.0, total_s - prefill_s)
+                if prefill_s is not None else total_s)
     new_ids = out[0][input_ids.shape[1]:]
     n_new = len(new_ids)
     return {
@@ -504,7 +529,8 @@ def generate_text(model, tokenizer, user_text: str, *, max_new_tokens: int, seed
         "new_tokens": n_new,
         "token_ids": new_ids.tolist(),
         "seconds": round(total_s, 1),
-        "prefill_s": round(prefill_s, 2),
+        "prefill_s": (round(prefill_s, 2)
+                      if prefill_s is not None else None),
         "decode_s": round(decode_s, 2),
         "tok_per_s": round(n_new / total_s, 1) if total_s > 0 else 0.0,
         "peak_mib": round(max(mem_samples), 1),
@@ -596,21 +622,19 @@ def generate_text_with_streamer(model, tokenizer, user_text: str, *,
     device = str(next(model.parameters()).device)
     input_ids = tokenizer(wrapped, return_tensors="pt")["input_ids"].to(device)
     mem_samples: list[float] = []
-    with torch.no_grad():
-        _sync_device()
-        t0 = time.perf_counter()
-        model(input_ids)
-        _sync_device()
-        prefill_s = time.perf_counter() - t0
-    mem_samples.append(mps_current_mib() or 0.0)
+    timer = FirstTokenProcessor()
     _sync_device()
     t0 = time.perf_counter()
     with torch.no_grad():
         stop = StoppingCriteriaList([CancelCriteria(cancel)]) if cancel is not None else None
         out = model.generate(input_ids, max_new_tokens=max_new_tokens, do_sample=False,
-                             stopping_criteria=stop, streamer=streamer)
+                             stopping_criteria=stop,
+                             logits_processor=LogitsProcessorList([timer]),
+                             streamer=streamer)
     _sync_device()
     total_s = time.perf_counter() - t0
+    prefill_s = (timer.first_step_at - t0
+                 if timer.first_step_at is not None else total_s)
     mem_samples.append(mps_current_mib() or 0.0)
     decode_s = max(0.0, total_s - prefill_s)
     new_ids = out[0][input_ids.shape[1]:]
