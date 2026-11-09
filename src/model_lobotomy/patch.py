@@ -54,6 +54,21 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def signed_dose(meta: dict) -> float:
+    """The dose of the edit that earned the patch, with its sign.
+
+    meta["dose"] stays the tuned magnitude (the workbench dial
+    and older patches read it that way). A patch earned by
+    update_down was measured at negative dose; fixed-strength
+    consumers (GGUF export, re-verify) must use this value, or
+    they ship the opposite edit from the one the card measured.
+    """
+    dose = float(meta["dose"])
+    if (meta.get("recipe") or {}).get("verb") == "update_down":
+        return -dose
+    return dose
+
+
 def save_patch(path, *, direction, layer: int, dose: float,
                trait: str, recipe: dict, report_card: dict,
                guard: dict, fingerprint: dict,
@@ -260,7 +275,7 @@ def export_control_vector(patch_path, out_gguf) -> dict:
     writer.write_kv_data_to_file()
     writer.write_tensors_to_file()
     writer.close()
-    strength = float(meta["dose"]) * float(meta["scale"])
+    strength = signed_dose(meta) * float(meta["scale"])
     return {"strength": strength, "layer": layer,
             "flags": ["--control-vector-scaled",
                       f"{out_gguf}:{strength}",
