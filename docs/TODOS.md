@@ -9,6 +9,51 @@ Update `CHANGELOG.md` in the same change.
 
 ## Open
 
+### Metrics audit follow-ups (2026-11-08)
+- Held-out test bank: the 120-prompt bank leaves the reserve
+  split empty (60/30/30/0). Grow the bank under a new
+  `BANK_VERSION` so reserve prompts exist for re-verify and a
+  read gate that never sees tuning or final prompts. Blocked on
+  prompt authoring, not code.
+- Persistent final-split ledger: the ledger lives in one
+  process and the seed is caller-free, so seed shopping across
+  runs is possible. Needs an on-disk ledger keyed by trait,
+  model, bank hash, and a pinned seed set. Product decision on
+  the seed policy first.
+- Verdict gating on headline eligibility: fake/noop ports, fast
+  schedule, and unenforced guard now flag a run as
+  headline-ineligible in `metrics.comparability`, but the knob
+  verdict itself is unchanged. Guard is off by default in every
+  caller today, so gating the verdict on it would void all
+  current knobs. Needs a product decision.
+- Request-to-artifact latency: `report.seconds` covers compute
+  stages only. Model load, GPU queue wait, and follow-up jobs
+  need their own timers before any user-visible speed claim.
+- Independent scoring: one judge family scores effect and
+  fluency. A judge-swap or human check needs fresh generations
+  and a pre-registered sampling protocol. The protocol is
+  undecided.
+- Guard coverage: Create guard checks only the +dose vector at
+  24 tokens. update_down and delete are unchecked, and the
+  guard prompt sets are small and fixed.
+- Down control mismatch: update_down (negative vector addition)
+  is carded against a shuffled ablation control, not a shuffled
+  negative-dose vector. The control strength does not track
+  dose. Fixing it changes down/delete numbers, so it needs its
+  own change and re-measurement.
+- Signed dose consumers: GGUF export and re-verify now use
+  `patch.signed_dose`. Combine, Pareto, and repair follow-ups
+  still read the tuned magnitude; audit each before a down
+  knob ships through them.
+- Repeated timing protocol: speed claims still rest on single
+  runs. A fixed-environment repeated-timing protocol (median
+  of N, same machine state) is needed before ranking small
+  speed differences.
+- Real-weights timing baseline: no wall-clock split (generation
+  vs judge vs capture vs IPC) has been measured on weights.
+  The counters now exist; one timed Create on the model lane
+  is the next step before ranking hot paths.
+
 ### SH: ship to 10 (specs/SH-ship-to-10.md)
 - Phase A done 2026-11-08: PR #61 merged to develop, gate on
   the merged tree passed (873 tests), develop merged to main
