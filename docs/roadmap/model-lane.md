@@ -210,3 +210,17 @@ Format: `YYYY-MM-DD HH:MM ET  <agent>  <spec ID>  <model id>  start|end  <note>`
 2026-11-09 02:30 ET  muse  METRICS-C  meta-llama/Llama-3.2-3B-Instruct  end  batched lane pirate seed7: 1372.8s vs A 2212.6s (0.62x), verdict knob, report logs/metrics_pirate_c
 2026-11-09 02:32 ET  muse  METRICS-C2  meta-llama/Llama-3.2-3B-Instruct  start  cheerful seed7 full guard-on batched lane, second-trait check on batched quality
 2026-11-09 02:55 ET  muse  METRICS-C2  meta-llama/Llama-3.2-3B-Instruct  end  cheerful seed7 batched: 1339.1s, verdict blocked (guard), report logs/metrics_cheerful_c
+2026-11-09 17:38 ET  muse  METRICS-X  meta-llama/Llama-3.2-3B-Instruct  start  counterbalanced crossover: L10@1.0 and L13@0.5, sequential vs batched, final split seed 7, no retuning
+2026-11-09 17:47 ET  muse  METRICS-X  meta-llama/Llama-3.2-3B-Instruct  end  crossover done: batching neutral at fixed edit (paired diff -0.004 and 0.000), gen 9x faster; A-vs-C gap is edit choice
+2026-11-09 18:09 ET  muse  METRICS-D  meta-llama/Llama-3.2-3B-Instruct  start  payoff Create pirate seed 7 full guard-on, batched lane, dose rule fluency-first-v4, cold capture cache
+2026-11-09 18:19 ET  muse  METRICS-D  meta-llama/Llama-3.2-3B-Instruct  end  payoff run done: frozen L10@1.0 (v4), paired 0.815, 562.4s vs A 2212.6s at equal work counters; verdict blocked by guard, same as A
+2026-11-09 18:52 ET  muse  DEMO5  meta-llama/Llama-3.2-3B-Instruct  start  demo slate measure: 5 pinned knob jobs x 5 shared fresh prompts, plain vs steered
+2026-11-09 18:58 ET  muse  DEMO5  meta-llama/Llama-3.2-3B-Instruct  end  slate measured on 30 job-prompt rows (5 slate + noir backup, then 5 alternates): pirate fv2, cowboy, catholic, sports, shakespeare fv3 pass; pirate L13@0.5 and noir dead on fresh prompts
+2026-11-09 19:28 ET  muse  DEMO5-ES  meta-llama/Llama-3.2-3B-Instruct  start  Spanish attempts: same 5 slate jobs x 5 translated prompts, plain vs steered
+2026-11-09 19:31 ET  muse  DEMO5-ES  meta-llama/Llama-3.2-3B-Instruct  end  Spanish attempts fail: gains 0.001-0.045 for pirate, cowboy, catholic, shakespeare (sports 0.296); English vectors break Spanish text. Demo prompts stay in English
+2026-11-09 20:04 ET  muse  PIRATE-ES  meta-llama/Llama-3.2-3B-Instruct  start  ES pirate spike: derive direction from Spanish contrast captures, tune with v4, measure on 5 ES demo prompts
+2026-11-09 20:16 ET  muse  PIRATE-ES  meta-llama/Llama-3.2-3B-Instruct  end  spike FAIL both versions: v1 L7@1.0 gain 0.002 (40 extraction prompts, seps NaN); v2 L14@0.5 gain 0.027 (60 prompts). Prompt-derived ES direction gives friendly tone, no pirate voice. Cut criteria not met
+2026-11-09 21:00 ET  muse  PIRATE-ES2  meta-llama/Llama-3.2-3B-Instruct  start  answer-derived ES pirate: captures on generated pirate vs plain Spanish answers, tune v4, measure on 5 demo prompts
+2026-11-09 21:11 ET  muse  PIRATE-ES2  meta-llama/Llama-3.2-3B-Instruct  end  answer-derived also FAIL: frozen L11@1.0, tuning gain 0.039, demo gain 0.002. Both ES derivation routes fail with current machinery; ES closed for this demo
+2026-11-09 21:12 ET  muse  REHEARSAL  meta-llama/Llama-3.2-3B-Instruct  start  live server rehearsal: 5 demo traits via POST /api/update on hero prompts
+2026-11-09 21:15 ET  muse  REHEARSAL  meta-llama/Llama-3.2-3B-Instruct  end  rehearsal done via API (logs/demo_rehearsal.json): cowboy and catholic exact at 1.0; shakespeare cap 0.5; sports cap 0.5 (1.0 collapses to FOLAND loop); pirate shelf serves L13 direction, voice shows at dial 1.0. Server stopped
