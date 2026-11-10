@@ -6,8 +6,8 @@ GEN={0.0:{"judge":0.1,"nll":1.0,"fluency":0.9},0.5:{"judge":0.4,"nll":1.5,"fluen
 class DoseTest(unittest.TestCase):
     def test_fluency_first_rule_is_default(self):
         r=dose_rules.get_dose_rule()
-        self.assertEqual(r.name,"fluency-first-v3")
-        self.assertEqual(r.params,{"fluency_floor":0.5,"fluency_p10_floor":0.3})
+        self.assertEqual(r.name,"fluency-first-v4")
+        self.assertEqual(r.params,{"fluency_floor":0.5,"fluency_tail_floor":0.2,"fluency_p10_floor":0.3})
         # NLL no longer gates: dose 1.0 is fluent, so it wins.
         self.assertEqual(r.coherent(GEN),[0.5,1.0])
         self.assertEqual(r.choose_gen(GEN),1.0)

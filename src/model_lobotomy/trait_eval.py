@@ -38,6 +38,7 @@ sys.path.insert(0, str(ROOT))
 from model_lobotomy import engine as engine_mod  # noqa: E402
 from model_lobotomy import evaluation as E  # noqa: E402
 from model_lobotomy import guard as guard_mod  # noqa: E402
+from model_lobotomy import metrics as metrics_mod  # noqa: E402
 from model_lobotomy import pareto as pareto_mod  # noqa: E402
 from model_lobotomy import steer  # noqa: E402
 
@@ -87,18 +88,20 @@ EARLY_STOP_CI_MARGIN = 0.05
 
 CAPTURE_CACHE_VERSION = 1
 
-# FD dose rule (fluency-first-v3): a coherent dose keeps the mean
+# FD dose rule (fluency-first-v4): a coherent dose keeps the mean
 # fluency judge score at or above FLUENCY_FLOOR (the judge's own
-# yes/no boundary) and the worst-decile fluency at or above
-# FLUENCY_P10_FLOOR; among coherent doses the highest judge score
+# yes/no boundary) and the worst-decile mean fluency at or above
+# FLUENCY_TAIL_FLOOR; among coherent doses the highest judge score
 # wins. The old NLL cap held weak traits under their effective dose:
 # repeated tokens are easy to predict, so NLL stays low on collapsed
 # text, and NLL rise also blocks fluent trait text. Fluency is the
 # direct coherence signal. NLL stays in the table as a cost report.
-DOSE_RULE = "fluency-first-v3"
+# FLUENCY_P10_FLOOR stays for the final-split and registry gates.
+DOSE_RULE = "fluency-first-v4"
 NLL_MAX_RISE = 1.0
 FLUENCY_FLOOR = 0.5
 FLUENCY_P10_FLOOR = 0.3
+FLUENCY_TAIL_FLOOR = 0.2
 
 
 def _wp(workdir):
@@ -728,9 +731,28 @@ def _vec_edit(layer, unit, med, dose):
     return engine_mod.VectorEdit(layer, tuple(unit.tolist()), float(med), float(dose))
 
 
-def _gen(eng, prompt, edits, max_new=GEN_TOKENS, seed=0, cancel=None):
-    return eng.run(prompt, edits, medians={}, max_new_tokens=max_new,
-                   seed=seed, cancel=cancel)["text"]
+def _gen(eng, prompt, edits, max_new=GEN_TOKENS, seed=0, cancel=None,
+         sink=None):
+    result = eng.run(prompt, edits, medians={}, max_new_tokens=max_new,
+                     seed=seed, cancel=cancel)
+    if sink is not None:
+        sink.append(result)
+    return result["text"]
+
+
+def _elapsed(t_stage: float) -> float:
+    """Stage seconds on a monotonic clock, millisecond resolution."""
+    return round(time.perf_counter() - t_stage, 3)
+
+
+def _require_len(name: str, xs, n: int) -> None:
+    """Fail the run when a lane returns fewer rows than prompts.
+
+    A short list used to vanish into zip loops: dropped prompts
+    left the denominator and the surviving mean looked better.
+    """
+    if len(xs) != n:
+        raise ValueError(f"{name} returned {len(xs)} rows for {n} prompts")
 
 
 class TorchLane:
@@ -755,25 +777,76 @@ class TorchLane:
                        if _kind == "local" else _judges.get_judge(_kind))
         self._judged = self._judge._cache
         self._nlls: dict[tuple, float] = {}
+        # Work counters: lane requests, the denominator a speed
+        # number must carry. score/nll counts are logical requests
+        # (before memoization); the *_unique counts in counters()
+        # are the distinct executed evaluations. new_tokens is
+        # invalidated (None) when any generation goes uncounted:
+        # a partial total must not read as a complete one.
+        self._work = {"gen_batches": 0, "gen_prompts": 0,
+                      "new_tokens": None, "score_pairs": 0,
+                      "nll_pairs": 0}
+        self._tokens_complete = True
 
     def info(self) -> dict:
         return {"lane": self.name}
 
+    def counters(self) -> dict:
+        out = dict(self._work)
+        if not self._tokens_complete:
+            out["new_tokens"] = None
+        out["judge_unique_pairs"] = len(self._judged)
+        out["nll_unique_pairs"] = len(self._nlls)
+        return out
+
+    def _count_tokens(self, result) -> None:
+        n = result.get("new_tokens") if isinstance(result, dict) else None
+        if n is None:
+            self._tokens_complete = False
+            return
+        self._work["new_tokens"] = (self._work["new_tokens"] or 0) + int(n)
+
     def gen_many(self, prompts, edits, max_new, cancel=None) -> list[str]:
+        # Batched path: one generate call for the whole list.
+        # Measured 2026-11-09 on MPS: 30 prompts 69.8s sequential
+        # vs 8.8s batched, 29/30 token-identical (padding moves
+        # numerics on borderline tokens). Engines without a batch
+        # API (test fakes) keep the sequential loop below.
+        run_many = getattr(self.eng, "run_many", None)
+        if callable(run_many) and len(prompts) > 1:
+            self._work["gen_batches"] += 1
+            self._work["gen_prompts"] += len(prompts)
+            rows = run_many(list(prompts), edits, medians={},
+                            max_new_tokens=max_new, seed=0,
+                            cancel=cancel)
+            _require_len("run_many rows", rows, len(prompts))
+            for row in rows:
+                self._count_tokens(row)
+            return [row["text"] for row in rows]
+        self._work["gen_batches"] += 1
+        self._work["gen_prompts"] += len(prompts)
         out = []
         for q in prompts:
             _check(cancel)
+            sink: list = []
             out.append(_gen(self.eng, q, edits, max_new=max_new,
-                            cancel=cancel))
+                            cancel=cancel, sink=sink))
+            self._count_tokens(sink[0] if sink else None)
         return out
 
     def score_many(self, pairs, label) -> list[float]:
-        return self._judge.score_many(pairs, label)
+        self._work["score_pairs"] += len(pairs)
+        scores = self._judge.score_many(pairs, label)
+        _require_len("score_many", scores, len(pairs))
+        return scores
 
     def nll_many(self, pairs) -> list[float]:
+        self._work["nll_pairs"] += len(pairs)
         keys = [(q, r) for q, r in pairs]
         todo = list(dict.fromkeys(k for k in keys if k not in self._nlls))
-        self._nlls.update(zip(todo, self._nll_raw(todo)))
+        raw = self._nll_raw(todo)
+        _require_len("nll_many", raw, len(todo))
+        self._nlls.update(zip(todo, raw))
         return [self._nlls[k] for k in keys]
 
     def _judge_raw(self, keys) -> list[float]:
@@ -838,6 +911,12 @@ class LlamaLane(TorchLane):
         outs = self.daemon.gen_ids_many(
             [self._wrap(q) for q in prompts], edits, max_new,
             cancel=cancel)
+        _require_len("gen_ids_many", outs, len(prompts))
+        self._work["gen_batches"] += 1
+        self._work["gen_prompts"] += len(prompts)
+        self._work["new_tokens"] = (
+            (self._work["new_tokens"] or 0)
+            + sum(len(o) for o in outs))
         _check(cancel)
         return [self.tok.decode(o, skip_special_tokens=True)
                 for o in outs]
@@ -856,11 +935,18 @@ class LlamaLane(TorchLane):
                 items.append({"ids": self._wrap(judge_prompt(q, r, facet)),
                               "last_ids": [y, n]})
         self._free_torch_cache()
-        for i, res in zip(idx, self.daemon.score_many(items)):
+        scored = self.daemon.score_many(items)
+        _require_len("score_batch", scored, len(items))
+        for i, res in zip(idx, scored):
             ly, ln = res["last"]
             s = 1.0 / (1.0 + math.exp(ln - ly))
             best[i] = min(best.get(i, 1.0), s)
-        return [best.get(i, 0.0) for i in range(len(keys))]
+        missing = [i for i in range(len(keys)) if i not in best]
+        if missing:
+            raise ValueError(
+                f"score_batch left {len(missing)} of {len(keys)} judge "
+                f"keys unscored; refusing to pad them")
+        return [best[i] for i in range(len(keys))]
 
     def _nll_raw(self, keys) -> list[float]:
         out = [float("nan")] * len(keys)
@@ -874,7 +960,12 @@ class LlamaLane(TorchLane):
             idx.append(i)
             items.append({"ids": ctx + rep, "from": len(ctx)})
         self._free_torch_cache()
-        for i, res in zip(idx, self.daemon.score_many(items)):
+        scored = self.daemon.score_many(items)
+        _require_len("nll score_batch", scored, len(items))
+        for i, res in zip(idx, scored):
+            if not res.get("lp"):
+                raise ValueError("nll score_batch returned no token "
+                                 "scores for a non-empty reply")
             out[i] = -sum(res["lp"]) / len(res["lp"])
         return out
 
@@ -887,7 +978,8 @@ def derive_direction(eng, spec, cfg, prompts):
 
 def _default_rule():
     from model_lobotomy import dose_rules as _dr
-    return _dr.FluencyFirstRule(FLUENCY_FLOOR, FLUENCY_P10_FLOOR)
+    return _dr.FluencyFirstV4Rule(FLUENCY_FLOOR, FLUENCY_TAIL_FLOOR,
+                                  FLUENCY_P10_FLOOR)
 
 
 def coherent_doses(gen: dict) -> list[float]:
@@ -948,16 +1040,27 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
             done += len(tuning)
             if progress is not None:
                 progress("tune", done, total)
+            _require_len("tuning generations", rs, len(tuning))
             js = lane.score_many(list(zip(tuning, rs)), cfg["judge"])
             fl = lane.score_many(list(zip(tuning, rs)),
                                  pareto_mod.FLUENCY_LABEL)
+            _require_len("tuning judge scores", js, len(tuning))
+            _require_len("tuning fluency scores", fl, len(tuning))
             nl = lane.nll_many(
                 list(zip(tuning, rs))
                 + [(f"{cfg['pos']}\n\n{q}", r) for q, r in zip(tuning, rs)])
+            _require_len("tuning nll scores", nl, 2 * len(tuning))
             ns = [min(a, b) for a, b in zip(nl[:len(rs)], nl[len(rs):])]
+            # Per-prompt rows ride along so every tuning mean in the
+            # report can be recomputed from the stored artifact.
+            from model_lobotomy import dose_rules as _dr
             gen[d] = {"judge": sum(js) / len(js), "nll": sum(ns) / len(ns),
                       "fluency": sum(fl) / len(fl),
-                      "fluency_p10": _p10(fl)}
+                      "fluency_p10": _p10(fl),
+                      "fluency_tail_mean": _dr.worst_decile_mean(fl),
+                      "n": len(tuning),
+                      "judge_per_prompt": list(js),
+                      "fluency_per_prompt": list(fl)}
         table[L] = gen
         bd = (dose_rule.choose_gen(gen) if dose_rule is not None
               else best_dose(gen))
@@ -1014,12 +1117,16 @@ def _loop_gains(eng, spec, cfg, final, edits, sign, params,
     max_new = params["gen_tokens"]
     final = list(final)
     bases = _base_texts(eng, spec, lane, base_cache, final, max_new, cancel)
+    _require_len("base generations", bases, len(final))
     sts = lane.gen_many(final, edits, max_new, cancel=cancel)
+    _require_len("steered generations", sts, len(final))
     _check(cancel)
     if progress is not None:
         progress(stage, len(final), len(final))
     jbs = lane.score_many(list(zip(final, bases)), cfg["judge"])
     jss = lane.score_many(list(zip(final, sts)), cfg["judge"])
+    _require_len("base judge scores", jbs, len(final))
+    _require_len("steered judge scores", jss, len(final))
     gains, pairs = [], []
     for q, base, st, jb, js in zip(final, bases, sts, jbs, jss):
         gains.append(js - jb if sign > 0 else jb - js)
@@ -1039,13 +1146,19 @@ def _gain_steps(eng, spec, cfg, label, qs, t_prompts, t_edits,
     """
     _check(cancel)
     bases = _base_texts(eng, spec, lane, base_cache, qs, max_new, cancel)
+    _require_len("base generations", bases, len(qs))
     sts = lane.gen_many(t_prompts, t_edits, max_new, cancel=cancel)
+    _require_len("trait generations", sts, len(qs))
     _check(cancel)
     cts = lane.gen_many(c_prompts, c_edits, max_new, cancel=cancel)
+    _require_len("control generations", cts, len(qs))
     _check(cancel)
     jbs = lane.score_many(list(zip(qs, bases)), label)
     jss = lane.score_many(list(zip(qs, sts)), label)
     jcs = lane.score_many(list(zip(qs, cts)), label)
+    _require_len("base judge scores", jbs, len(qs))
+    _require_len("trait judge scores", jss, len(qs))
+    _require_len("control judge scores", jcs, len(qs))
     out = []
     for q, base, st, jb, js, jc in zip(qs, bases, sts, jbs, jss, jcs):
         tg = js - jb if tsign > 0 else jb - js
@@ -1261,7 +1374,7 @@ def baseline_top1(eng, spec, cfg, label, tuning, final,
 def _stage_extract(ctx):
     eng, spec, cfg, ext, out, progress, cancel = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["ext"], ctx["out"], ctx["progress"], ctx["cancel"])
     model_id, revision, trait_name, seed = ctx["model_id"], ctx["revision"], ctx["trait_name"], ctx["seed"]
-    t_stage = time.time()
+    t_stage = time.perf_counter()
     from model_lobotomy import prompt_bank as bank_mod
     cc_path = capture_cache_path(ROOT / "store", model_id, trait_name,
                                  seed)
@@ -1300,25 +1413,30 @@ def _stage_extract(ctx):
             "steer_score": round(s["steer_score"], 3)}
         for L, s in _ls.items()}
     ctx["A"], ctx["B"] = A, B
-    ctx["timings"]["extract"] = round(time.time() - t_stage, 1)
+    ctx["timings"]["extract"] = _elapsed(t_stage)
     return ctx
 
 
 def _stage_tune(ctx):
     eng, spec, cfg, med, tun, out, progress, cancel, params, base_cache, lane = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["med"], ctx["tun"], ctx["out"], ctx["progress"], ctx["cancel"], ctx["params"], ctx["base_cache"], ctx["lane"])
     A, B, workdir, t0, timings = ctx["A"], ctx["B"], ctx["workdir"], ctx["t0"], ctx["timings"]
-    t_stage = time.time()
+    t_stage = time.perf_counter()
     from model_lobotomy import dose_rules as _dose_rules
     _rule = _dose_rules.get_dose_rule()
     frozen, table, cand_stats = tune_layer_dose(
         eng, spec, cfg, med, A, B, tun, cfg["judge"],
         cancel=cancel, progress=progress, params=params,
         base_cache=base_cache, lane=lane, dose_rule=_rule)
-    ctx["timings"]["tune"] = round(time.time() - t_stage, 1)
+    ctx["timings"]["tune"] = _elapsed(t_stage)
     out["tuning"] = {"rule": {"name": _rule.name, **_rule.params},
                      "candidates": cand_stats,
                      "table": {str(L): {str(d): v for d, v in g.items()}
                                for L, g in table.items()}}
+    if isinstance(out.get("provenance"), dict):
+        # Selection breadth: every (layer, dose) cell scored on
+        # tuning. A wider search overfits more; the count travels.
+        out["provenance"]["candidates_tried"] = sum(
+            len(g) for g in table.values())
     if frozen is None:
         out["frozen"] = None
         out["eligibility"] = {"read": False, "update_up": False,
@@ -1326,6 +1444,8 @@ def _stage_tune(ctx):
                               "knob": False}
         out["verdict"] = "no_knob"
         out["timings"] = timings
+        out["metrics"] = metrics_mod.build_metrics(
+            out, elapsed=_elapsed(t0), refusal_fn=refusal_gate)
         _write_report(workdir, out, t0)
         ctx["stop"]=True
         return ctx
@@ -1341,13 +1461,13 @@ def _stage_tune(ctx):
 
 def _stage_read_gate(ctx):
     eng, spec, cfg, frozen, med, ext, tun, fin, out, cancel, progress, params, base_cache, lane, timings = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["frozen"], ctx["med"], ctx["ext"], ctx["tun"], ctx["fin"], ctx["out"], ctx["cancel"], ctx["progress"], ctx["params"], ctx["base_cache"], ctx["lane"], ctx["timings"])
-    t_stage = time.time()
+    t_stage = time.perf_counter()
     agree, disag = read_gate(
         eng, spec, cfg, frozen, med,
         {"fit": ext[:20], "heldout": ext[20:] + tun + fin},
         cancel=cancel, progress=progress, params=params,
         base_cache=base_cache, lane=lane)
-    timings["read_gate"] = round(time.time() - t_stage, 1)
+    timings["read_gate"] = _elapsed(t_stage)
     out["read_gate"] = {"agreement": agree, "disagreements": disag,
                         "pass": agree["margin"] >= 0.10}
     return ctx
@@ -1356,7 +1476,7 @@ def _stage_read_gate(ctx):
 def _stage_final(ctx):
     eng, spec, cfg, frozen, med, fin, out, cancel, progress, params, base_cache, lane, timings = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["frozen"], ctx["med"], ctx["fin"], ctx["out"], ctx["cancel"], ctx["progress"], ctx["params"], ctx["base_cache"], ctx["lane"], ctx["timings"])
     ext = ctx["ext"]
-    t_stage = time.time()
+    t_stage = time.perf_counter()
     frozen_unit = frozen["unit"]
     frozen_layer = frozen["layer"]
     frozen_dose = frozen["dose"]
@@ -1391,7 +1511,7 @@ def _stage_final(ctx):
                       cancel=cancel, progress=progress, stage="final",
                       n0=params["final_n0"], nmax=params["final_nmax"],
                       max_new=max_new, base_cache=base_cache, lane=lane)
-    timings["final"] = round(time.time() - t_stage, 1)
+    timings["final"] = _elapsed(t_stage)
     cards = {
         "update_up": E.report_card_pass(up["gains"], up["control"]),
         "update_down": E.report_card_pass(dn["gains"], dn["control"]),
@@ -1403,10 +1523,13 @@ def _stage_final(ctx):
                       "pairs": up["pairs"]},
         "control_gains": up["control"],
         "control_removal_gains": dn["control"],
+        "control_delete_gains": dele["control"],
         "update_down": {"gains": dn["gains"],
-                        "card": _json_card(cards["update_down"])},
+                        "card": _json_card(cards["update_down"]),
+                        "pairs": dn["pairs"]},
         "delete": {"gains": dele["gains"],
-                   "card": _json_card(cards["delete"])},
+                   "card": _json_card(cards["delete"]),
+                   "pairs": dele["pairs"]},
     }
     out["early_stop"] = {
         "update_up": {"n": up["n"], "stopped_early": up["stopped_early"]},
@@ -1422,11 +1545,11 @@ def _stage_final(ctx):
 
 def _stage_baseline(ctx):
     eng, spec, cfg, tun, fin, out, cancel, progress, params, base_cache, lane, timings = (ctx["eng"], ctx["spec"], ctx["cfg"], ctx["tun"], ctx["fin"], ctx["out"], ctx["cancel"], ctx["progress"], ctx["params"], ctx["base_cache"], ctx["lane"], ctx["timings"])
-    t_stage = time.time()
+    t_stage = time.perf_counter()
     base = baseline_top1(eng, spec, cfg, cfg["judge"], tun, fin,
                          cancel=cancel, progress=progress, params=params,
                          base_cache=base_cache, lane=lane)
-    timings["baseline"] = round(time.time() - t_stage, 1)
+    timings["baseline"] = _elapsed(t_stage)
     base_card = E.report_card_pass(base["final_gains"],
                                    base["neutral_gains"])
     out["prompt_baseline"] = {
@@ -1446,7 +1569,7 @@ def _stage_pareto(ctx):
     cfg, fin, out, cancel, progress, params, base_cache, lane, timings = (ctx["cfg"], ctx["fin"], ctx["out"], ctx["cancel"], ctx["progress"], ctx["params"], ctx["base_cache"], ctx["lane"], ctx["timings"])
     frozen_layer, frozen_unit, frozen_dose = ctx["frozen_layer"], ctx["frozen_unit"], ctx["frozen_dose"]
     med, base = ctx["med"], ctx["base"]
-    t_stage = time.time()
+    t_stage = time.perf_counter()
     if progress is not None:
         progress("pareto", 0, 1)
     out["pareto"] = pareto_mod.run_pareto(
@@ -1454,14 +1577,14 @@ def _stage_pareto(ctx):
         scale=med[frozen_layer], frozen_dose=frozen_dose,
         instruction=base["top"], max_new=params["gen_tokens"],
         base_cache=base_cache, cancel=cancel, progress=progress)
-    timings["pareto"] = round(time.time() - t_stage, 1)
+    timings["pareto"] = _elapsed(t_stage)
     return ctx
 
 
 def _stage_guard(ctx):
     eng, frozen, med, out, progress, timings, seed = (ctx["eng"], ctx["frozen"], ctx["med"], ctx["out"], ctx["progress"], ctx["timings"], ctx["seed"])
     guard, research_mode, base_cache = ctx["guard_flag"], ctx["research_mode"], ctx["base_cache"]
-    t_stage = time.time()
+    t_stage = time.perf_counter()
     if progress is not None:
         progress("guard", 0, 1)
     frozen_edits = engine_mod.EditSet(vector=(_vec_edit(
@@ -1473,7 +1596,7 @@ def _stage_guard(ctx):
         eng, frozen_edits, medians=med, max_new_tokens=24, seed=seed,
         judge_fn=guard_mod.refusal_judge_fn(eng),
         research_mode=not enforce)
-    timings["guard"] = round(time.time() - t_stage, 1)
+    timings["guard"] = _elapsed(t_stage)
     if progress is not None:
         progress("guard", 1, 1)
     out["guard"] = {**gv.report,
@@ -1498,24 +1621,42 @@ def _stage_verdict(ctx):
     else:
         out["verdict"] = "knob" if elig["knob"] else "no_knob"
     out["eligibility"] = elig
+    # Record every verb's final, pass or fail, under a per-verb key.
+    # The old key omitted the verb, so a second eligible verb raised
+    # in the ledger after all model work and before the report.
     ledger = E.FinalSplitLedger()
     for verb in ("update_up", "update_down", "delete"):
-        if elig[verb]:
-            ledger.record_final(
-                f"{trait_name}@tuning-{seed}", instructions=cfg["pos"],
-                layer=frozen["layer"], dose=frozen["dose"], prompts=fin)
-    out["ledger"] = {"recorded": [v for v in
-                                  ("update_up", "update_down", "delete")
-                                  if elig[v]]}
+        ledger.record_final(
+            f"{trait_name}@{verb}-tuning-{seed}",
+            instructions=cfg["pos"],
+            layer=frozen["layer"], dose=frozen["dose"], prompts=fin)
+    out["ledger"] = {"recorded": ["update_up", "update_down", "delete"]}
+    if isinstance(out.get("provenance"), dict):
+        out["provenance"]["finals_recorded"] = sum(
+            ledger.candidates_tried().values())
+    out["metrics"] = metrics_mod.build_metrics(
+        out, elapsed=_elapsed(t0), refusal_fn=refusal_gate)
+    lane = ctx.get("lane")
+    if lane is not None and hasattr(lane, "counters"):
+        out["metrics"]["work"] = lane.counters()
+    # The patch must carry the card of the verb that earned it. A
+    # down-only knob used to ship the (failing) update_up card.
+    earning = next((v for v in ("update_up", "update_down")
+                    if elig.get(v)), "update_up")
     from model_lobotomy import patch as patch_mod
+    params = ctx.get("params") or {}
     patch_mod.save_patch(
         _wp(workdir).patch, direction=frozen["unit"],
         layer=frozen["layer"], dose=frozen["dose"],
         scale=float(med[frozen["layer"]]), trait=trait_name,
         recipe={"instruction": cfg["pos"], "layer": frozen["layer"],
                 "dose": frozen["dose"], "seed": seed,
-                "judge": cfg["judge"]},
-        report_card=_json_card(cards["update_up"]),
+                "judge": cfg["judge"], "verb": earning,
+                "gen_tokens": params.get("gen_tokens"),
+                "schedule": out.get("schedule"),
+                "bank_sha256": (out.get("provenance") or {}).get(
+                    "bank_sha256")},
+        report_card=_json_card(cards[earning]),
         guard=out.get("guard", {}), fingerprint=out["fingerprint"])
     out["patch"] = "knob.lobot"
     _write_report(workdir, out, t0)
@@ -1537,6 +1678,28 @@ def _ports() -> dict:
             "direction": s.direction_kind, "dose_rule": s.dose_rule_kind}
 
 
+def _judge_report(model_id) -> dict:
+    """The judge block, from effective settings (never a literal).
+
+    The old block hardcoded kind="local" even under
+    LOBOT_JUDGE=meta_api/fake, so the report mislabeled its scorer.
+    """
+    from model_lobotomy.config import get_settings
+    s = get_settings()
+    kind = s.judge_kind
+    if kind == "local":
+        model = model_id
+    elif kind == "meta_api":
+        model = (s.judge_model or "").strip() or META_JUDGE_MODEL_DEFAULT
+    else:
+        model = None
+    info = judge_info(kind, model, None)
+    if kind == "meta_api":
+        info["n_samples"] = 10
+        info["temperature"] = 1.0
+    return info
+
+
 def run_trait(eng, spec, trait_name, bank, seed, workdir,
               model_id, revision, cancel=None, progress=None,
               guard=False, research_mode=False, schedule="full",
@@ -1549,22 +1712,41 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
     _check(cancel)
     params = schedule_params(schedule)
     lane = lane or TorchLane(eng, spec)
-    t0 = time.time()
+    t0 = time.perf_counter()
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
     cfg = family_cfg(trait_name)
+    bank = list(bank)
     splits = E.make_splits(bank, seed)
     ext, tun, fin = splits.extraction, splits.tuning, splits.final
     _check(cancel)
     med = {L: m for L, m in enumerate(
         spike.median_norms(eng.model, eng.tokenizer, spec, ext[:10]))}
+    from model_lobotomy import patch as _patch_mod
+    from model_lobotomy import prompt_bank as _bank_mod
     out = {"trait": trait_name, "seed": seed, "schedule": schedule,
            "fingerprint": eng.fingerprint(),
-           "judge": judge_info("local", model_id, None),
+           "judge": _judge_report(model_id),
            "lane": lane.info(),
            "splits": {"extraction": ext, "tuning": tun, "final": fin,
                       "reserve": splits.reserve},
-           "ports": _ports()}
+           "ports": _ports(),
+           # Provenance envelope: two runs are comparable only when
+           # these match (metrics.compare_reports). bank_sha256 is
+           # over the bank actually passed in, not the module bank.
+           "provenance": {
+               "git_sha": metrics_mod.git_sha(),
+               "lobot_version": _patch_mod.LOBOT_VERSION,
+               "bank_version": _bank_mod.BANK_VERSION,
+               "bank_sha256": metrics_mod.bank_sha256(list(bank)),
+               "schedule": schedule,
+               "schedule_params": params,
+               "gen_tokens": params["gen_tokens"],
+               "judge_label_sha256": metrics_mod.label_sha256(
+                   cfg["judge"]),
+               "n_extraction": len(ext), "n_tuning": len(tun),
+               "n_final": len(fin), "n_reserve": len(splits.reserve),
+               "candidates_tried": None}}
     ctx = {"eng": eng, "spec": spec, "trait_name": trait_name,
            "seed": seed, "workdir": workdir, "cancel": cancel,
            "progress": progress, "guard_flag": guard,
@@ -1575,10 +1757,24 @@ def run_trait(eng, spec, trait_name, bank, seed, workdir,
            "out": out, "base_cache": BaseCache(), "timings": {},
            "t0": t0, "stop": False}
     from model_lobotomy.create import stages as _stages
-    for _name in _stages.STAGE_NAMES:
-        STAGE_FUNCS[_name](ctx)
-        if ctx["stop"]:
-            break
+    # Create discards per-generation prefill timings; do not pay
+    # the per-step measurement cost on hundreds of generations.
+    _had_measure = hasattr(eng, "measure_prefill")
+    _prev_measure = getattr(eng, "measure_prefill", None)
+    try:
+        eng.measure_prefill = False
+        for _name in _stages.STAGE_NAMES:
+            STAGE_FUNCS[_name](ctx)
+            if ctx["stop"]:
+                break
+    finally:
+        if _had_measure:
+            eng.measure_prefill = _prev_measure
+        else:
+            try:
+                del eng.measure_prefill
+            except AttributeError:
+                pass
     return out
 
 
@@ -1591,9 +1787,30 @@ def _json_card(card):
             "paired_ci": list(card["paired_ci"])}
 
 
+def _json_safe(value):
+    """Non-finite floats become None: undefined stays explicit.
+
+    json.dumps would otherwise emit NaN/Infinity, which strict
+    JSON readers reject and lenient ones read as numbers.
+    """
+    import math
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
 def _write_report(workdir, out, t0):
-    out["seconds"] = round(time.time() - t0, 1)
-    _wp(workdir).report.write_text(json.dumps(out, indent=2))
+    out["seconds"] = _elapsed(t0)
+    if out.get("metrics") is not None:
+        out["metrics"]["time"] = metrics_mod.stage_accounting(
+            out["seconds"], out.get("timings") or {})
+    out.update(_json_safe(out))
+    _wp(workdir).report.write_text(
+        json.dumps(out, indent=2, allow_nan=False))
     L = (out.get("frozen") or {}).get("layer", "?")
     lines = [f"# Trait E2E: {out['trait']} -> {out.get('verdict', '?')}",
              f"schedule {out.get('schedule', 'full')}; "
@@ -1602,6 +1819,17 @@ def _write_report(workdir, out, t0):
              f"eligibility: {out.get('eligibility')}",
              f"guard: {out.get('guard')}",
              f"read gate: {out.get('read_gate', {}).get('agreement')}"]
+    metrics = out.get("metrics") or {}
+    comp = metrics.get("comparability") or {}
+    if comp:
+        lines.append(
+            f"metrics {metrics.get('version')}: quality headline "
+            f"{comp.get('quality_headline_eligible')}, speed headline "
+            f"{comp.get('speed_headline_eligible')}, accounted share "
+            f"{(metrics.get('time') or {}).get('accounted_share')}")
+        if comp.get("reasons"):
+            lines.append("not headline-comparable: "
+                         + ", ".join(comp["reasons"]))
     if out.get("pareto"):
         lines += [""] + pareto_mod.pareto_lines(out["pareto"])
     (workdir / "report.md").write_text("\n".join(lines) + "\n")

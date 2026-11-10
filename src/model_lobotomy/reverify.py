@@ -46,13 +46,20 @@ def measure_gains(eng, judge_fn, prompts, edits, seed: int,
 
 
 def compare(shipped_card: dict, gains: list[float]) -> dict:
-    """Shipped vs measured effect. Pass = measured mean is inside the
-    shipped 95% interval."""
+    """Shipped vs measured effect.
+
+    Pass = measured mean inside the shipped 95% interval AND at or
+    above MIN_GAIN. Interval membership alone passes a weak effect
+    whenever the shipped interval is wide; the multi-patch branch
+    already required the floor.
+    """
     lo, hi = shipped_card["trait_ci"]
     measured = statistics.fmean(gains)
     return {"shipped_mean": shipped_card["trait_mean"],
             "shipped_ci": [lo, hi], "measured_mean": measured,
-            "n": len(gains), "pass": bool(lo <= measured <= hi)}
+            "n": len(gains),
+            "pass": bool(lo <= measured <= hi
+                         and measured >= E.MIN_GAIN)}
 
 
 def load_engine(model_id: str):
@@ -117,6 +124,13 @@ def run_verify_patch(patch, *, quick: bool, progress=None,
         if tmp is not None:
             tmp.cleanup()
     meta = loaded["meta"]
+    shipped_bank = (meta.get("recipe") or {}).get("bank_sha256")
+    if shipped_bank and shipped_bank != prompt_bank.BANK_SHA256:
+        return (2, {"error": "prompt bank changed since this patch "
+                    "was measured (recipe bank_sha256 "
+                    f"{shipped_bank[:12]} != current "
+                    f"{prompt_bank.BANK_SHA256[:12]}); replay would "
+                    "use different prompts"})
     model_id = (meta.get("fingerprint") or {}).get("model_id")
     if not model_id:
         return (2, {"error": "patch names no model_id in fingerprint"})
@@ -147,9 +161,11 @@ def run_verify_patch(patch, *, quick: bool, progress=None,
         if meta.get("scale") is None:
             return (2, {"error": "patch has no scale; cannot set strength"})
         unit = tuple(loaded["direction"].detach().cpu().tolist())
+        # A down knob earned its card at negative dose with removal
+        # gains (base minus steered). Replay that exact edit.
         edits = engine_mod.EditSet(vector=(engine_mod.VectorEdit(
             int(meta["layer"]), unit, float(meta["scale"]),
-            float(meta["dose"])),))
+            patch_mod.signed_dose(meta)),))
     prompts = final_prompts(int(seed),
                             QUICK_PROMPTS if quick else None)
     owned = engine is None
@@ -157,9 +173,16 @@ def run_verify_patch(patch, *, quick: bool, progress=None,
         load_engine_fn or load_engine)(model_id)
     try:
         judge_fn = (judge_fn_for_fn or judge_fn_for)(eng, trait, label)
+        gen_tokens = (meta.get("recipe") or {}).get("gen_tokens")
         gains = measure_gains(eng, judge_fn, prompts, edits,
-                              int(seed), progress=progress,
+                              int(seed),
+                              max_new=(int(gen_tokens)
+                                       if gen_tokens else None),
+                              progress=progress,
                               cancel=cancel)
+        if not multi and (meta.get("recipe") or {}).get(
+                "verb") == "update_down":
+            gains = [-g for g in gains]
     finally:
         if owned:
             unload = getattr(eng, "unload", None)
@@ -174,10 +197,13 @@ def run_verify_patch(patch, *, quick: bool, progress=None,
                        "layers": [int(L) for L in
                                   sorted(loaded["vectors"])],
                        "dose": float(meta["dose"]), "seed": int(seed),
-                       "model_id": model_id, "quick": quick})
+                       "model_id": model_id, "quick": quick,
+                       "bank_sha256": prompt_bank.BANK_SHA256})
         return (0 if result["pass"] else 1, result)
     result = compare(card, gains)
     result.update({"trait": trait, "layer": int(meta["layer"]),
                    "dose": float(meta["dose"]), "seed": int(seed),
-                   "model_id": model_id, "quick": quick})
+                   "model_id": model_id, "quick": quick,
+                   "bank_sha256": prompt_bank.BANK_SHA256,
+                   "verb": (meta.get("recipe") or {}).get("verb")})
     return (0 if result["pass"] else 1, result)

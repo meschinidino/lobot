@@ -132,3 +132,14 @@ PROMPT_BANK = [
     "What makes a cafe a good place to work?",
     "Have you ever kept a journal?",
 ]
+
+# Content hash of the bank, in bank order. Reports stamp it so a
+# bank edit cannot move numbers invisibly; a bump of BANK_VERSION
+# without a content change (or the reverse) shows up as a mismatch.
+# Canonical JSON, same formula as metrics.bank_sha256.
+import hashlib as _hashlib
+import json as _json
+
+BANK_SHA256 = _hashlib.sha256(
+    _json.dumps(PROMPT_BANK, ensure_ascii=False,
+                separators=(",", ":")).encode()).hexdigest()

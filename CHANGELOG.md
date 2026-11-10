@@ -15,6 +15,56 @@ Format follows Keep a Changelog: Added, Changed, Fixed, Removed.
 ## Unreleased
 
 ### Added
+- Objective Create metrics (`metrics-v1`) and a provenance
+  envelope in every report: paired trait-minus-control effects,
+  judge-independent side effects, time accounting, physical work
+  counters, bank and judge-label hashes. `scripts/compare_runs.py`
+  refuses a faster/better claim when runs are not comparable.
+  See `docs/reference/metrics.md`.
+- Create report `judge` block now names the effective judge
+  (kind and model) instead of a hard-coded local judge.
+
+### Changed
+- Torch generation no longer runs a second full forward pass
+  over the prompt only to time prefill. `prefill_s` now measures
+  time to first token inside the same generate call, and Create
+  skips the measurement it discards.
+- Create's torch lane generates prompt lists in one batched
+  call (`Engine.run_many`) instead of one call per prompt.
+  Measured on this Mac: 30 prompts 69.8s sequential vs 8.8s
+  batched, 29/30 token-identical. Metrics counters still count
+  prompts, tokens, and judge pairs, so speed claims keep their
+  denominator.
+- Demo slate for Wednesday measured on real weights: five
+  knob jobs on five shared fresh prompts. Pirate fv2,
+  cowboy, Devout Catholic, Shakespeare fv3, and sports
+  commentator take the slots. The guide is
+  `docs/guides/demo-wednesday.md`.
+- The METRICS crossover confirms the batched lane at fixed
+  edits: paired effect moves -0.004 and 0.000 against the
+  sequential lane, fluency p10 unchanged, generation about
+  9x faster. The run A vs run C quality gap is edit choice
+  (L10@1.0 vs L13@0.5), not batching. See
+  `docs/roadmap/reports/METRICS.md`.
+
+### Fixed
+- Dose selection no longer flips on one borderline reply. The
+  new default rule `fluency-first-v4` gates the tuning tail on
+  the worst-decile mean fluency instead of the single p10
+  value. On the run C tuning table the old gate rejected
+  L10@1.0 over 0.003 (p10 0.297, floor 0.30); the tail mean
+  reads 0.252 against a 0.20 floor in both execution modes.
+  The registry and final-split p10 gates do not change.
+- Verdict stage crashed when two verbs earned eligibility in one
+  run: the final-split ledger key omitted the verb. All verb
+  finals now record under per-verb keys.
+- A down-only knob shipped the update_up report card. The patch
+  now carries the earning verb's card, and re-verify replays the
+  signed dose at the recipe's token budget.
+- Short lane outputs vanished into zip loops and shrank score
+  denominators. Generation, judge, and NLL paths now fail the
+  run on a length mismatch; the llama judge no longer pads a
+  missing score with 0.0.
 - SH Phase B: `learn_vectors.py --extra-train` grows the learned
   training pool past the 30-question tuning split. A disjoint
   check refuses training questions that sit in the fresh set.
