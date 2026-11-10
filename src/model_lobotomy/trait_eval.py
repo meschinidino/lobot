@@ -88,18 +88,20 @@ EARLY_STOP_CI_MARGIN = 0.05
 
 CAPTURE_CACHE_VERSION = 1
 
-# FD dose rule (fluency-first-v3): a coherent dose keeps the mean
+# FD dose rule (fluency-first-v4): a coherent dose keeps the mean
 # fluency judge score at or above FLUENCY_FLOOR (the judge's own
-# yes/no boundary) and the worst-decile fluency at or above
-# FLUENCY_P10_FLOOR; among coherent doses the highest judge score
+# yes/no boundary) and the worst-decile mean fluency at or above
+# FLUENCY_TAIL_FLOOR; among coherent doses the highest judge score
 # wins. The old NLL cap held weak traits under their effective dose:
 # repeated tokens are easy to predict, so NLL stays low on collapsed
 # text, and NLL rise also blocks fluent trait text. Fluency is the
 # direct coherence signal. NLL stays in the table as a cost report.
-DOSE_RULE = "fluency-first-v3"
+# FLUENCY_P10_FLOOR stays for the final-split and registry gates.
+DOSE_RULE = "fluency-first-v4"
 NLL_MAX_RISE = 1.0
 FLUENCY_FLOOR = 0.5
 FLUENCY_P10_FLOOR = 0.3
+FLUENCY_TAIL_FLOOR = 0.2
 
 
 def _wp(workdir):
@@ -976,7 +978,8 @@ def derive_direction(eng, spec, cfg, prompts):
 
 def _default_rule():
     from model_lobotomy import dose_rules as _dr
-    return _dr.FluencyFirstRule(FLUENCY_FLOOR, FLUENCY_P10_FLOOR)
+    return _dr.FluencyFirstV4Rule(FLUENCY_FLOOR, FLUENCY_TAIL_FLOOR,
+                                  FLUENCY_P10_FLOOR)
 
 
 def coherent_doses(gen: dict) -> list[float]:
@@ -1050,9 +1053,12 @@ def tune_layer_dose(eng, spec, cfg, med, A, B, tuning, label,
             ns = [min(a, b) for a, b in zip(nl[:len(rs)], nl[len(rs):])]
             # Per-prompt rows ride along so every tuning mean in the
             # report can be recomputed from the stored artifact.
+            from model_lobotomy import dose_rules as _dr
             gen[d] = {"judge": sum(js) / len(js), "nll": sum(ns) / len(ns),
                       "fluency": sum(fl) / len(fl),
-                      "fluency_p10": _p10(fl), "n": len(tuning),
+                      "fluency_p10": _p10(fl),
+                      "fluency_tail_mean": _dr.worst_decile_mean(fl),
+                      "n": len(tuning),
                       "judge_per_prompt": list(js),
                       "fluency_per_prompt": list(fl)}
         table[L] = gen

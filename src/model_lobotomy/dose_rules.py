@@ -1,6 +1,6 @@
 """Dose-rule port (MOD phase 6): which dose a tuning table picks.
 
-Setting: LOBOT_DOSE_RULE (default `fluency-first-v3`).
+Setting: LOBOT_DOSE_RULE (default `fluency-first-v4`).
 A rule has `name`, `params` (written into the report) and
 `choose_gen(gen) -> dose or None` for one layer's dose table.
 `choose(table)` picks (layer, dose) by judge gain, as tune did.
@@ -88,6 +88,61 @@ class FluencyFirstRule:
         return None if best is None else (best[0], best[1])
 
 
+def worst_decile_mean(scores) -> float:
+    """Mean of the lowest tenth of per-prompt scores.
+
+    A single order statistic (the p10 value) jumps when one
+    reply crosses it: on the run C tuning table, one batched
+    reply moved the third-lowest fluency from 0.338 to 0.297
+    and a strong dose failed the v3 gate over 0.003. The
+    worst-decile mean on the same data moves 0.271 to 0.252.
+    It still reads the tail, so a looping worst decile stays
+    near zero.
+    """
+    s = sorted(scores)
+    if not s:
+        return 0.0
+    k = max(1, -(-len(s) // 10))
+    return sum(s[:k]) / k
+
+
+class FluencyFirstV4Rule(FluencyFirstRule):
+    """Fluency-first with a worst-decile-mean tail gate.
+
+    Same mean-fluency floor as v3. The per-prompt gate reads
+    the worst-decile mean of the per-prompt fluency scores
+    instead of the single p10 value, so one borderline reply
+    cannot flip a dose in or out. Tables that carry only the
+    p10 summary (older reports) keep the v3 p10 gate.
+    """
+    name = "fluency-first-v4"
+
+    def __init__(self, fluency_floor: float = 0.5,
+                 fluency_tail_floor: float = 0.2,
+                 fluency_p10_floor: float = 0.3):
+        super().__init__(fluency_floor, fluency_p10_floor)
+        self.fluency_tail_floor = fluency_tail_floor
+
+    @property
+    def params(self) -> dict:
+        return {"fluency_floor": self.fluency_floor,
+                "fluency_tail_floor": self.fluency_tail_floor,
+                "fluency_p10_floor": self.fluency_p10_floor}
+
+    def _tail_ok(self, row: dict) -> bool:
+        per_prompt = row.get("fluency_per_prompt")
+        if per_prompt:
+            return worst_decile_mean(per_prompt) >= self.fluency_tail_floor
+        if "fluency_tail_mean" in row:
+            return row["fluency_tail_mean"] >= self.fluency_tail_floor
+        return row.get("fluency_p10", 1.0) >= self.fluency_p10_floor
+
+    def coherent(self, gen: dict) -> list[float]:
+        return [d for d in gen if d > 0
+                and gen[d]["fluency"] >= self.fluency_floor
+                and self._tail_ok(gen[d])]
+
+
 class FakeDoseRule(NllFluencyRule):
     """Test double: every positive dose is coherent."""
     name = "fake"
@@ -99,6 +154,8 @@ class FakeDoseRule(NllFluencyRule):
 def get_dose_rule(name=None):
     from model_lobotomy.config import get_settings
     kind = name or get_settings().dose_rule_kind
+    if kind == "fluency-first-v4":
+        return FluencyFirstV4Rule()
     if kind == "fluency-first-v3":
         return FluencyFirstRule()
     if kind == "fluency-first-v2":
@@ -111,5 +168,5 @@ def get_dose_rule(name=None):
     raise ValueError(f"unknown LOBOT_DOSE_RULE {kind!r}")
 
 
-REGISTRY = ("fluency-first-v3", "fluency-first-v2",
-            "nll+fluency-v1", "fake")
+REGISTRY = ("fluency-first-v4", "fluency-first-v3",
+            "fluency-first-v2", "nll+fluency-v1", "fake")

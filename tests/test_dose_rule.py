@@ -11,6 +11,7 @@ import torch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from model_lobotomy import dose_rules  # noqa: E402
 from model_lobotomy import pareto as P  # noqa: E402
 from model_lobotomy import steer  # noqa: E402
 from model_lobotomy import trait_eval as T  # noqa: E402
@@ -57,6 +58,31 @@ class DoseRuleTest(unittest.TestCase):
                1.0: cell(0.85, 1.4, 0.68, p10=0.05)}
         self.assertEqual(T.coherent_doses(gen), [0.5])
         self.assertEqual(T.best_dose(gen), 0.5)
+
+    def test_v4_tail_mean_survives_p10_jitter(self):
+        # Run C tuning, L10@1.0: one batched reply moved the
+        # third-lowest fluency from 0.338 to 0.297, so the v3
+        # single-order-statistic gate rejected the strong dose
+        # over 0.003. The worst-decile mean moves 0.271 -> 0.252
+        # on the same data and stays over the v4 tail floor.
+        rule = dose_rules.get_dose_rule("fluency-first-v4")
+        per_prompt = [0.178, 0.281, 0.297] + [0.65] * 27
+        gen = {0.0: BASE,
+               1.0: {"judge": 0.92, "nll": 1.0, "fluency": 0.62,
+                     "fluency_p10": 0.297,
+                     "fluency_per_prompt": per_prompt}}
+        self.assertEqual(rule.choose_gen(gen), 1.0)
+
+    def test_v4_tail_mean_rejects_collapsed_tail(self):
+        # Shakespeare case under v4: a looping worst decile has
+        # a near-zero tail mean even when mean fluency passes.
+        rule = dose_rules.get_dose_rule("fluency-first-v4")
+        per_prompt = [0.005, 0.01, 0.02] + [0.95] * 27
+        gen = {0.0: BASE, 0.5: cell(0.3, 0.6, 0.97),
+               1.0: {"judge": 0.85, "nll": 1.4, "fluency": 0.86,
+                     "fluency_p10": 0.02,
+                     "fluency_per_prompt": per_prompt}}
+        self.assertEqual(rule.choose_gen(gen), 0.5)
 
     def test_no_coherent_dose_is_none(self):
         gen = {0.0: BASE, 1.0: cell(0.9, 0.5, 0.1),
